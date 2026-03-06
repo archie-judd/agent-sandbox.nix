@@ -416,9 +416,13 @@ let
       ${mkFilesStr}
 
       if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
-        GIT_DIR_PARAM="$GIT_DIR"
+          GIT_DIR_PARAM="$GIT_DIR"
+          REPO_ROOT=$(dirname "$GIT_DIR_PARAM")
+          REPO_ROOT_PARENT=$(dirname "$REPO_ROOT")
       else
-        GIT_DIR_PARAM="/nonexistent-git-dir"
+          GIT_DIR_PARAM="/nonexistent-git-dir"
+          REPO_ROOT="/nonexistent-repo-root"
+          REPO_ROOT_PARENT="/nonexistent-repo-root"
       fi
 
       export HOME="$HOME"
@@ -428,8 +432,6 @@ let
       export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}"
       export SSL_CERT_DIR="''${SSL_CERT_DIR:-/etc/ssl/certs}"
       ${extraEnvStr}
-      export REPO_ROOT=$(dirname "$GIT_DIR_PARAM")
-      export REPO_ROOT_PARENT=$(dirname "$REPO_ROOT")
       export GIT_CONFIG_DIR="$HOME/.config/git"
       export TMPDIR=/tmp
 
