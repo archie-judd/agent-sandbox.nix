@@ -51,7 +51,7 @@ Everything else is denied. `$HOME` is either an empty tmpfs (Linux) or inaccessi
               pkgs.jq
             ];
             stateDirs = [ "$HOME/.claude" ];
-            stateFiles = [ "$HOME/.claude.json" ];
+            stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
             extraEnv = {
               CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
               # Give the agent its own git identity so its commits are distinguishable from yours
@@ -100,7 +100,7 @@ Alternatively, if you use sops, you can inject the secret at build time:
 
 ```nix
 extraEnv = {
-  CLAUDE_CODE_OAUTH_TOKEN = "$(${pkgs.coreutils}/bin/cat /run/secrets/claude-code-oauth-token)" # or wherever your sops secrets directory is
+  CLAUDE_CODE_OAUTH_TOKEN = "$(${pkgs.coreutils}/bin/cat /run/secrets/claude-code-oauth-token)"; # or wherever your sops secrets directory is
   ...
 };
 ```
@@ -150,7 +150,7 @@ bash-sandboxed = sandbox.mkSandbox {
   outName = "bash-sandboxed";
   allowedPackages = [ pkgs.coreutils pkgs.bash ];
   stateDirs = [ "$HOME/.claude" ];  # mirror your agent's config
-  stateFiles = [ "$HOME/.claude.json" ];
+  stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
 };
 ```
 

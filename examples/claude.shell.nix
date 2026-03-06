@@ -26,7 +26,7 @@ let
       pkgs.jq
     ];
     stateDirs = [ "$HOME/.claude" ];
-    stateFiles = [ "$HOME/.claude.json" ];
+    stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
     extraEnv = {
       # Use literal strings for secrets to evaluate at runtime!
       # builtins.getEnv will leak your token into the /nix/store.
