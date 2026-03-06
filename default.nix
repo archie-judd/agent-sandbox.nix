@@ -66,10 +66,9 @@ let
            need to bind-mount the real paths.
   */
   mkLinuxSandbox = { pkg, binName, outName, allowedPackages, stateDirs ? [ ]
-    , stateFiles ? [ ], extraEnv ? { }, inheritPath ? false }:
+    , stateFiles ? [ ], extraEnv ? { } }:
     let
-      basePath = pkgs.lib.makeBinPath allowedPackages;
-      pathStr = if inheritPath then "${basePath}:$PATH" else basePath;
+      pathStr = pkgs.lib.makeBinPath allowedPackages;
       mkDirsStr = builtins.concatStringsSep "\n"
         (map (dir: ''mkdir -p "${dir}"'') stateDirs);
       mkFilesStr = builtins.concatStringsSep "\n"
@@ -249,10 +248,9 @@ let
        sandboxing on macOS.
   */
   mkDarwinSandbox = { pkg, binName, outName, allowedPackages, stateDirs ? [ ]
-    , stateFiles ? [ ], extraEnv ? { }, inheritPath ? false }:
+    , stateFiles ? [ ], extraEnv ? { } }:
     let
-      basePath = pkgs.lib.makeBinPath allowedPackages;
-      pathStr = if inheritPath then "${basePath}:$PATH" else basePath;
+      pathStr = pkgs.lib.makeBinPath allowedPackages;
       # Generate indexed param names
       stateDirParams = builtins.genList (i: {
         name = "STATE_DIR_${toString i}";
@@ -387,6 +385,11 @@ let
           (literal "/private/var/db")
           (literal "/Users")
           (literal (param "HOME"))
+          (literal (param "HOME"))
+          (literal (param "HOME_LOCAL"))
+          (literal (param "HOME_CACHE"))
+          (literal (param "HOME_LOCAL_SHARE"))
+          (literal (param "HOME_LOCAL_STATE"))
           (literal (param "REPO_ROOT_PARENT")))
 
         ;; Working directory & repository
@@ -434,7 +437,11 @@ let
         -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
         -D GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
         -D TMPDIR="''${TMPDIR:-/tmp}" \
-        -D HOME="$HOME" ${stateDirFlags} ${stateFileFlags} \
+        -D HOME="$HOME"  \
+        -D HOME_CACHE="$HOME/.cache" \
+        -D HOME_LOCAL="$HOME/.local" \
+        -D HOME_LOCAL_STATE="$HOME/.local/state" \
+        -D HOME_LOCAL_SHARE="$HOME/.local/share" ${stateDirFlags} ${stateFileFlags} \
         ${pkg}/bin/${binName} "$@"
     '';
 

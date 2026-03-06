@@ -9,7 +9,7 @@ Prevents agents in YOLO mode from reading your dotfiles, deleting your home dire
 - Read/write the current working directory
 - Read/write explicitly declared state dirs and files
 - Network access (unrestricted)
-- Binaries from `allowedPackages` (and optionally the parent shell's `$PATH` via `inheritPath`)
+- Binaries from `allowedPackages` 
 - `/nix/store` (read-only), `/tmp` (ephemeral), local git repo access (commits allowed; `git push` is blocked)
 
 Everything else is denied. `$HOME` is either an empty tmpfs (Linux) or simply inaccessible (macOS).
@@ -32,7 +32,7 @@ Add the flake as an input and call `mkSandbox`:
     in {
       packages = forAllSystems (system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import nixpkgs { system = system; };
         in {
           claude-sandboxed = sandbox.lib.${system}.mkSandbox {
             pkg = pkgs.claude-code;
@@ -60,7 +60,6 @@ Add the flake as an input and call `mkSandbox`:
               GIT_COMMITTER_NAME = "claude-agent";
               GIT_COMMITTER_EMAIL = "claude-agent@localhost";
             };
-            inheritPath = false;
         });
     };
 }
@@ -81,7 +80,6 @@ For a standalone dev shell, see `example.shell.nix`.
 | `stateDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
 | `stateFiles` | no | Individual files the agent can read/write |
 | `extraEnv` | no | Additional environment variables as an attrset |
-| `inheritPath` | no | Inherit $PATH from the parent shell. Useful for direnv/nix-shell environments. Defaults to false. |
 
 ## Platform notes
 
