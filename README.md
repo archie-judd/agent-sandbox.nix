@@ -12,7 +12,7 @@ Prevents agents in YOLO mode from reading your dotfiles, deleting your home dire
 - Binaries from `allowedPackages`
 - `/nix/store` (read-only), `/tmp` (ephemeral), local git repo access (commits allowed; `git push` is blocked)
 
-Everything else is denied. `$HOME` is either an empty tmpfs (Linux) or simply inaccessible (macOS).
+Everything else is denied. `$HOME` is either an empty tmpfs (Linux) or inaccessible (macOS).
 
 ## Authentication
 
@@ -26,6 +26,7 @@ export CLAUDE_CODE_OAUTH_TOKEN="your_token_here"
 
 # GitHub Copilot CLI
 export GITHUB_TOKEN="your_token_here"
+
 ```
 
 Pass the variable reference (not the value) into `extraEnv`:
@@ -33,8 +34,16 @@ Pass the variable reference (not the value) into `extraEnv`:
 ```nix
 extraEnv = {
   CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
-  # or
-  GITHUB_TOKEN = "$GITHUB_TOKEN";
+  ...
+};
+```
+
+Alternatively, if you use sops, you can inject the secret at build time:
+
+```nix
+extraEnv = {
+  CLAUDE_CODE_OAUTH_TOKEN = "$(${pkgs.coreutils}/bin/cat /run/secrets/claude-code-oauth-token)" # or wherever your sops secrets directory is
+  ...
 };
 ```
 
@@ -48,7 +57,7 @@ extraEnv = {
 
 ```nix
 {
-  inputs.sandbox.url = "github:you/sandbox.nix";
+  inputs.sandbox.url = "github:archie-judd/agent-sandbox.nix";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = { nixpkgs, sandbox, ... }:
@@ -173,6 +182,6 @@ Each entry shows the denied operation and path, telling you exactly which `state
 ## Caveats
 
 - **The network is fully open.** A compromised agent can exfiltrate any file it *can* read to a remote server.
-- **`sandbox-exec` is deprecated on macOS.** It remains the only native unprivileged sandboxing mechanism and currently works on macOS 26 (Tahoe) and older, but may break in a future release.
+- **`sandbox-exec` is deprecated on macOS.** It remains the only native unprivileged sandboxing mechanism and currently works on macOS 15 (Sequoia) and older, but may break in a future release.
 - **State directories dictate your safety.** The sandbox is only as safe as what you pass into `stateDirs`. Never add `$HOME`.
-- See the comments in `sandbox.nix` for detailed debugging tips for each platform.
+- See the comments in `default.nix` for detailed debugging tips for each platform.
