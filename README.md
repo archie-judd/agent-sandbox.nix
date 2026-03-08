@@ -199,12 +199,13 @@ If the agent fails to perform a tool call, or file read/write, the sandbox is li
 The easiest way to explore the sandbox environment is to wrap `bash` itself with the same config as your agent and poke around interactively:
 
 ```nix
+# mirror your agent's config
 bash-sandboxed = sandbox.mkSandbox {
   pkg = pkgs.bash;
   binName = "bash";
   outName = "bash-sandboxed";
   allowedPackages = [ pkgs.coreutils pkgs.bash ];
-  stateDirs = [ "$HOME/.claude" ];  # mirror your agent's config
+  stateDirs = [ "$HOME/.claude" ];  
   stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
 };
 ```
