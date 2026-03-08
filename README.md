@@ -14,7 +14,7 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 - Binaries from `allowedPackages`
 - `/nix/store` (read-only), `/tmp` (ephemeral), local git repo access (commits allowed; `git push` is blocked)
 
-Everything else is denied. `$HOME` is either an empty writable tmpfs (Linux) or read-only (macOS).
+Everything else is denied. `$HOME` is an ephemeral writable tmpfs on both platforms.
 
 ## Usage
 
@@ -210,25 +210,18 @@ bash-sandboxed = sandbox.mkSandbox {
 };
 ```
 
-Running `bash-sandboxed` drops you into a shell with exactly the same filesystem view and restrictions your agent will see. Try:
+Running `bash-sandboxed --norc --noprofile` drops you into a shell with exactly the same filesystem view and restrictions your agent will see. Try:
 
 ```bash
-# Platform-independent
 touch /tmp/test && rm /tmp/test   # /tmp should be writable
 curl https://example.com          # network should be open
 which git                         # allowedPackages should be on PATH
 ls /some/other/path               # should fail — confirming sandbox is active
 cat ~/.ssh/id_ed25519             # should fail - shouldn't be able to read unspecified files in $HOME
-
-# Linux: $HOME is an empty writable tmpfs (ephemeral, not persisted)
-ls $HOME                          # empty directory
+ls $HOME                          # empty dir with symlinks to stateDirs/stateFiles
 touch $HOME/.test && rm $HOME/.test  # writes allowed (but ephemeral)
-
-# macOS: $HOME is readable but writes are blocked (except stateDirs/stateFiles)
-ls $HOME                          # shows your real home contents (read-only)
-touch $HOME/.test                 # should fail — writes blocked
-echo test > $HOME/.claude.json    # should work if in stateFiles
-ls $HOME/.claude                  # should work if in stateDirs
+echo test > $HOME/.claude.json    # should work if in stateFiles (symlinked)
+ls $HOME/.claude                  # should work if in stateDirs (symlinked)
 ```
 
 See [`debug/bash.shell.nix`](debug/bash.shell.nix) for a ready-to-use template.

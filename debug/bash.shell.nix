@@ -6,13 +6,13 @@
 #   nix-shell debug/bash.shell.nix
 #
 # Once inside, try:
-#   ls $HOME                   # Linux: empty (ephemeral tmpfs). macOS: your real home (read-only).
+#   ls $HOME                   # empty ephemeral tmpfs with symlinks to stateDirs/stateFiles
 #   cat $HOME/.claude.json     # should work if in stateFiles
 #   ls /tmp                    # should be writable scratch space
 #   curl https://example.com   # network should be open
 #   which git                  # check allowedPackages are visible
 #   ls /some/other/path        # should fail — confirming the sandbox is active
-#   cat ~/.ssh/id_ed25519      # should fail — confirming the sandbox is active and your real home isn't visible             # should fail
+#   cat ~/.ssh/id_ed25519      # should fail — confirming the sandbox is active and your real home isn't visible
 let
   pkgs = import <nixpkgs> { };
   sandbox = import (fetchTarball
@@ -28,6 +28,10 @@ let
     # Mirror these from your agent config:
     stateDirs = [ "$HOME/.claude" ];
     stateFiles = [ "$HOME/.claude.json" ];
-    extraEnv = { };
+    extraEnv = { HELLO = "world"; };
   };
-in pkgs.mkShell { packages = [ bash-sandboxed ]; }
+in pkgs.mkShell {
+  packages = [ bash-sandboxed ];
+  shellHook = "bash-sandboxed --norc --noprofile";
+}
+

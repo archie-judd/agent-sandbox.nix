@@ -108,6 +108,7 @@ let
         --share-net \
         --die-with-parent \
         --chdir "$CWD" \
+        --clearenv \
         --setenv HOME "$HOME" \
         --setenv TERM "$TERM" \
         --setenv SHELL "${pkgs.bash}/bin/bash" \
@@ -186,6 +187,16 @@ let
          /tmp, /private/tmp, $TMPDIR, and /private/var/folders (which
          is where macOS actually puts per-user temp/cache dirs). All
          are read-write. TMPDIR is injected as a -D parameter.
+
+       Ephemeral HOME:
+         HOME is redirected to a temp directory under /tmp (covered by
+         the existing /tmp subpath allow). This prevents subprocesses
+         from reading or writing the real home directory. State paths
+         that live under the real HOME are symlinked into the sandbox
+         HOME so that $HOME-relative lookups resolve through to the
+         real (Seatbelt-allowed) targets. The temp directory is cleaned
+         up on exit via a trap. stateDirs and stateFiles are resolved
+         to absolute paths before HOME is reassigned.
 
        Timezone:
          /private/var/db/timezone — so date/time formatting works.
@@ -274,20 +285,44 @@ let
         (p: ''(allow file-read* file-write* (literal (param "${p.name}")))'')
         stateFileParams);
 
-      # For the wrapper's sandbox-exec invocation
+      # For the wrapper's sandbox-exec invocation — use resolved shell vars
       stateDirFlags = builtins.concatStringsSep " \\\n  "
-        (map (p: ''-D ${p.name}="${p.path}"'') stateDirParams);
+        (map (p: ''-D ${p.name}="$_RESOLVED_${p.name}"'') stateDirParams);
 
       stateFileFlags = builtins.concatStringsSep " \\\n  "
-        (map (p: ''-D ${p.name}="${p.path}"'') stateFileParams);
+        (map (p: ''-D ${p.name}="$_RESOLVED_${p.name}"'') stateFileParams);
+
+      # Resolve stateDirs/stateFiles while HOME is still real
+      resolveStateDirsStr = builtins.concatStringsSep "\n"
+        (map (p: ''_RESOLVED_${p.name}="${p.path}"'') stateDirParams);
+
+      resolveStateFilesStr = builtins.concatStringsSep "\n"
+        (map (p: ''_RESOLVED_${p.name}="${p.path}"'') stateFileParams);
+
+      # Symlink resolved state paths into the sandbox HOME so that
+      # $HOME-relative lookups land on the real paths. Only creates
+      # symlinks for paths that actually live under the real HOME.
+      symlinkStateDirsStr = builtins.concatStringsSep "\n" (map (p: ''
+        if [[ "$_RESOLVED_${p.name}" == "$REAL_HOME"/* ]]; then
+          _REL="''${_RESOLVED_${p.name}#$REAL_HOME/}"
+          mkdir -p "$SANDBOX_HOME/$(dirname "$_REL")"
+          ln -sfn "$_RESOLVED_${p.name}" "$SANDBOX_HOME/$_REL"
+        fi'') stateDirParams);
+
+      symlinkStateFilesStr = builtins.concatStringsSep "\n" (map (p: ''
+        if [[ "$_RESOLVED_${p.name}" == "$REAL_HOME"/* ]]; then
+          _REL="''${_RESOLVED_${p.name}#$REAL_HOME/}"
+          mkdir -p "$SANDBOX_HOME/$(dirname "$_REL")"
+          ln -sfn "$_RESOLVED_${p.name}" "$SANDBOX_HOME/$_REL"
+        fi'') stateFileParams);
 
       mkDirsStr = builtins.concatStringsSep "\n"
         (map (dir: ''mkdir -p "${dir}"'') stateDirs);
       mkFilesStr = builtins.concatStringsSep "\n"
         (map (file: ''touch "${file}"'') stateFiles);
 
-      extraEnvStr = builtins.concatStringsSep "\n"
-        (map (name: "export ${name}=${builtins.toJSON extraEnv.${name}}")
+      extraEnvInlineStr = builtins.concatStringsSep " \\\n        "
+        (map (name: "${name}=${builtins.toJSON extraEnv.${name}}")
           (builtins.attrNames extraEnv));
 
       seatbeltProfile = pkgs.writeText "${outName}-sandbox.sb" ''
@@ -374,6 +409,7 @@ let
           (literal "/private/etc/passwd")
           (literal "/private/etc/localtime")
           (literal "/private/etc/profile")
+          (literal "/private/etc/bashrc")
           (subpath "/private/etc/static")
           (literal "/private/etc/hosts"))
 
@@ -402,6 +438,9 @@ let
           (literal "/private/var/db")
           (literal "/Users")
           (literal (param "HOME"))
+          (subpath (param "HOME"))
+          (literal (param "REAL_HOME"))
+          (subpath (param "REAL_HOME"))
           (literal (param "HOME_LOCAL"))
           (literal (param "HOME_CACHE"))
           (literal (param "HOME_LOCAL_SHARE"))
@@ -424,6 +463,8 @@ let
 
     in pkgs.writeShellScriptBin outName ''
       CWD=$(pwd)
+
+      # Ensure stateDirs/stateFiles exist while HOME still points at real home
       ${mkDirsStr}
       ${mkFilesStr}
 
@@ -437,17 +478,35 @@ let
           REPO_ROOT_PARENT="/nonexistent-repo-root"
       fi
 
-      export HOME="$HOME"
-      export TERM="$TERM"
-      export SHELL="${pkgs.bash}/bin/bash"
-      export PATH="${pathStr}"
-      export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}"
-      export SSL_CERT_DIR="''${SSL_CERT_DIR:-/etc/ssl/certs}"
-      ${extraEnvStr}
-      export GIT_CONFIG_DIR="$HOME/.config/git"
-      export TMPDIR=/tmp
+      # Capture real HOME paths before redirecting
+      GIT_CONFIG_DIR="$HOME/.config/git"
 
-      exec /usr/bin/sandbox-exec \
+      # Resolve stateDirs/stateFiles paths while $HOME still points at real home
+      ${resolveStateDirsStr}
+      ${resolveStateFilesStr}
+
+      # Create an ephemeral HOME so subprocesses don't touch the real home.
+      # Lives under /tmp which is already allowed read-write in the profile.
+      REAL_HOME="$HOME"
+      SANDBOX_HOME=$(mktemp -d /tmp/sandbox-home.XXXXXX)
+      trap 'rm -rf "$SANDBOX_HOME"' EXIT
+
+      # Symlink state dirs/files into sandbox HOME so $HOME-relative lookups
+      # reach the real paths through the Seatbelt-allowed targets.
+      ${symlinkStateDirsStr}
+      ${symlinkStateFilesStr}
+
+      exec /usr/bin/env -i \
+        HOME="$SANDBOX_HOME" \
+        TERM="$TERM" \
+        SHELL="${pkgs.bash}/bin/bash" \
+        PATH="${pathStr}" \
+        SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" \
+        SSL_CERT_DIR="''${SSL_CERT_DIR:-/etc/ssl/certs}" \
+        GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
+        TMPDIR=/tmp \
+        ${extraEnvInlineStr} \
+        /usr/bin/sandbox-exec \
         -f ${seatbeltProfile} \
         -D CWD="$CWD" \
         -D GIT_DIR="$GIT_DIR_PARAM" \
@@ -455,11 +514,12 @@ let
         -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
         -D GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
         -D TMPDIR="/tmp" \
-        -D HOME="$HOME"  \
-        -D HOME_CACHE="$HOME/.cache" \
-        -D HOME_LOCAL="$HOME/.local" \
-        -D HOME_LOCAL_STATE="$HOME/.local/state" \
-        -D HOME_LOCAL_SHARE="$HOME/.local/share" ${stateDirFlags} ${stateFileFlags} \
+        -D HOME="$SANDBOX_HOME"  \
+        -D REAL_HOME="$REAL_HOME" \
+        -D HOME_CACHE="$SANDBOX_HOME/.cache" \
+        -D HOME_LOCAL="$SANDBOX_HOME/.local" \
+        -D HOME_LOCAL_STATE="$SANDBOX_HOME/.local/state" \
+        -D HOME_LOCAL_SHARE="$SANDBOX_HOME/.local/share" ${stateDirFlags} ${stateFileFlags} \
         ${pkg}/bin/${binName} "$@"
     '';
 
