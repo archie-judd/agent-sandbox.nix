@@ -6,7 +6,7 @@
 #   nix-shell debug/bash.shell.nix
 #
 # Once inside, try:
-#   ls $HOME                   # should show only your stateDirs
+#   ls $HOME                   # Linux: empty (ephemeral tmpfs). macOS: your real home (read-only).
 #   cat $HOME/.claude.json     # should work if in stateFiles
 #   ls /tmp                    # should be writable scratch space
 #   curl https://example.com   # network should be open
@@ -30,4 +30,3 @@ let
     extraEnv = { };
   };
 in pkgs.mkShell { packages = [ bash-sandboxed ]; }
-
