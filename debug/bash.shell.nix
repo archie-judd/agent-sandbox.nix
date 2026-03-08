@@ -30,3 +30,4 @@ let
     extraEnv = { };
   };
 in pkgs.mkShell { packages = [ bash-sandboxed ]; }
+

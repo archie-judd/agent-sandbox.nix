@@ -1,8 +1,10 @@
 # agent-sandbox.nix
 
-Lightweight and declarative sandboxing for AI coding agents on Linux (bubblewrap) and macOS (Seatbelt).
+Lightweight and declarative sandboxing for AI agents on Linux and macOS.
 
-Prevents agents in YOLO mode from reading your dotfiles, deleting your home directory, or touching anything outside the project. Network access is left open for API calls.
+Prevent your agents in YOLO mode from reading your dotfiles, accessing your SSH keys, deleting your $HOME or touching anything outside of the project. Network access is left unrestricted for API calls.
+
+The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux and sandbox-exec on macOS.
 
 ## What the sandbox allows
 
@@ -12,11 +14,15 @@ Prevents agents in YOLO mode from reading your dotfiles, deleting your home dire
 - Binaries from `allowedPackages`
 - `/nix/store` (read-only), `/tmp` (ephemeral), local git repo access (commits allowed; `git push` is blocked)
 
-Everything else is denied. `$HOME` is either an empty tmpfs (Linux) or inaccessible (macOS).
+Everything else is denied. `$HOME` is either an empty writable tmpfs (Linux) or read-only (macOS).
 
 ## Usage
 
+See [`examples/`](examples/) for ready-to-use templates. Authentication is covered [below](#authentication).
+
 ### In a flake
+
+Here is an example flake that provides a development shell with a sandboxed claude binary.
 
 ```nix
 {
@@ -27,17 +33,18 @@ Everything else is denied. `$HOME` is either an empty tmpfs (Linux) or inaccessi
     let
       forAllSystems = nixpkgs.lib.genAttrs [
         "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
         "aarch64-darwin"
       ];
     in {
-      packages = forAllSystems (system:
+      devShells = forAllSystems (system:
         let
           pkgs = import nixpkgs { system = system; };
-        in {
           claude-sandboxed = sandbox.lib.${system}.mkSandbox {
             pkg = pkgs.claude-code;
             binName = "claude";
-            outName = "claude-sandboxed";
+            outName = "claude-sandboxed"; # or whatever alias you'd like
             allowedPackages = [
               pkgs.coreutils
               pkgs.bash
@@ -53,24 +60,66 @@ Everything else is denied. `$HOME` is either an empty tmpfs (Linux) or inaccessi
             stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
             extraEnv = {
               CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
-              # Give the agent its own git identity so its commits are distinguishable from yours
               GIT_AUTHOR_NAME = "claude-agent";
               GIT_AUTHOR_EMAIL = "claude-agent@localhost";
               GIT_COMMITTER_NAME = "claude-agent";
               GIT_COMMITTER_EMAIL = "claude-agent@localhost";
             };
           };
+        in {
+          default = pkgs.mkShell {
+            packages = [ claude-sandboxed ];
+          };
         });
     };
 }
 ```
 
-See `checks` in `flake.nix` for a minimal working example that is evaluated by `nix flake check`.
+> Note: claude and most other AI CLI tools are not FOSS. You will need to set `NIXPKGS_ALLOW_UNFREE=1` and invoke the shell with `--impure`:
+> ```bash
+> NIXPKGS_ALLOW_UNFREE=1 nix develop --impure
+> ```
 
 ### In a shell.nix
 
-See [`examples/claude.shell.nix`](examples/claude.shell.nix) for a ready-to-use template. Copy it into your project and adjust as needed.
+Provides a nix shell with a sandboxed claude binary:
 
+```nix
+let
+  pkgs = import <nixpkgs> { config.allowUnfree = true; };
+  sandbox = import (fetchTarball
+    "https://github.com/archie-judd/agent-sandbox.nix/archive/main.tar.gz") {
+      pkgs = pkgs;
+    };
+  claude-sandboxed = sandbox.mkSandbox {
+    pkg = pkgs.claude-code;
+    binName = "claude";
+    outName = "claude-sandboxed"; # or whatever alias you'd like
+    allowedPackages = [
+      pkgs.coreutils
+      pkgs.bash
+      pkgs.git
+      pkgs.ripgrep
+      pkgs.fd
+      pkgs.gnused
+      pkgs.gnugrep
+      pkgs.findutils
+      pkgs.jq
+    ];
+    stateDirs = [ "$HOME/.claude" ];
+    stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
+    extraEnv = {
+      # Use literal strings for secrets to evaluate at runtime!
+      # builtins.getEnv will leak your token into the /nix/store.
+      CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
+      GIT_AUTHOR_NAME = "claude-agent";
+      GIT_AUTHOR_EMAIL = "claude-agent@localhost";
+      GIT_COMMITTER_NAME = "claude-agent";
+      GIT_COMMITTER_EMAIL = "claude-agent@localhost";
+    };
+  };
+in pkgs.mkShell { packages = [ claude-sandboxed ]; }
+```
 
 ## Arguments
 
@@ -78,7 +127,7 @@ See [`examples/claude.shell.nix`](examples/claude.shell.nix) for a ready-to-use 
 |---|---|---|
 | `pkg` | yes | Package containing the binary to wrap |
 | `binName` | yes | Name of the binary inside `pkg/bin/` |
-| `outName` | yes | Name for the resulting wrapped binary |
+| `outName` | yes | Name for the resulting wrapped binary and the command to invoke it with |
 | `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH |
 | `stateDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
 | `stateFiles` | no | Individual files the agent can read/write |
@@ -93,10 +142,10 @@ Export your token in the host terminal before launching the sandbox — tokens a
 
 ```bash
 # Claude Code
-export CLAUDE_CODE_OAUTH_TOKEN="your_token_here"
+export CLAUDE_CODE_OAUTH_TOKEN="<your_token_here>"
 
 # GitHub Copilot CLI
-export GITHUB_TOKEN="your_token_here"
+export GITHUB_TOKEN="<your_token_here>"
 
 ```
 
@@ -109,7 +158,7 @@ extraEnv = {
 };
 ```
 
-Alternatively, if you use sops, you set a command that will read the secret at runtime.
+Alternatively, if you store your secret in a file (for example if you use sops), you can set a command that will read the secret at runtime.
 
 ```nix
 extraEnv = {
@@ -132,6 +181,8 @@ uv needs access to its cache dirs via `stateDirs`, otherwise it will re-download
 
 ### Node.js with npm
 
+For Node, you can simply add the npm cache as a state-dir.
+
 ```nix
 allowedPackages = [ pkgs.nodejs pkgs.npm ];
 stateDirs = [ "$HOME/.npm" ]; # Allow npm cache
@@ -139,9 +190,9 @@ stateDirs = [ "$HOME/.npm" ]; # Allow npm cache
 
 ## Debugging
 
-If the agent fails with `EACCES` or `ENOENT`, the sandbox is likely blocking a path that needs to be added to `stateDirs` or `stateFiles`.
+If the agent fails to perform a tool call, or file read/write, the sandbox is likely blocking a path that needs to be added to `stateDirs` or `stateFiles`.
 
-**Both platforms:** the easiest way to explore the sandbox environment is to wrap `bash` itself with the same config as your agent and poke around interactively:
+The easiest way to explore the sandbox environment is to wrap `bash` itself with the same config as your agent and poke around interactively:
 
 ```nix
 bash-sandboxed = sandbox.mkSandbox {
@@ -157,33 +208,42 @@ bash-sandboxed = sandbox.mkSandbox {
 Running `bash-sandboxed` drops you into a shell with exactly the same filesystem view and restrictions your agent will see. Try:
 
 ```bash
-ls $HOME                   # should show only your stateDirs
-cat $HOME/.claude.json     # should work if in stateFiles
-ls /tmp                    # should be writable scratch space
-curl https://example.com   # network should be open
-which git                  # check allowedPackages are visible
-ls /some/other/path        # should fail — confirming the sandbox is active
+# Platform-independent
+touch /tmp/test && rm /tmp/test   # /tmp should be writable
+curl https://example.com          # network should be open
+which git                         # allowedPackages should be on PATH
+ls /some/other/path               # should fail — confirming sandbox is active
+
+# Linux: $HOME is an empty writable tmpfs (ephemeral, not persisted)
+ls $HOME                          # empty directory
+touch $HOME/.test && rm $HOME/.test  # writes allowed (but ephemeral)
+
+# macOS: $HOME is readable but writes are blocked (except stateDirs/stateFiles)
+ls $HOME                          # shows your real home contents (read-only)
+touch $HOME/.test                 # should fail — writes blocked
+echo test > $HOME/.claude.json    # should work if in stateFiles
+ls $HOME/.claude                  # should work if in stateDirs
 ```
 
 See [`debug/bash.shell.nix`](debug/bash.shell.nix) for a ready-to-use template.
 
-**Linux:** if you're still stuck, look at the error the agent reports — the path in the message is usually enough to identify the missing `stateDirs` or `stateFiles` entry. Paste your config and the error into an AI.
-
-**macOS:** after a failure, query the system log for sandbox denials:
+**macOS:** after a failure, you can query the system log for sandbox denials:
 ```bash
 log show --predicate 'eventMessage CONTAINS "deny"' --last 1m
 ```
-Each entry shows the denied operation and path, telling you exactly which `stateDirs` or `stateFiles` entry is missing.
+
+If you are unable to debug, or suspect the AI can't access a file or folder it should have access to by default, please raise an issue.
 
 ## Platform notes
 
 **Linux:** Uses bubblewrap to build a temporary, isolated environment. The agent is completely cut off from the host machine (unsharing PID, user, IPC, UTS, and cgroup namespaces) and cannot see your host processes.
 
-**macOS:** Uses `sandbox-exec` (Seatbelt) to enforce a strict "deny-default" security policy.
+**macOS:** Uses `sandbox-exec` to enforce a strict "deny-default" security policy.
 
 ## Caveats
 
 - **The network is fully open.** A compromised agent can exfiltrate any file it *can* read to a remote server.
-- **`sandbox-exec` is deprecated on macOS.** It remains the only native unprivileged sandboxing mechanism and currently works on macOS 15 (Sequoia) and older, but may break in a future release.
+- **`sandbox-exec` is deprecated on macOS.** It remains the only native unprivileged sandboxing mechanism and currently works on macOS 26 (Tahoe) and older, but may break in a future release.
 - **State directories dictate your safety.** The sandbox is only as safe as what you pass into `stateDirs`. Never add `$HOME`.
 - See the comments in `default.nix` for detailed debugging tips for each platform.
+- Tested on x86_64-linux and aarch64-darwin. Other architectures should work but are untested.

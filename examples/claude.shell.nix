@@ -2,7 +2,7 @@
 # Copy this into your project and adjust as needed.
 #
 # Usage:
-#   export CLAUDE_CODE_OAUTH_TOKEN="your_token_here"
+#   export CLAUDE_CODE_OAUTH_TOKEN="<your_token_here>"
 #   nix-shell examples/claude.shell.nix
 let
   pkgs = import <nixpkgs> { config.allowUnfree = true; };
