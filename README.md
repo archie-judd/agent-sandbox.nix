@@ -59,6 +59,8 @@ Here is an example flake that provides a development shell with a sandboxed clau
             stateDirs = [ "$HOME/.claude" ];
             stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
             extraEnv = {
+              # Use literal strings for secrets to evaluate at runtime!
+              # builtins.getEnv will leak your token into the /nix/store.
               CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
               # optionally provide the agent with a git identity to differentiate its commits from yours
               GIT_AUTHOR_NAME = "claude-agent";
