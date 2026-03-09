@@ -2,7 +2,7 @@
 
 Lightweight and declarative sandboxing for AI agents on Linux and macOS.
 
-Prevent your agents in YOLO mode from reading your dotfiles, accessing your SSH keys, deleting your $HOME or touching anything outside of the project.  Works with any CLI-based AI agent — Claude Code, Aider, GitHub Copilot CLI, and others. Network access is left unrestricted for API calls.
+Prevent your agents in YOLO mode from reading your dotfiles, accessing your SSH keys, deleting your $HOME or touching anything outside of the project.  Works with any CLI-based AI agent. Network access is left unrestricted for API calls.
 
 The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux and sandbox-exec on macOS.
 
@@ -12,6 +12,7 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 - Read/write explicitly declared state dirs and files
 - Network access (unrestricted)
 - Binaries from `allowedPackages`
+- Environment variables from extraEnv (host environment is cleared)
 - `/nix/store` (read-only), `/tmp` (ephemeral), local git repo access (commits allowed; `git push` is blocked)
 
 Everything else is denied. `$HOME` is an ephemeral writable tmpfs on both platforms.
@@ -142,9 +143,9 @@ in pkgs.mkShell { packages = [ claude-sandboxed ]; }
 
 ## Authentication
 
-Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys. **Interactive login flows (e.g. `claude /login`, `gh auth login`) will not work inside the sandbox.** You must authenticate via an environment variable token instead.
+Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys. Interactive login flows (e.g. `claude /login`, `gh auth login`) will not work inside the sandbox. You must authenticate via an environment variable token instead.
 
-Export your token in the host terminal before launching the sandbox — tokens are evaluated at runtime to prevent them from leaking into the world-readable Nix store:
+Export your token in the host terminal before launching the sandbox — tokens are evaluated at runtime to prevent them from leaking into the Nix store:
 
 ```bash
 # Claude Code
