@@ -6,20 +6,7 @@ OS=$(uname)
 
 source "$SCRIPT_DIR/lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link -E "
-  let
-    pkgs = import <nixpkgs> { };
-    sandbox = import $SCRIPT_DIR/../default.nix { inherit pkgs; };
-  in sandbox.mkSandbox {
-    pkg = pkgs.bash;
-    binName = \"bash\";
-    outName = \"sandboxed-bash\";
-    allowedPackages = [ pkgs.coreutils pkgs.bash ];
-    stateDirs = [ \"\\\$HOME/.test-state-dir\" ];
-    stateFiles = [ \"\\\$HOME/.test-state-file\" ];
-    extraEnv = { TEST_VAR = \"test-value\"; };
-  }
-")
+SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/basic-sandbox.nix")
 SHELL="$SANDBOXED/bin/sandboxed-bash"
 
 run() { "$SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
