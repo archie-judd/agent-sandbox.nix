@@ -91,16 +91,26 @@ let
           proxyEnvBubblewrapStr = ''
             --setenv HTTP_PROXY "http://127.0.0.1:$_PROXY_PORT" --setenv HTTPS_PROXY "http://127.0.0.1:$_PROXY_PORT" --setenv http_proxy "http://127.0.0.1:$_PROXY_PORT" --setenv https_proxy "http://127.0.0.1:$_PROXY_PORT"'';
           proxyStartupBashStr = ''
-            # Start the domain-filtering proxy and read its port from stdout
-            _PROXY_PORT_FILE=$(mktemp /tmp/sandbox-proxy-port.XXXXXX)
-            ${sandboxProxy}/bin/sandbox-proxy ${allowlistFileStr} > "$_PROXY_PORT_FILE" 2>>/tmp/sandbox-proxy.log &
+            # Start the domain-filtering proxy and read its port via FIFO
+            _PROXY_PORT_FIFO=$(mktemp -u /tmp/sandbox-proxy-port.XXXXXX)
+            mkfifo "$_PROXY_PORT_FIFO"
+            # Open FIFO read-write so neither side blocks waiting for the other
+            exec 3<> "$_PROXY_PORT_FIFO"
+            ${sandboxProxy}/bin/sandbox-proxy ${allowlistFileStr} > "$_PROXY_PORT_FIFO" 2>>/tmp/sandbox-proxy.log &
             _PROXY_PID=$!
-            for _i in $(seq 1 50); do
-              if [ -s "$_PROXY_PORT_FILE" ]; then break; fi
-              sleep 0.05
-            done
-            _PROXY_PORT=$(cat "$_PROXY_PORT_FILE")
-            rm -f "$_PROXY_PORT_FILE"
+            # Block until the proxy writes its port (or 5s timeout via background kill)
+            ( sleep 5 && kill -0 $$ 2>/dev/null && echo >&2 "ERROR: sandbox proxy timed out" && kill $$ ) &
+            _TIMEOUT_PID=$!
+            _PROXY_PORT=$(head -1 <&3)
+            exec 3<&-
+            kill $_TIMEOUT_PID 2>/dev/null
+            wait $_TIMEOUT_PID 2>/dev/null || true
+            rm -f "$_PROXY_PORT_FIFO"
+            if [ -z "$_PROXY_PORT" ]; then
+              echo "ERROR: sandbox proxy failed to start (check /tmp/sandbox-proxy.log)" >&2
+              kill $_PROXY_PID 2>/dev/null
+              exit 1
+            fi
           '';
           bashTrapCleanupStr = "trap 'kill $_PROXY_PID 2>/dev/null' EXIT";
           sandboxExecBashStr = "";
@@ -383,16 +393,26 @@ let
             (allow system-socket)
           '';
           proxyStartupBashStr = ''
-            # Start the domain-filtering proxy and read its port from stdout
-            _PROXY_PORT_FILE=$(mktemp /tmp/sandbox-proxy-port.XXXXXX)
-            ${sandboxProxy}/bin/sandbox-proxy ${allowlistFileStr} > "$_PROXY_PORT_FILE" 2>>/tmp/sandbox-proxy.log &
+            # Start the domain-filtering proxy and read its port via FIFO
+            _PROXY_PORT_FIFO=$(mktemp -u /tmp/sandbox-proxy-port.XXXXXX)
+            mkfifo "$_PROXY_PORT_FIFO"
+            # Open FIFO read-write so neither side blocks waiting for the other
+            exec 3<> "$_PROXY_PORT_FIFO"
+            ${sandboxProxy}/bin/sandbox-proxy ${allowlistFileStr} > "$_PROXY_PORT_FIFO" 2>>/tmp/sandbox-proxy.log &
             _PROXY_PID=$!
-            for _i in $(seq 1 50); do
-              if [ -s "$_PROXY_PORT_FILE" ]; then break; fi
-              sleep 0.05
-            done
-            _PROXY_PORT=$(cat "$_PROXY_PORT_FILE")
-            rm -f "$_PROXY_PORT_FILE"
+            # Block until the proxy writes its port (or 5s timeout via background kill)
+            ( sleep 5 && kill -0 $$ 2>/dev/null && echo >&2 "ERROR: sandbox proxy timed out" && kill $$ ) &
+            _TIMEOUT_PID=$!
+            _PROXY_PORT=$(head -1 <&3)
+            exec 3<&-
+            kill $_TIMEOUT_PID 2>/dev/null
+            wait $_TIMEOUT_PID 2>/dev/null || true
+            rm -f "$_PROXY_PORT_FIFO"
+            if [ -z "$_PROXY_PORT" ]; then
+              echo "ERROR: sandbox proxy failed to start (check /tmp/sandbox-proxy.log)" >&2
+              kill $_PROXY_PID 2>/dev/null
+              exit 1
+            fi
           '';
           bashTrapCleanupStr = ''
             trap 'kill $_PROXY_PID 2>/dev/null; rm -rf "$SANDBOX_HOME"' EXIT'';
