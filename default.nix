@@ -553,7 +553,6 @@ let
           (literal (param "HOME"))
           (subpath (param "HOME"))
           (literal (param "REAL_HOME"))
-          (subpath (param "REAL_HOME"))
           (literal (param "HOME_LOCAL"))
           (literal (param "HOME_CACHE"))
           (literal (param "HOME_LOCAL_SHARE"))
