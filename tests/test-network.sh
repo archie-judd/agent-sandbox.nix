@@ -58,5 +58,16 @@ else
 	PASS=$((PASS + 1))
 fi
 
+# Test 5 (Linux only): DNS resolution is blocked when restrictNetwork=true
+if [ "$OS" = "Linux" ]; then
+	if run_block 'getent hosts example.com'; then
+		echo "FAIL: DNS resolution should be blocked when restrictNetwork=true"
+		FAIL=$((FAIL + 1))
+	else
+		echo "PASS: DNS resolution is blocked when restrictNetwork=true"
+		PASS=$((PASS + 1))
+	fi
+fi
+
 print_results
 exit_status
