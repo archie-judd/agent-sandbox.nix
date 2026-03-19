@@ -64,6 +64,7 @@ Here is an example flake that provides a development shell with a sandboxed clau
               # Use literal strings for secrets to evaluate at runtime!
               # builtins.getEnv will leak your token into the /nix/store.
               CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
+              GITHUB_TOKEN = "$GITHUB_TOKEN";
             };
           };
         in {
