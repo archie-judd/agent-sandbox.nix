@@ -43,6 +43,7 @@
               # Use literal strings for secrets to evaluate at runtime!
               # builtins.getEnv will leak your token into the /nix/store.
               CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
+              GITHUB_TOKEN = "$GITHUB_TOKEN";
               GIT_AUTHOR_NAME = "claude-agent";
               GIT_AUTHOR_EMAIL = "claude-agent@localhost";
               GIT_COMMITTER_NAME = "claude-agent";

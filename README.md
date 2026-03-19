@@ -223,7 +223,7 @@ extraEnv = {
 
 > **Tested agents:** `claude-code` and `copilot-cli`. Other agents should work as long as they support token-based auth via an environment variable.
 
-> **Warning:** Git pushes are also blocked as a side effect of masking `$HOME` — the agent has no access to your `~/.ssh` keys. The only exception is if you have a plaintext access token hardcoded directly into your project's `.git/config` remote URL, or if you explicitly pass `GITHUB_TOKEN` in `extraEnv`.
+> **Warning:** Git pushes are also blocked as a side effect of masking `$HOME` — the agent has no access to your `~/.ssh` keys. When `restrictNetwork = true`, SSH is also blocked at the network level — not just because keys are inaccessible, but because the proxy only handles HTTP/HTTPS traffic. The only exception is if you have a plaintext access token hardcoded directly into your project's `.git/config` remote URL, or if you explicitly pass `GITHUB_TOKEN` in `extraEnv`.
 
 ## Common Patterns / Recipes
 
@@ -316,7 +316,7 @@ If you are unable to debug, or suspect the AI can't access a file or folder it s
 
 When `restrictNetwork = true`, network connections are routed through a localhost proxy that filters requests by domain. The proxy checks the target hostname against `allowedDomains`.
 
-> **Note**: On Linux, Bubblewrap uses `--share-net` even when `restrictNetwork=true`, so apps that ignore `HTTP_PROXY`/`HTTPS_PROXY` or make direct TCP/UDP connections can bypass filtering. This is a known limitation.
+> **Note**: SSH-based git remotes (e.g. `git@github.com:...`) will not work when `restrictNetwork = true`. The proxy only handles HTTP/HTTPS traffic. On macOS, outbound connections are limited to localhost, so SSH is blocked entirely. On Linux, SSH may bypass the proxy but will fail DNS resolution since `/etc/resolv.conf` is nulled out. If your agent needs to interact with a remote, use HTTPS remotes and pass an access token via `extraEnv`.
 
 Blocked requests are logged to `/tmp/sandbox-proxy.log`.
 

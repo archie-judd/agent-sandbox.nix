@@ -45,6 +45,7 @@ let
 
   commonEnv = {
     CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
+    GITHUB_TOKEN = "$GITHUB_TOKEN";
     GIT_AUTHOR_NAME = "claude-agent";
     GIT_AUTHOR_EMAIL = "claude-agent@localhost";
     GIT_COMMITTER_NAME = "claude-agent";

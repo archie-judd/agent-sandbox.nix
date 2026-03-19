@@ -114,6 +114,8 @@ let
           '';
           bashTrapCleanupStr = "trap 'kill $_PROXY_PID 2>/dev/null' EXIT";
           sandboxExecBashStr = "";
+          etcResolvBind =
+            "--ro-bind /dev/null /etc/resolv.conf"; # Block DNS resolution when restrictNetwork is true.
         }
       else {
         warnIgnoredDomainsBashStr = if (allowedDomains != [ ]) then ''
@@ -124,6 +126,8 @@ let
         proxyStartupBashStr = "";
         bashTrapCleanupStr = "";
         sandboxExecBashStr = "exec ";
+        etcResolvBind =
+          "--ro-bind /etc/resolv.conf /etc/resolv.conf"; # Normal DNS resolution when restrictNetwork is false.
 
       };
 
@@ -139,9 +143,9 @@ let
       ${conditionalNetworkingParams.proxyStartupBashStr}
       ${conditionalNetworkingParams.bashTrapCleanupStr}
       ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.bubblewrap}/bin/bwrap \
+        ${conditionalNetworkingParams.etcResolvBind} \
         --ro-bind /nix /nix \
         --ro-bind /etc/passwd /etc/passwd \
-        --ro-bind /etc/resolv.conf /etc/resolv.conf \
         --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
         --ro-bind-try /etc/static /etc/static \
         --ro-bind-try /etc/pki /etc/pki \
