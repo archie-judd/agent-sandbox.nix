@@ -174,6 +174,8 @@ By default, network access is unrestricted. But you can optionally restrict conn
 
 `allowedDomains` are suffix-matched, so "anthropic.com" will capture all *.anthropic.com domains.
 
+When `restrictNetwork = true`, network connections are routed through a localhost proxy that filters requests by domain. The proxy checks the target hostname against `allowedDomains`. Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
+
 ## Arguments
 
 | Argument | Required | Description |
@@ -319,14 +321,6 @@ If you are unable to debug, or suspect the AI can't access a file or folder it s
 **Linux:** Uses bubblewrap to build a temporary, isolated environment. The agent is completely cut off from the host machine (unsharing PID, user, IPC, UTS, and cgroup namespaces) and cannot see your host processes.
 
 **macOS:** Uses `sandbox-exec` to enforce a strict "deny-default" security policy.
-
-## How network restrictions work
-
-When `restrictNetwork = true`, network connections are routed through a localhost proxy that filters requests by domain. The proxy checks the target hostname against `allowedDomains`.
-
-> **Note**: See [Git](#git) for limitations on SSH-based remotes.
-
-Blocked requests are logged to `/tmp/sandbox-proxy.log`.
 
 ## Caveats
 
