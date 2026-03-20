@@ -13,7 +13,7 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 - Optionally restrict network access to particular domains
 - Binaries from `allowedPackages`
 - Environment variables from extraEnv (host environment is cleared)
-- `/nix/store` (read-only), `/tmp` (ephemeral), local git repo access (commits allowed; `git push` is blocked)
+- `/nix/store` paths in the closure of `pkg` and `allowedPackages` (read-only; the rest of the store is hidden), `/tmp` (ephemeral), local git repo access
 
 Everything else is denied. `$HOME` is an ephemeral writable tmpfs on both platforms.
 

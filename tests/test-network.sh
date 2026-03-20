@@ -12,61 +12,36 @@ echo
 # Build a sandbox with restrictNetwork=true and one allowed domain
 SANDBOXED_NET=$(nix-build --no-out-link "$SCRIPT_DIR/network-allowed.nix")
 NET_SHELL="$SANDBOXED_NET/bin/sandboxed-bash-net"
-run_net() { "$NET_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { "$NET_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
 
 # Test 1: allowed domain works
-if run_net 'curl -sf --max-time 10 -o /dev/null http://httpbin.org/get'; then
-	echo "PASS: allowed domain (httpbin.org) reachable"
-	PASS=$((PASS + 1))
-else
-	echo "FAIL: allowed domain (httpbin.org) should be reachable"
-	FAIL=$((FAIL + 1))
-fi
+expect_ok "allowed domain (httpbin.org) reachable" \
+	'curl -sf --max-time 10 -o /dev/null http://httpbin.org/get'
 
 # Test 2: blocked domain fails
-if run_net 'curl -sf --max-time 10 -o /dev/null http://example.com'; then
-	echo "FAIL: blocked domain (example.com) should be denied"
-	FAIL=$((FAIL + 1))
-else
-	echo "PASS: blocked domain (example.com) denied"
-	PASS=$((PASS + 1))
-fi
+expect_fail "blocked domain (example.com) denied" \
+	'curl -sf --max-time 10 -o /dev/null http://example.com'
 
 # Test 3: unrestricted mode still works
 SANDBOXED_UNRES=$(nix-build --no-out-link "$SCRIPT_DIR/network-unrestricted.nix")
 UNRES_SHELL="$SANDBOXED_UNRES/bin/sandboxed-bash-unres"
-run_unres() { "$UNRES_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { "$UNRES_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
 
-if run_unres 'curl -s --max-time 10 -o /dev/null http://example.com'; then
-	echo "PASS: unrestricted mode can reach any domain"
-	PASS=$((PASS + 1))
-else
-	echo "FAIL: unrestricted mode should reach any domain"
-	FAIL=$((FAIL + 1))
-fi
+expect_ok "unrestricted mode can reach any domain" \
+	'curl -s --max-time 10 -o /dev/null http://example.com'
 
 # Test 4: empty allowlist blocks everything
 SANDBOXED_BLOCK=$(nix-build --no-out-link "$SCRIPT_DIR/network-blocked.nix")
 BLOCK_SHELL="$SANDBOXED_BLOCK/bin/sandboxed-bash-block"
-run_block() { "$BLOCK_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { "$BLOCK_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
 
-if run_block 'curl -sf --max-time 10 -o /dev/null http://example.com'; then
-	echo "FAIL: empty allowlist should block all domains"
-	FAIL=$((FAIL + 1))
-else
-	echo "PASS: empty allowlist blocks all domains"
-	PASS=$((PASS + 1))
-fi
+expect_fail "empty allowlist blocks all domains" \
+	'curl -sf --max-time 10 -o /dev/null http://example.com'
 
 # Test 5 (Linux only): DNS resolution is blocked when restrictNetwork=true
 if [ "$OS" = "Linux" ]; then
-	if run_block 'getent hosts example.com'; then
-		echo "FAIL: DNS resolution should be blocked when restrictNetwork=true"
-		FAIL=$((FAIL + 1))
-	else
-		echo "PASS: DNS resolution is blocked when restrictNetwork=true"
-		PASS=$((PASS + 1))
-	fi
+	expect_fail "DNS resolution blocked when restrictNetwork=true" \
+		'getent hosts example.com'
 fi
 
 print_results
