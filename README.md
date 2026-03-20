@@ -224,25 +224,31 @@ extraEnv = {
 
 > **Tested agents:** `claude-code` and `copilot-cli`. Other agents should work as long as they support token-based auth via an environment variable.
 
-> **Note:** See [How network restrictions work](#how-network-restrictions-work) for limitations on SSH-based git remotes.
+## Git
 
+The sandbox allows access to the local git directory, including from within worktrees. Committing, switching branches and other local operations are allowed without any extra configuration.
 
-## Common Patterns / Recipes
+### Remote access (push / pull / fetch)
+
+Interacting with remotes requires authentication. The recommended approach is to use HTTPS rather than SSH based remotes. The simplest way to authenticate is by passing a token via `extraEnv` (e.g. `GITHUB_TOKEN`), but you can also configure a [git credential helper](https://git-scm.com/doc/credential-helpers) to store your token for reuse so you don't have to pass it via environment variable.
+
+SSH based remotes (e.g. `git@github.com:...`) won't work by default — SSH keys are not accessible because `$HOME` is masked, and when `restrictNetwork = true` the proxy only handles HTTP/HTTPS so SSH traffic is blocked entirely. You can expose your SSH directory via `stateDirs` (e.g. `$HOME/.ssh`) and set `restrictNetwork = false` to enable SSH based git remotes, but this is not recommended. 
 
 ### Git identity
 
-To give the agent its own git identity, you can pass in the following environment variables. E.g., for copilot:
+To give the agent its own git identity, pass the following environment variables via `extraEnv`. E.g., for copilot:
 
 ```nix
     extraEnv = {
       ...
-      GIT_AUTHOR_NAME = "copilot-agent";
-      GIT_AUTHOR_EMAIL = "copilot-agent@localhost";
-      GIT_COMMITTER_NAME = "copilot-agent";
-      GIT_COMMITTER_EMAIL = "copilot-agent@localhost";
+      GIT_AUTHOR_NAME = "copilot";
+      GIT_AUTHOR_EMAIL = "copilot@localhost";
+      GIT_COMMITTER_NAME = "copilot";
+      GIT_COMMITTER_EMAIL = "copilot@localhost";
     };
 ```
 
+## Common Patterns / Recipes
 
 ### Python with uv
 
@@ -318,7 +324,7 @@ If you are unable to debug, or suspect the AI can't access a file or folder it s
 
 When `restrictNetwork = true`, network connections are routed through a localhost proxy that filters requests by domain. The proxy checks the target hostname against `allowedDomains`.
 
-> **Note**: SSH-based git remotes (e.g. git@github.com:...) will not work when restrictNetwork = true. The proxy only handles HTTP/HTTPS traffic. If your agent needs to interact with a remote, use HTTPS remotes and pass an access token via extraEnv.
+> **Note**: See [Git](#git) for limitations on SSH-based remotes.
 
 Blocked requests are logged to `/tmp/sandbox-proxy.log`.
 
