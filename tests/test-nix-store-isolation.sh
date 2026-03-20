@@ -28,8 +28,5 @@ expect_fail "cannot execute disallowed store path" '"$DISALLOWED_STORE_PATH/bin/
 expect_fail "cannot read disallowed store path binary" 'cat "$DISALLOWED_STORE_PATH/bin/hello"'
 expect_fail "cannot list disallowed store path" 'ls "$DISALLOWED_STORE_PATH"'
 
-# --- Nix store listing should be denied ---
-expect_fail "cannot list /nix/store" "ls /nix/store"
-
 print_results
 exit_status

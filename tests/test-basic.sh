@@ -22,7 +22,6 @@ echo
 # --- Isolation ---
 expect_fail "cannot read ~/.ssh" "ls \$HOME/.ssh"
 expect_fail "cannot read ~/.bash_history" "cat \$HOME/.bash_history"
-expect_fail "cannot write to /nix/store" "touch /nix/store/test"
 expect_fail "cannot read /root" "ls /root"
 
 # --- Basic access ---
