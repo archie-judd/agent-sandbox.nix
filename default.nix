@@ -11,7 +11,8 @@ let
        ## Filesystem layout inside the sandbox
 
          Read-only bind mounts:
-           /nix    — so the wrapped binary and its deps are available
+           /nix/store/<hash>-... — only the closure of allowedPackages
+                     and pkg, not the entire nix store
            /etc/passwd   — user identity for programs that need it
            /etc/resolv.conf — DNS resolution
            /etc/ssl/certs   — TLS certificate verification
@@ -131,6 +132,8 @@ let
 
       };
 
+      closurePathsFile = pkgs.writeClosure (allowedPackages ++ [ pkg ]);
+
     in pkgs.writeShellScriptBin outName ''
       CWD=$(pwd)
       ${conditionalNetworkingParams.warnIgnoredDomainsBashStr}
@@ -140,11 +143,19 @@ let
       if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
         GIT_BIND="--bind $GIT_DIR $GIT_DIR"
       fi
+
+      # Build per-path ro-bind flags for the nix store closure
+      CLOSURE_BINDS=""
+      while IFS= read -r storePath; do
+        CLOSURE_BINDS="$CLOSURE_BINDS --ro-bind $storePath $storePath"
+      done < ${closurePathsFile}
+
       ${conditionalNetworkingParams.proxyStartupBashStr}
       ${conditionalNetworkingParams.bashTrapCleanupStr}
       ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.bubblewrap}/bin/bwrap \
         ${conditionalNetworkingParams.etcResolvBind} \
-        --ro-bind /nix /nix \
+        --tmpfs /nix/store \
+        $CLOSURE_BINDS \
         --ro-bind /etc/passwd /etc/passwd \
         --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
         --ro-bind-try /etc/static /etc/static \
@@ -222,7 +233,9 @@ let
          These are read-only. Without them, almost nothing runs on macOS.
 
        Nix store:
-         /nix — read-only. All packages and their dependencies live here.
+         Only the closure of allowedPackages and pkg is readable/executable.
+         Individual store paths are allowed via per-path rules generated at
+         Nix build time (not the entire /nix tree).
 
        DNS / TLS / identity:
          /etc/resolv.conf (and /private/etc/resolv.conf — macOS uses
@@ -440,7 +453,13 @@ let
 
       };
 
-      seatbeltProfile = pkgs.writeText "${outName}-sandbox.sb" ''
+      closurePathsFile = pkgs.writeClosure (allowedPackages ++ [ pkg ]);
+
+      # Static seatbelt rules that don't depend on the closure — evaluated at
+      # Nix eval time so that Nix interpolations (conditionalNetworkingParams,
+      # seatbeltAllowReadWriteExec, etc.) are resolved before being embedded
+      # into the runCommand builder.
+      seatbeltStaticRules = ''
         (version 1)
         (deny default)
 
@@ -449,8 +468,7 @@ let
         (allow signal)
         (allow sysctl-read)
 
-        ;; Process execution
-        (allow process-exec (subpath "/nix"))
+        ;; Process execution — per-store-path rules are appended by the builder
         (allow process-exec (subpath (param "CWD")))
         (allow process-exec (literal "/bin/sh"))
         (allow process-exec (literal "/bin/bash"))
@@ -511,9 +529,6 @@ let
           (subpath "/System")
           (subpath "/Library/Preferences"))
 
-        ;; Nix store (read-only)
-        (allow file-read* (subpath "/nix"))
-
         ;; DNS, TLS & name resolution
         (allow file-read*
           (literal "/private/etc/resolv.conf")
@@ -527,7 +542,7 @@ let
           (literal "/private/etc/hosts"))
 
         ;; Security framework — system keychains & trust databases
-        (allow file-read* 
+        (allow file-read*
           (subpath "/private/var/db/mds")
           (subpath "/Library/Keychains")
           (literal "/private/var/run/systemkeychaincheck.done"))
@@ -538,6 +553,12 @@ let
           (subpath "/private/tmp")
           (subpath (param "TMPDIR"))
           (subpath "/private/var/folders"))
+
+        ;; Nix store — allow stat() but not readdir(), so path resolution
+        ;; works without leaking the full store listing
+        (allow file-read-metadata
+          (literal "/nix")
+          (literal "/nix/store"))
 
         ;; Filesystem traversal — stat() on parent dirs for path resolution
         (allow file-read*
@@ -570,7 +591,24 @@ let
 
         ;; Explicit state directories & files
         ${seatbeltAllowReadWriteExec}
-        ${seatbeltAllowFiles};
+        ${seatbeltAllowFiles}
+      '';
+
+      seatbeltProfile = pkgs.runCommand "${outName}-sandbox.sb" {
+        closurePaths = closurePathsFile;
+        staticRules = seatbeltStaticRules;
+      } ''
+        {
+          echo "$staticRules"
+
+          echo ""
+          echo "    ;; Nix store — only closure of allowed packages"
+
+          while IFS= read -r storePath; do
+            echo "    (allow file-read* (subpath \"$storePath\"))"
+            echo "    (allow process-exec (subpath \"$storePath\"))"
+          done < "$closurePaths"
+        } > $out
       '';
 
     in pkgs.writeShellScriptBin outName ''
