@@ -28,7 +28,7 @@
               pkgs.coreutils
               pkgs.which
               pkgs.curl
-              pkgs.bash
+              pkgs.bashNonInteractive
               pkgs.git
               pkgs.ripgrep
               pkgs.fd

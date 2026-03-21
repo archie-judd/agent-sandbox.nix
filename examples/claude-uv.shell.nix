@@ -31,7 +31,7 @@ let
   commonPackages = [
     pkgs.coreutils
     pkgs.which
-    pkgs.bash
+    pkgs.bashNonInteractive
     pkgs.git
     pkgs.ripgrep
     pkgs.fd

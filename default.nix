@@ -336,15 +336,14 @@ let
     , stateFiles ? [ ], extraEnv ? { }, restrictNetwork ? false
     , allowedDomains ? [ ] }:
     let
-      wrapBash = packages:
-        map (pkg:
-          if pkg.pname or "" == "bash" then
-            pkgs.writeShellScriptBin "bash" ''
-              exec ${pkg}/bin/bash --norc --noprofile "$@"
-            ''
-          else
-            pkg) packages;
-      pathStr = pkgs.lib.makeBinPath (wrapBash allowedPackages);
+      pathStr = pkgs.lib.makeBinPath allowedPackages;
+
+      warnBashInteractive =
+        if builtins.any (pkg: pkg.pname or "" == "bash-interactive") allowedPackages then ''
+          echo "WARNING: bash-interactive will try to load profile files that may access" >&2
+          echo "         paths outside the nix store closure. Use pkgs.bashNonInteractive instead." >&2
+        '' else "";
+
       # Generate indexed param names
       stateDirParams = builtins.genList (i: {
         name = "STATE_DIR_${toString i}";
@@ -628,6 +627,7 @@ let
     in pkgs.writeShellScriptBin outName ''
       CWD=$(pwd)
       ${conditionalNetworkingParams.warnIgnoredDomainsBashStr}
+      ${warnBashInteractive}
 
       # Ensure stateDirs/stateFiles exist while HOME still points at real home
       ${mkDirsStr}

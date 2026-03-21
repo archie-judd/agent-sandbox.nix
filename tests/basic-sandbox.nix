@@ -3,10 +3,10 @@ let
   pkgs = import <nixpkgs> { };
   sandbox = import ../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
-  pkg = pkgs.bash;
+  pkg = pkgs.bashNonInteractive;
   binName = "bash";
   outName = "sandboxed-bash";
-  allowedPackages = [ pkgs.coreutils pkgs.bash ];
+  allowedPackages = [ pkgs.coreutils pkgs.bashNonInteractive ];
   stateDirs = [ "$HOME/.test-state-dir" ];
   stateFiles = [ "$HOME/.test-state-file" ];
   extraEnv = { TEST_VAR = "test-value"; };

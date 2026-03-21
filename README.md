@@ -49,7 +49,7 @@ Here is an example flake that provides a development shell with a sandboxed clau
             allowedPackages = [
               pkgs.coreutils
               pkgs.which
-              pkgs.bash
+              pkgs.bashNonInteractive
               pkgs.git
               pkgs.ripgrep
               pkgs.fd
@@ -76,7 +76,9 @@ Here is an example flake that provides a development shell with a sandboxed clau
 }
 ```
 
-Copy the above flake and adjust it to your needs. 
+Copy the above flake and adjust it to your needs.
+
+> **macOS users**: Use `pkgs.bashNonInteractive` instead of `pkgs.bash` in `allowedPackages`. Interactive bash tries to load profile files (`~/.bash_profile`, `/etc/profile`) that may reference nix store paths outside the sandbox's closure, causing errors. You'll see a warning if you use `pkgs.bash` on macOS.
 
 > **Note**: claude and most other AI CLI tools are not FOSS. You will need to set `NIXPKGS_ALLOW_UNFREE=1` and invoke the shell with `--impure`:
 
@@ -115,7 +117,7 @@ let
     allowedPackages = [
       pkgs.coreutils
       pkgs.which
-      pkgs.bash
+      pkgs.bashNonInteractive
       pkgs.git
       pkgs.ripgrep
       pkgs.fd
@@ -135,7 +137,9 @@ let
 in pkgs.mkShell { packages = [ copilot-sandboxed ]; }
 ```
 
-Copy the above shell and adjust it to your needs. 
+Copy the above shell and adjust it to your needs.
+
+> **macOS users**: Use `pkgs.bashNonInteractive` instead of `pkgs.bash` in `allowedPackages`. Interactive bash tries to load profile files (`~/.bash_profile`, `/etc/profile`) that may reference nix store paths outside the sandbox's closure, causing errors. You'll see a warning if you use `pkgs.bash` on macOS.
 
 You can enter a dev shell with the sandboxed binary with:
 
@@ -274,11 +278,11 @@ The easiest way to explore the sandbox environment is to wrap `bash` itself with
 ```nix
 # mirror your agent's config
 bash-sandboxed = sandbox.mkSandbox {
-  pkg = pkgs.bash;
+  pkg = pkgs.bashNonInteractive;
   binName = "bash";
   outName = "bash-sandboxed";
-  allowedPackages = [ pkgs.coreutils pkgs.bash ];
-  stateDirs = [ "$HOME/.claude" ];  
+  allowedPackages = [ pkgs.coreutils pkgs.bashNonInteractive ];
+  stateDirs = [ "$HOME/.claude" ];
   stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
   restrictNetwork = true;
   allowedDomains = [ "httpbin.org" ];
