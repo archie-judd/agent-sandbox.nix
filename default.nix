@@ -1,6 +1,19 @@
 { pkgs }:
 let
   sandboxProxy = import ./proxy { pkgs = pkgs; };
+  # Wrapper that forces --norc --noprofile on every bash invocation.
+  # Newer claude-code versions spawn bash as a login/interactive shell,
+  # which causes it to source /etc/bashrc and /etc/profile. This wrapper
+  # intercepts any bash call (whether via SHELL, /bin/sh, or direct exec)
+  # and strips that behaviour regardless of how the caller invokes it.
+  bashWrapper = pkgs.runCommand "bash-norc" {
+    nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
+  } ''
+    mkdir -p $out/bin
+    makeBinaryWrapper ${pkgs.bashNonInteractive}/bin/bash $out/bin/bash \
+      --add-flags "--norc" \
+      --add-flags "--noprofile"
+  '';
   /* mkLinuxSandbox — wraps a binary in a bubblewrap (bwrap) container.
 
        Bubblewrap creates a lightweight Linux namespace sandbox. It builds an
@@ -71,7 +84,8 @@ let
     , stateFiles ? [ ], extraEnv ? { }, restrictNetwork ? false
     , allowedDomains ? [ ] }:
     let
-      pathStr = pkgs.lib.makeBinPath allowedPackages;
+      implicitPackages = [ pkgs.cacert bashWrapper ];
+      pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
       mkDirsStr = builtins.concatStringsSep "\n"
         (map (dir: ''mkdir -p "${dir}"'') stateDirs);
       mkFilesStr = builtins.concatStringsSep "\n"
@@ -132,63 +146,72 @@ let
 
       };
 
-      # cacert is always included so SSL/TLS verification works even if nothing
-      # in allowedPackages or pkg explicitly depends on it.
+      # cacert and bashWrapper are always included: cacert so SSL/TLS
+      # verification works, bashWrapper so the hardcoded SHELL and
+      # /bin/sh symlink targets are always reachable in the store closure.
+      # bashWrapper forces --norc --noprofile on every bash invocation so
+      # that the sandboxed process cannot source /etc/bashrc or /etc/profile.
       closurePathsFile =
-        pkgs.writeClosure (allowedPackages ++ [ pkg pkgs.cacert ]);
+        pkgs.writeClosure (allowedPackages ++ implicitPackages ++ [ pkg ]);
 
-    in pkgs.writeShellScriptBin outName ''
-      CWD=$(pwd)
-      ${conditionalNetworkingParams.warnIgnoredDomainsBashStr}
-      ${mkDirsStr}
-      ${mkFilesStr}
-      GIT_BIND=""
-      if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
-        GIT_BIND="--bind $GIT_DIR $GIT_DIR"
-      fi
+    in pkgs.writeTextFile {
+      name = outName;
+      executable = true;
+      destination = "/bin/${outName}";
+      text = ''
+        #!${pkgs.bashNonInteractive}/bin/bash
+        CWD=$(pwd)
+        ${conditionalNetworkingParams.warnIgnoredDomainsBashStr}
+        ${mkDirsStr}
+        ${mkFilesStr}
+        GIT_BIND=""
+        if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+          GIT_BIND="--bind $GIT_DIR $GIT_DIR"
+        fi
 
-      # Build per-path ro-bind flags for the nix store closure
-      CLOSURE_BINDS=""
-      while IFS= read -r storePath; do
-        CLOSURE_BINDS="$CLOSURE_BINDS --ro-bind $storePath $storePath"
-      done < ${closurePathsFile}
+        # Build per-path ro-bind flags for the nix store closure
+        CLOSURE_BINDS=""
+        while IFS= read -r storePath; do
+          CLOSURE_BINDS="$CLOSURE_BINDS --ro-bind $storePath $storePath"
+        done < ${closurePathsFile}
 
-      ${conditionalNetworkingParams.proxyStartupBashStr}
-      ${conditionalNetworkingParams.bashTrapCleanupStr}
-      ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.bubblewrap}/bin/bwrap \
-        ${conditionalNetworkingParams.etcResolvBind} \
-        --tmpfs /nix/store \
-        $CLOSURE_BINDS \
-        --ro-bind /etc/passwd /etc/passwd \
-        --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
-        --ro-bind-try /etc/static /etc/static \
-        --ro-bind-try /etc/pki /etc/pki \
-        --proc /proc \
-        --dev /dev \
-        --tmpfs /tmp \
-        --tmpfs "$HOME" \
-        --bind "$CWD" "$CWD" \
-        ${bindDirsStr} \
-        ${bindFilesStr} \
-        $GIT_BIND \
-        --symlink ${pkgs.bash}/bin/bash /bin/sh \
-        --unshare-all \
-        --share-net \
-        --die-with-parent \
-        --chdir "$CWD" \
-        --clearenv \
-        --setenv HOME "$HOME" \
-        --setenv TERM "$TERM" \
-        --setenv SHELL "${pkgs.bash}/bin/bash" \
-        --setenv PATH "${pathStr}" \
-        --setenv SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
-        --setenv SSL_CERT_DIR "${pkgs.cacert}/etc/ssl/certs" \
-        --setenv NIX_SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
-        --setenv TMPDIR /tmp \
-        ${conditionalNetworkingParams.proxyEnvBubblewrapStr} \
-        ${extraEnvStr} \
-        ${pkg}/bin/${binName} "$@"
-    '';
+        ${conditionalNetworkingParams.proxyStartupBashStr}
+        ${conditionalNetworkingParams.bashTrapCleanupStr}
+        ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.bubblewrap}/bin/bwrap \
+          ${conditionalNetworkingParams.etcResolvBind} \
+          --tmpfs /nix/store \
+          $CLOSURE_BINDS \
+          --ro-bind /etc/passwd /etc/passwd \
+          --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
+          --ro-bind-try /etc/static /etc/static \
+          --ro-bind-try /etc/pki /etc/pki \
+          --proc /proc \
+          --dev /dev \
+          --tmpfs /tmp \
+          --tmpfs "$HOME" \
+          --bind "$CWD" "$CWD" \
+          ${bindDirsStr} \
+          ${bindFilesStr} \
+          $GIT_BIND \
+          --symlink ${bashWrapper}/bin/bash /bin/sh \
+          --unshare-all \
+          --share-net \
+          --die-with-parent \
+          --chdir "$CWD" \
+          --clearenv \
+          --setenv HOME "$HOME" \
+          --setenv TERM "$TERM" \
+          --setenv SHELL "${bashWrapper}/bin/bash" \
+          --setenv PATH "${pathStr}" \
+          --setenv SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
+          --setenv SSL_CERT_DIR "${pkgs.cacert}/etc/ssl/certs" \
+          --setenv NIX_SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
+          --setenv TMPDIR /tmp \
+          ${conditionalNetworkingParams.proxyEnvBubblewrapStr} \
+          ${extraEnvStr} \
+          ${pkg}/bin/${binName} "$@"
+      '';
+    };
   /* mkDarwinSandbox — wraps a binary using macOS Seatbelt (sandbox-exec).
 
      Seatbelt uses a deny-default policy: everything is forbidden unless an
@@ -336,13 +359,17 @@ let
     , stateFiles ? [ ], extraEnv ? { }, restrictNetwork ? false
     , allowedDomains ? [ ] }:
     let
-      pathStr = pkgs.lib.makeBinPath allowedPackages;
+      implicitPackages = [ pkgs.cacert bashWrapper ];
+      pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
 
       warnBashInteractive =
-        if builtins.any (pkg: pkg.pname or "" == "bash-interactive") allowedPackages then ''
-          echo "WARNING: bash-interactive will try to load profile files that may access" >&2
-          echo "         paths outside the nix store closure. Use pkgs.bashNonInteractive instead." >&2
-        '' else "";
+        if builtins.any (p: p.pname or "" == "bash-interactive")
+        allowedPackages then ''
+          echo "WARNING: bash-interactive will try to load profile files" >&2
+          echo "         that may access paths outside the nix store closure." >&2
+          echo "         Use pkgs.bashNonInteractive instead." >&2
+        '' else
+          "";
 
       # Generate indexed param names
       stateDirParams = builtins.genList (i: {
@@ -463,10 +490,13 @@ let
 
       };
 
-      # cacert is always included so SSL/TLS verification works even if nothing
-      # in allowedPackages or pkg explicitly depends on it.
+      # cacert and bashWrapper are always included: cacert so SSL/TLS
+      # verification works, bashWrapper so the hardcoded SHELL target
+      # is always reachable in the store closure. bashWrapper forces
+      # --norc --noprofile on every bash invocation so that the sandboxed
+      # process cannot source /etc/bashrc or /etc/profile.
       closurePathsFile =
-        pkgs.writeClosure (allowedPackages ++ [ pkg pkgs.cacert ]);
+        pkgs.writeClosure (allowedPackages ++ implicitPackages ++ [ pkg ]);
 
       # Static seatbelt rules that don't depend on the closure — evaluated at
       # Nix eval time so that Nix interpolations (conditionalNetworkingParams,
@@ -549,8 +579,6 @@ let
           (subpath "/private/etc/ssl")
           (literal "/private/etc/passwd")
           (literal "/private/etc/localtime")
-          (literal "/private/etc/profile")
-          (literal "/private/etc/bashrc")
           (subpath "/private/etc/static")
           (literal "/private/etc/hosts"))
 
@@ -624,74 +652,80 @@ let
         } > $out
       '';
 
-    in pkgs.writeShellScriptBin outName ''
-      CWD=$(pwd)
-      ${conditionalNetworkingParams.warnIgnoredDomainsBashStr}
-      ${warnBashInteractive}
+    in pkgs.writeTextFile {
+      name = outName;
+      executable = true;
+      destination = "/bin/${outName}";
+      text = ''
+        #!${pkgs.bashNonInteractive}/bin/bash
+        CWD=$(pwd)
+        ${conditionalNetworkingParams.warnIgnoredDomainsBashStr}
+        ${warnBashInteractive}
 
-      # Ensure stateDirs/stateFiles exist while HOME still points at real home
-      ${mkDirsStr}
-      ${mkFilesStr}
+        # Ensure stateDirs/stateFiles exist while HOME still points at real home
+        ${mkDirsStr}
+        ${mkFilesStr}
 
-      if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
-          GIT_DIR_PARAM="$GIT_DIR"
-          REPO_ROOT=$(dirname "$GIT_DIR_PARAM")
-          REPO_ROOT_PARENT=$(dirname "$REPO_ROOT")
-      else
-          GIT_DIR_PARAM="/nonexistent-git-dir"
-          REPO_ROOT="/nonexistent-repo-root"
-          REPO_ROOT_PARENT="/nonexistent-repo-root"
-      fi
+        if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+            GIT_DIR_PARAM="$GIT_DIR"
+            REPO_ROOT=$(dirname "$GIT_DIR_PARAM")
+            REPO_ROOT_PARENT=$(dirname "$REPO_ROOT")
+        else
+            GIT_DIR_PARAM="/nonexistent-git-dir"
+            REPO_ROOT="/nonexistent-repo-root"
+            REPO_ROOT_PARENT="/nonexistent-repo-root"
+        fi
 
-      # Capture real HOME paths before redirecting
-      GIT_CONFIG_DIR="$HOME/.config/git"
+        # Capture real HOME paths before redirecting
+        GIT_CONFIG_DIR="$HOME/.config/git"
 
-      # Resolve stateDirs/stateFiles paths while $HOME still points at real home
-      ${resolveStateDirsStr}
-      ${resolveStateFilesStr}
+        # Resolve stateDirs/stateFiles paths while $HOME still points at real home
+        ${resolveStateDirsStr}
+        ${resolveStateFilesStr}
 
-      # Create an ephemeral HOME so subprocesses don't touch the real home.
-      # Lives under /tmp which is already allowed read-write in the profile.
-      REAL_HOME="$HOME"
-      SANDBOX_HOME=$(mktemp -d /tmp/sandbox-home.XXXXXX)
+        # Create an ephemeral HOME so subprocesses don't touch the real home.
+        # Lives under /tmp which is already allowed read-write in the profile.
+        REAL_HOME="$HOME"
+        SANDBOX_HOME=$(mktemp -d /tmp/sandbox-home.XXXXXX)
 
-      # Symlink state dirs/files into sandbox HOME so $HOME-relative lookups
-      # reach the real paths through the Seatbelt-allowed targets.
-      ${symlinkStateDirsStr}
-      ${symlinkStateFilesStr}
+        # Symlink state dirs/files into sandbox HOME so $HOME-relative lookups
+        # reach the real paths through the Seatbelt-allowed targets.
+        ${symlinkStateDirsStr}
+        ${symlinkStateFilesStr}
 
-      ${conditionalNetworkingParams.proxyStartupBashStr}
-      ${conditionalNetworkingParams.bashTrapCleanupStr}
+        ${conditionalNetworkingParams.proxyStartupBashStr}
+        ${conditionalNetworkingParams.bashTrapCleanupStr}
 
 
-      ${conditionalNetworkingParams.sandboxExecBashStr}/usr/bin/env -i \
-        HOME="$SANDBOX_HOME" \
-        TERM="$TERM" \
-        SHELL="${pkgs.bash}/bin/bash" \
-        PATH="${pathStr}" \
-        SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
-        SSL_CERT_DIR="${pkgs.cacert}/etc/ssl/certs" \
-        NIX_SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
-        GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
-        TMPDIR=/tmp \
-        ${conditionalNetworkingParams.proxyEnvInlineBashStr} \
-        ${extraEnvInlineStr} \
-        /usr/bin/sandbox-exec \
-        -f ${seatbeltProfile} \
-        -D CWD="$CWD" \
-        -D GIT_DIR="$GIT_DIR_PARAM" \
-        -D REPO_ROOT="$REPO_ROOT" \
-        -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
-        -D GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
-        -D TMPDIR="/tmp" \
-        -D HOME="$SANDBOX_HOME"  \
-        -D REAL_HOME="$REAL_HOME" \
-        -D HOME_CACHE="$SANDBOX_HOME/.cache" \
-        -D HOME_LOCAL="$SANDBOX_HOME/.local" \
-        -D HOME_LOCAL_STATE="$SANDBOX_HOME/.local/state" \
-        -D HOME_LOCAL_SHARE="$SANDBOX_HOME/.local/share" ${stateDirFlags} ${stateFileFlags} \
-        ${pkg}/bin/${binName} "$@"
-    '';
+        ${conditionalNetworkingParams.sandboxExecBashStr}/usr/bin/env -i \
+          HOME="$SANDBOX_HOME" \
+          TERM="$TERM" \
+          SHELL="${bashWrapper}/bin/bash" \
+          PATH="${pathStr}" \
+          SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
+          SSL_CERT_DIR="${pkgs.cacert}/etc/ssl/certs" \
+          NIX_SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
+          GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
+          TMPDIR=/tmp \
+          ${conditionalNetworkingParams.proxyEnvInlineBashStr} \
+          ${extraEnvInlineStr} \
+          /usr/bin/sandbox-exec \
+          -f ${seatbeltProfile} \
+          -D CWD="$CWD" \
+          -D GIT_DIR="$GIT_DIR_PARAM" \
+          -D REPO_ROOT="$REPO_ROOT" \
+          -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
+          -D GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
+          -D TMPDIR="/tmp" \
+          -D HOME="$SANDBOX_HOME"  \
+          -D REAL_HOME="$REAL_HOME" \
+          -D HOME_CACHE="$SANDBOX_HOME/.cache" \
+          -D HOME_LOCAL="$SANDBOX_HOME/.local" \
+          -D HOME_LOCAL_STATE="$SANDBOX_HOME/.local/state" \
+          -D HOME_LOCAL_SHARE="$SANDBOX_HOME/.local/share" ${stateDirFlags} ${stateFileFlags} \
+          ${pkg}/bin/${binName} "$@"
+      '';
+    };
 
 in {
   mkSandbox = if pkgs.stdenv.isDarwin then mkDarwinSandbox else mkLinuxSandbox;

@@ -25,7 +25,7 @@ let
     binName = "bash";
     outName = "bash-sandboxed";
     allowedPackages =
-      [ pkgs.coreutils pkgs.bashNonInteractive pkgs.curl pkgs.git pkgs.which ];
+      [ pkgs.coreutils pkgs.curl pkgs.git pkgs.which ];
     # Mirror these from your agent config:
     stateDirs = [ "$HOME/.claude" ];
     stateFiles = [ "$HOME/.claude.json" ];
