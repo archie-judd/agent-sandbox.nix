@@ -134,7 +134,8 @@ let
 
       # cacert is always included so SSL/TLS verification works even if nothing
       # in allowedPackages or pkg explicitly depends on it.
-      closurePathsFile = pkgs.writeClosure (allowedPackages ++ [ pkg pkgs.cacert ]);
+      closurePathsFile =
+        pkgs.writeClosure (allowedPackages ++ [ pkg pkgs.cacert ]);
 
     in pkgs.writeShellScriptBin outName ''
       CWD=$(pwd)
@@ -335,7 +336,15 @@ let
     , stateFiles ? [ ], extraEnv ? { }, restrictNetwork ? false
     , allowedDomains ? [ ] }:
     let
-      pathStr = pkgs.lib.makeBinPath allowedPackages;
+      wrapBash = packages:
+        map (pkg:
+          if pkg.pname or "" == "bash" then
+            pkgs.writeShellScriptBin "bash" ''
+              exec ${pkg}/bin/bash --norc --noprofile "$@"
+            ''
+          else
+            pkg) packages;
+      pathStr = pkgs.lib.makeBinPath (wrapBash allowedPackages);
       # Generate indexed param names
       stateDirParams = builtins.genList (i: {
         name = "STATE_DIR_${toString i}";
@@ -457,7 +466,8 @@ let
 
       # cacert is always included so SSL/TLS verification works even if nothing
       # in allowedPackages or pkg explicitly depends on it.
-      closurePathsFile = pkgs.writeClosure (allowedPackages ++ [ pkg pkgs.cacert ]);
+      closurePathsFile =
+        pkgs.writeClosure (allowedPackages ++ [ pkg pkgs.cacert ]);
 
       # Static seatbelt rules that don't depend on the closure — evaluated at
       # Nix eval time so that Nix interpolations (conditionalNetworkingParams,
