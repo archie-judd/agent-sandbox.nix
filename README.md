@@ -323,6 +323,7 @@ If you are unable to debug, or suspect the AI can't access a file or folder it s
 ## Caveats
 
 - **`sandbox-exec` is deprecated on macOS.** It remains the only native unprivileged sandboxing mechanism and currently works on macOS 26 (Tahoe) and older, but may break in a future release.
+- **macOS only: `stateDirs` and `stateFiles` cannot be symlinks pointing outside the nix store.** The Darwin sandbox cannot resolve symlinks to unlisted locations, so access will fail.
 - Tested on x86_64-linux and aarch64-darwin. Other architectures should work but are untested.
 
 ## Similar projects

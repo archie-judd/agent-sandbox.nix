@@ -25,8 +25,12 @@ expect_ok "can run allowed binary (echo)" "echo hello"
 
 # --- Disallowed package should be inaccessible ---
 expect_fail "cannot execute disallowed store path" '"$DISALLOWED_STORE_PATH/bin/hello"'
-expect_fail "cannot read disallowed store path binary" 'cat "$DISALLOWED_STORE_PATH/bin/hello"'
-expect_fail "cannot list disallowed store path" 'ls "$DISALLOWED_STORE_PATH"'
+
+# On Darwin, the nix store must be readable (but not executable) for code signing to work
+if [ "$OS" = "Linux" ]; then
+  expect_fail "cannot read disallowed store path binary" 'cat "$DISALLOWED_STORE_PATH/bin/hello"'
+  expect_fail "cannot list disallowed store path" 'ls "$DISALLOWED_STORE_PATH"'
+fi
 
 print_results
 exit_status

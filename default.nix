@@ -595,11 +595,13 @@ let
           (subpath (param "TMPDIR"))
           (subpath "/private/var/folders"))
 
-        ;; Nix store — allow stat() but not readdir(), so path resolution
-        ;; works without leaking the full store listing
+        ;; Nix store — full read access so symlinks into the store (e.g.
+        ;; home-manager-managed config files) are followable. Execution is
+        ;; still restricted to the allowed closure below.
         (allow file-read-metadata
           (literal "/nix")
           (literal "/nix/store"))
+        (allow file-read* (subpath "/nix/store"))
 
         ;; Filesystem traversal — stat() on parent dirs for path resolution
         (allow file-read*
