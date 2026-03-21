@@ -40,8 +40,8 @@ let
       # GitHub Copilot
       "githubcopilot.com"
       # GitHub
-      "raw.githubusercontent.com"
-      "api.github.com"
+      "githubusercontent.com"
+      "github.com"
     ];
 
   };

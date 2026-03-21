@@ -73,11 +73,11 @@ let
       "anthropic.com"
       "claude.com"
       # GitHub 
-      "raw.githubusercontent.com"
-      "api.github.com"
+      "githubusercontent.com"
+      "github.com"
       # PyPI 
       "pypi.org"
-      "files.pythonhosted.org"
+      "pythonhosted.org"
     ];
 
   };
