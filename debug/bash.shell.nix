@@ -21,11 +21,11 @@ let
       inherit pkgs;
     };
   bash-sandboxed = sandbox.mkSandbox {
-    pkg = pkgs.bash;
+    pkg = pkgs.bashNonInteractive;
     binName = "bash";
     outName = "bash-sandboxed";
     allowedPackages =
-      [ pkgs.coreutils pkgs.bash pkgs.curl pkgs.git pkgs.which ];
+      [ pkgs.coreutils pkgs.bashNonInteractive pkgs.curl pkgs.git pkgs.which ];
     # Mirror these from your agent config:
     stateDirs = [ "$HOME/.claude" ];
     stateFiles = [ "$HOME/.claude.json" ];
