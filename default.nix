@@ -1,6 +1,19 @@
 { pkgs }:
 let
   sandboxProxy = import ./proxy { pkgs = pkgs; };
+  # Wrapper that forces --norc --noprofile on every bash invocation.
+  # Newer claude-code versions spawn bash as a login/interactive shell,
+  # which causes it to source /etc/bashrc and /etc/profile. This wrapper
+  # intercepts any bash call (whether via SHELL, /bin/sh, or direct exec)
+  # and strips that behaviour regardless of how the caller invokes it.
+  bashWrapper = pkgs.runCommand "bash-norc" {
+    nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
+  } ''
+    mkdir -p $out/bin
+    makeBinaryWrapper ${pkgs.bashNonInteractive}/bin/bash $out/bin/bash \
+      --add-flags "--norc" \
+      --add-flags "--noprofile"
+  '';
   /* mkLinuxSandbox — wraps a binary in a bubblewrap (bwrap) container.
 
        Bubblewrap creates a lightweight Linux namespace sandbox. It builds an
@@ -71,7 +84,7 @@ let
     , stateFiles ? [ ], extraEnv ? { }, restrictNetwork ? false
     , allowedDomains ? [ ] }:
     let
-      implicitPackages = [ pkgs.cacert pkgs.bashNonInteractive ];
+      implicitPackages = [ pkgs.cacert bashWrapper ];
       pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
       mkDirsStr = builtins.concatStringsSep "\n"
         (map (dir: ''mkdir -p "${dir}"'') stateDirs);
@@ -133,9 +146,11 @@ let
 
       };
 
-      # cacert and bashNonInteractive are always included: cacert so SSL/TLS
-      # verification works, bashNonInteractive so the hardcoded SHELL and
+      # cacert and bashWrapper are always included: cacert so SSL/TLS
+      # verification works, bashWrapper so the hardcoded SHELL and
       # /bin/sh symlink targets are always reachable in the store closure.
+      # bashWrapper forces --norc --noprofile on every bash invocation so
+      # that the sandboxed process cannot source /etc/bashrc or /etc/profile.
       closurePathsFile =
         pkgs.writeClosure (allowedPackages ++ implicitPackages ++ [ pkg ]);
 
@@ -178,7 +193,7 @@ let
           ${bindDirsStr} \
           ${bindFilesStr} \
           $GIT_BIND \
-          --symlink ${pkgs.bashNonInteractive}/bin/bash /bin/sh \
+          --symlink ${bashWrapper}/bin/bash /bin/sh \
           --unshare-all \
           --share-net \
           --die-with-parent \
@@ -186,7 +201,7 @@ let
           --clearenv \
           --setenv HOME "$HOME" \
           --setenv TERM "$TERM" \
-          --setenv SHELL "${pkgs.bashNonInteractive}/bin/bash" \
+          --setenv SHELL "${bashWrapper}/bin/bash" \
           --setenv PATH "${pathStr}" \
           --setenv SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
           --setenv SSL_CERT_DIR "${pkgs.cacert}/etc/ssl/certs" \
@@ -344,11 +359,12 @@ let
     , stateFiles ? [ ], extraEnv ? { }, restrictNetwork ? false
     , allowedDomains ? [ ] }:
     let
-      implicitPackages = [ pkgs.cacert pkgs.bashNonInteractive ];
+      implicitPackages = [ pkgs.cacert bashWrapper ];
       pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
 
       warnBashInteractive =
-        if builtins.any (p: p.pname or "" == "bash-interactive") allowedPackages then ''
+        if builtins.any (p: p.pname or "" == "bash-interactive")
+        allowedPackages then ''
           echo "WARNING: bash-interactive will try to load profile files" >&2
           echo "         that may access paths outside the nix store closure." >&2
           echo "         Use pkgs.bashNonInteractive instead." >&2
@@ -474,9 +490,11 @@ let
 
       };
 
-      # cacert and bashNonInteractive are always included: cacert so SSL/TLS
-      # verification works, bashNonInteractive so the hardcoded SHELL target
-      # is always reachable in the store closure.
+      # cacert and bashWrapper are always included: cacert so SSL/TLS
+      # verification works, bashWrapper so the hardcoded SHELL target
+      # is always reachable in the store closure. bashWrapper forces
+      # --norc --noprofile on every bash invocation so that the sandboxed
+      # process cannot source /etc/bashrc or /etc/profile.
       closurePathsFile =
         pkgs.writeClosure (allowedPackages ++ implicitPackages ++ [ pkg ]);
 
@@ -561,8 +579,6 @@ let
           (subpath "/private/etc/ssl")
           (literal "/private/etc/passwd")
           (literal "/private/etc/localtime")
-          (literal "/private/etc/profile")
-          (literal "/private/etc/bashrc")
           (subpath "/private/etc/static")
           (literal "/private/etc/hosts"))
 
@@ -684,7 +700,7 @@ let
         ${conditionalNetworkingParams.sandboxExecBashStr}/usr/bin/env -i \
           HOME="$SANDBOX_HOME" \
           TERM="$TERM" \
-          SHELL="${pkgs.bashNonInteractive}/bin/bash" \
+          SHELL="${bashWrapper}/bin/bash" \
           PATH="${pathStr}" \
           SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
           SSL_CERT_DIR="${pkgs.cacert}/etc/ssl/certs" \

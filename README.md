@@ -283,7 +283,7 @@ bash-sandboxed = sandbox.mkSandbox {
 };
 ```
 
-Running `bash-sandboxed --norc --noprofile` drops you into a shell with exactly the same filesystem view and restrictions your agent will see. Try:
+Running `bash-sandboxed` drops you into a shell with exactly the same filesystem view and restrictions your agent will see. Try:
 
 ```bash
 touch /tmp/test && rm /tmp/test   # /tmp should be writable
