@@ -11,7 +11,7 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 - Read/write the current working directory
 - Read/write explicitly declared state dirs and files
 - Optionally restrict network access to particular domains
-- Binaries from `allowedPackages`
+- Binaries from `allowedPackages` (plus `bash` and `cacert`, which are always provided)
 - Environment variables from extraEnv (host environment is cleared)
 - `/nix/store` paths in the closure of `pkg` and `allowedPackages` (read-only; the rest of the store is hidden), `/tmp` (ephemeral), local git repo access
 
@@ -49,7 +49,6 @@ Here is an example flake that provides a development shell with a sandboxed clau
             allowedPackages = [
               pkgs.coreutils
               pkgs.which
-              pkgs.bashNonInteractive
               pkgs.git
               pkgs.ripgrep
               pkgs.fd
@@ -77,8 +76,6 @@ Here is an example flake that provides a development shell with a sandboxed clau
 ```
 
 Copy the above flake and adjust it to your needs.
-
-> **macOS users**: Use `pkgs.bashNonInteractive` instead of `pkgs.bash` in `allowedPackages`. Interactive bash tries to load profile files (`~/.bash_profile`, `/etc/profile`) that may reference nix store paths outside the sandbox's closure, causing errors. You'll see a warning if you use `pkgs.bash` on macOS.
 
 > **Note**: claude and most other AI CLI tools are not FOSS. You will need to set `NIXPKGS_ALLOW_UNFREE=1` and invoke the shell with `--impure`:
 
@@ -117,7 +114,6 @@ let
     allowedPackages = [
       pkgs.coreutils
       pkgs.which
-      pkgs.bashNonInteractive
       pkgs.git
       pkgs.ripgrep
       pkgs.fd
@@ -138,8 +134,6 @@ in pkgs.mkShell { packages = [ copilot-sandboxed ]; }
 ```
 
 Copy the above shell and adjust it to your needs.
-
-> **macOS users**: Use `pkgs.bashNonInteractive` instead of `pkgs.bash` in `allowedPackages`. Interactive bash tries to load profile files (`~/.bash_profile`, `/etc/profile`) that may reference nix store paths outside the sandbox's closure, causing errors. You'll see a warning if you use `pkgs.bash` on macOS.
 
 You can enter a dev shell with the sandboxed binary with:
 
@@ -187,7 +181,7 @@ When `restrictNetwork = true`, network connections are routed through a localhos
 | `pkg` | yes | Package containing the binary to wrap |
 | `binName` | yes | Name of the binary inside `pkg/bin/` |
 | `outName` | yes | Name for the resulting wrapped binary and the command to invoke it with |
-| `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH |
+| `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH (`bash` and `cacert` are always included implicitly) |
 | `stateDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
 | `stateFiles` | no | Individual files the agent can read/write |
 | `extraEnv` | no | Additional environment variables as an attrset |
@@ -281,7 +275,7 @@ bash-sandboxed = sandbox.mkSandbox {
   pkg = pkgs.bashNonInteractive;
   binName = "bash";
   outName = "bash-sandboxed";
-  allowedPackages = [ pkgs.coreutils pkgs.bashNonInteractive ];
+  allowedPackages = [ pkgs.coreutils ];
   stateDirs = [ "$HOME/.claude" ];
   stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
   restrictNetwork = true;
