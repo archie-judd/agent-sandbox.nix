@@ -8,12 +8,12 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 
 ## What the sandbox allows
 
-- Read/write the current working directory
-- Read/write explicitly declared state dirs and files
-- Optionally restrict network access to particular domains
-- Binaries from `allowedPackages` (plus `bash` and `cacert`, which are always provided)
-- Environment variables from extraEnv (host environment is cleared)
-- `/nix/store` paths in the closure of `pkg` and `allowedPackages` (read-only; the rest of the store is hidden), `/tmp` (ephemeral), local git repo access
+- Read/write the current working directory.
+- Read/write explicitly declared state dirs and files.
+- Execution of binaries from `allowedPackages`, plus bash, which is provided by default.
+- Optionally restrict network access to particular domains.
+- Environment variables from extraEnv (host environment is cleared).
+- Git (via the repository's .git directory), including from within worktrees.
 
 Everything else is denied. `$HOME` is an ephemeral writable tmpfs on both platforms.
 
