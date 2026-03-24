@@ -8,7 +8,7 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 
 ## What the sandbox allows
 
-- Read/write the current working directory.
+- Read/write the working directory from which the sandboxed agent is invoked.
 - Read/write explicitly declared state dirs and files.
 - Execution of binaries from `allowedPackages`, plus bash, which is provided by default.
 - Optionally restrict network access to particular domains.
