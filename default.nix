@@ -14,6 +14,30 @@ let
       --add-flags "--norc" \
       --add-flags "--noprofile"
   '';
+  # Shared by mkLinuxSandbox and mkDarwinSandbox. Starts the domain-filtering
+  # proxy and blocks until it reports its listening port via a FIFO.
+  mkProxyStartupBashStr = allowlistFileStr: ''
+    # Start the domain-filtering proxy and read its port via FIFO
+    _PROXY_PORT_FIFO=$(mktemp -u /tmp/sandbox-proxy-port.XXXXXX)
+    mkfifo "$_PROXY_PORT_FIFO"
+    # Open FIFO read-write so neither side blocks waiting for the other
+    exec 3<> "$_PROXY_PORT_FIFO"
+    ${sandboxProxy}/bin/sandbox-proxy ${allowlistFileStr} > "$_PROXY_PORT_FIFO" 2>>/tmp/sandbox-proxy.log &
+    _PROXY_PID=$!
+    # Block until the proxy writes its port (or 5s timeout via background kill)
+    ( sleep 5 && kill -0 $$ 2>/dev/null && echo >&2 "ERROR: sandbox proxy timed out" && kill $$ ) &
+    _TIMEOUT_PID=$!
+    _PROXY_PORT=$(head -1 <&3)
+    exec 3<&-
+    kill $_TIMEOUT_PID 2>/dev/null
+    wait $_TIMEOUT_PID 2>/dev/null || true
+    rm -f "$_PROXY_PORT_FIFO"
+    if [ -z "$_PROXY_PORT" ]; then
+      echo "ERROR: sandbox proxy failed to start (check /tmp/sandbox-proxy.log)" >&2
+      kill $_PROXY_PID 2>/dev/null
+      exit 1
+    fi
+  '';
   /* mkLinuxSandbox — wraps a binary in a bubblewrap (bwrap) container.
 
        Bubblewrap creates a lightweight Linux namespace sandbox. It builds an
@@ -99,31 +123,7 @@ let
       stateDirsBoundPrefixBashStr = builtins.concatStringsSep "\n"
         (map (dir: ''BOUND_PREFIXES+=("${dir}")'') stateDirs);
 
-      # Per-stateFile: if it is a symlink resolve it and route through _add_symlink_target;
-      # otherwise bind directly. Populates STATE_FILE_BINDS at runtime.
-      stateFilesSymlinkBashStr = builtins.concatStringsSep "\n"
-        (map (file: ''
-          if [[ -L "${file}" ]]; then
-            _resolved=$(${pkgs.coreutils}/bin/readlink -f "${file}" 2>/dev/null) \
-              || { echo "WARNING: circular symlink detected at ${file}" >&2; true; }
-            if [[ -n "$_resolved" ]]; then
-              _add_symlink_target "$_resolved"
-            fi
-          else
-            STATE_FILE_BINDS="$STATE_FILE_BINDS --bind ${file} ${file}"
-          fi
-        '') stateFiles);
-
-      # Per-stateDir: recursively scan for symlinks inside the bound dir and route
-      # each resolved target through _add_symlink_target.
-      stateDirsSymlinkScanBashStr = builtins.concatStringsSep "\n"
-        (map (dir: ''
-          while IFS= read -r _symlink; do
-            _resolved=$(${pkgs.coreutils}/bin/readlink -f "$_symlink" 2>/dev/null) \
-              || { echo "WARNING: circular symlink detected at $_symlink" >&2; true; }
-            [[ -n "$_resolved" ]] && _add_symlink_target "$_resolved"
-          done < <(${pkgs.findutils}/bin/find "${dir}" -type l 2>/dev/null)
-        '') stateDirs);
+      symlinkHelpers = import ./lib/symlink-helpers.nix { inherit pkgs; };
 
       symlinkResolutionBashStr = ''
         # Complete the set of already-bound path prefixes
@@ -133,40 +133,16 @@ let
         [[ -n "$REPO_ROOT" ]] && BOUND_PREFIXES+=("$REPO_ROOT")
         [[ -n "$GIT_DIR" ]] && BOUND_PREFIXES+=("$GIT_DIR")
 
-        _is_already_bound() {
-          local _target="$1"
-          local _prefix
-          for _prefix in "''${BOUND_PREFIXES[@]}"; do
-            [[ "$_target" == "$_prefix" || "$_target" == "$_prefix/"* ]] && return 0
-          done
-          return 1
-        }
-
-        RESOLVED_TARGETS=()
-        readonlyStateFileSymlinks=""
-        readWriteStateFileSymlinks=""
-
-        _add_symlink_target() {
-          local _target="$1"
-          local _existing
-          for _existing in "''${RESOLVED_TARGETS[@]}"; do
-            [[ "$_existing" == "$_target" ]] && return
-          done
-          RESOLVED_TARGETS+=("$_target")
-          _is_already_bound "$_target" && return
-          if [[ "$_target" == /nix/store/* ]]; then
-            readonlyStateFileSymlinks="$readonlyStateFileSymlinks --ro-bind $_target $_target"
-          else
-            readWriteStateFileSymlinks="$readWriteStateFileSymlinks --bind $_target $_target"
-          fi
-        }
+        ${symlinkHelpers.isAlreadyBoundBashStr}
+        ${symlinkHelpers.addSymlinkTargetBashStr}
+        ${symlinkHelpers.followSymlinkChainBashStr}
 
         # Resolve stateFile symlinks — bind resolved targets, not the symlink paths
         STATE_FILE_BINDS=""
-        ${stateFilesSymlinkBashStr}
+        ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveFileBashStr stateFiles)}
 
         # Scan stateDirs for internal symlinks and bind their resolved targets
-        ${stateDirsSymlinkScanBashStr}
+        ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkScanDirBashStr stateDirs)}
       '';
 
       extraEnvStr = builtins.concatStringsSep " "
@@ -180,28 +156,7 @@ let
           warnIgnoredDomainsBashStr = "";
           proxyEnvBubblewrapStr = ''
             --setenv HTTP_PROXY "http://127.0.0.1:$_PROXY_PORT" --setenv HTTPS_PROXY "http://127.0.0.1:$_PROXY_PORT" --setenv http_proxy "http://127.0.0.1:$_PROXY_PORT" --setenv https_proxy "http://127.0.0.1:$_PROXY_PORT"'';
-          proxyStartupBashStr = ''
-            # Start the domain-filtering proxy and read its port via FIFO
-            _PROXY_PORT_FIFO=$(mktemp -u /tmp/sandbox-proxy-port.XXXXXX)
-            mkfifo "$_PROXY_PORT_FIFO"
-            # Open FIFO read-write so neither side blocks waiting for the other
-            exec 3<> "$_PROXY_PORT_FIFO"
-            ${sandboxProxy}/bin/sandbox-proxy ${allowlistFileStr} > "$_PROXY_PORT_FIFO" 2>>/tmp/sandbox-proxy.log &
-            _PROXY_PID=$!
-            # Block until the proxy writes its port (or 5s timeout via background kill)
-            ( sleep 5 && kill -0 $$ 2>/dev/null && echo >&2 "ERROR: sandbox proxy timed out" && kill $$ ) &
-            _TIMEOUT_PID=$!
-            _PROXY_PORT=$(head -1 <&3)
-            exec 3<&-
-            kill $_TIMEOUT_PID 2>/dev/null
-            wait $_TIMEOUT_PID 2>/dev/null || true
-            rm -f "$_PROXY_PORT_FIFO"
-            if [ -z "$_PROXY_PORT" ]; then
-              echo "ERROR: sandbox proxy failed to start (check /tmp/sandbox-proxy.log)" >&2
-              kill $_PROXY_PID 2>/dev/null
-              exit 1
-            fi
-          '';
+          proxyStartupBashStr = mkProxyStartupBashStr allowlistFileStr;
           bashTrapCleanupStr = "trap 'kill $_PROXY_PID 2>/dev/null' EXIT";
           sandboxExecBashStr = "";
           etcResolvBind =
@@ -278,6 +233,7 @@ let
           --bind "$CWD" "$CWD" \
           ${bindDirsStr} \
           $STATE_FILE_BINDS \
+          $SYMLINK_PARENT_DIRS \
           $readonlyStateFileSymlinks \
           $readWriteStateFileSymlinks \
           $GIT_BIND \
@@ -487,19 +443,16 @@ let
       # Symlink resolved state paths into the sandbox HOME so that
       # $HOME-relative lookups land on the real paths. Only creates
       # symlinks for paths that actually live under the real HOME.
-      symlinkStateDirsStr = builtins.concatStringsSep "\n" (map (p: ''
-        if [[ "$_RESOLVED_${p.name}" == "$REAL_HOME"/* ]]; then
-          _REL="''${_RESOLVED_${p.name}#$REAL_HOME/}"
-          mkdir -p "$SANDBOX_HOME/$(dirname "$_REL")"
-          ln -sfn "$_RESOLVED_${p.name}" "$SANDBOX_HOME/$_REL"
-        fi'') stateDirParams);
+      mkSymlinkHomeMappingStr = params:
+        builtins.concatStringsSep "\n" (map (p: ''
+          if [[ "$_RESOLVED_${p.name}" == "$REAL_HOME"/* ]]; then
+            _REL="''${_RESOLVED_${p.name}#$REAL_HOME/}"
+            mkdir -p "$SANDBOX_HOME/$(dirname "$_REL")"
+            ln -sfn "$_RESOLVED_${p.name}" "$SANDBOX_HOME/$_REL"
+          fi'') params);
 
-      symlinkStateFilesStr = builtins.concatStringsSep "\n" (map (p: ''
-        if [[ "$_RESOLVED_${p.name}" == "$REAL_HOME"/* ]]; then
-          _REL="''${_RESOLVED_${p.name}#$REAL_HOME/}"
-          mkdir -p "$SANDBOX_HOME/$(dirname "$_REL")"
-          ln -sfn "$_RESOLVED_${p.name}" "$SANDBOX_HOME/$_REL"
-        fi'') stateFileParams);
+      symlinkStateDirsStr = mkSymlinkHomeMappingStr stateDirParams;
+      symlinkStateFilesStr = mkSymlinkHomeMappingStr stateFileParams;
 
       mkDirsStr = builtins.concatStringsSep "\n"
         (map (dir: ''mkdir -p "${dir}"'') stateDirs);
@@ -525,28 +478,7 @@ let
             (allow network-bind (local ip "localhost:*"))
             (allow system-socket)
           '';
-          proxyStartupBashStr = ''
-            # Start the domain-filtering proxy and read its port via FIFO
-            _PROXY_PORT_FIFO=$(mktemp -u /tmp/sandbox-proxy-port.XXXXXX)
-            mkfifo "$_PROXY_PORT_FIFO"
-            # Open FIFO read-write so neither side blocks waiting for the other
-            exec 3<> "$_PROXY_PORT_FIFO"
-            ${sandboxProxy}/bin/sandbox-proxy ${allowlistFileStr} > "$_PROXY_PORT_FIFO" 2>>/tmp/sandbox-proxy.log &
-            _PROXY_PID=$!
-            # Block until the proxy writes its port (or 5s timeout via background kill)
-            ( sleep 5 && kill -0 $$ 2>/dev/null && echo >&2 "ERROR: sandbox proxy timed out" && kill $$ ) &
-            _TIMEOUT_PID=$!
-            _PROXY_PORT=$(head -1 <&3)
-            exec 3<&-
-            kill $_TIMEOUT_PID 2>/dev/null
-            wait $_TIMEOUT_PID 2>/dev/null || true
-            rm -f "$_PROXY_PORT_FIFO"
-            if [ -z "$_PROXY_PORT" ]; then
-              echo "ERROR: sandbox proxy failed to start (check /tmp/sandbox-proxy.log)" >&2
-              kill $_PROXY_PID 2>/dev/null
-              exit 1
-            fi
-          '';
+          proxyStartupBashStr = mkProxyStartupBashStr allowlistFileStr;
           bashTrapCleanupStr = ''
             trap 'kill $_PROXY_PID 2>/dev/null; rm -rf "$SANDBOX_HOME"' EXIT'';
           sandboxExecBashStr = "";
@@ -588,144 +520,11 @@ let
             REPO_ROOT_PARENT="/nonexistent-repo-root"
         fi
       '';
-      # Static seatbelt rules that don't depend on the closure — evaluated at
-      # Nix eval time so that Nix interpolations (conditionalNetworkingParams,
-      # seatbeltAllowReadWriteExec, etc.) are resolved before being embedded
-      # into the runCommand builder.
-      seatbeltStaticRules = ''
-        (version 1)
-        (deny default)
-
-        ;; Process control
-        (allow process-fork)
-        (allow signal)
-        (allow sysctl-read)
-
-        ;; Process execution — per-store-path rules are appended by the builder
-        (allow process-exec (subpath (param "CWD")))
-        (allow process-exec (literal "/bin/sh"))
-        (allow process-exec (literal "/bin/bash"))
-        (allow process-exec (literal "/usr/bin/env"))
-        (allow process-exec (literal "/usr/bin/plutil"))
-
-        ;; Mach IPC — scoped to system services, security framework, FSEvents
-        (allow mach-lookup (global-name-prefix "com.apple.system."))
-        (allow mach-lookup (global-name-prefix "com.apple.SystemConfiguration."))
-        (allow mach-lookup (global-name "com.apple.securityd.xpc"))
-        (allow mach-lookup (global-name "com.apple.SecurityServer"))
-        (allow mach-lookup (global-name "com.apple.trustd.agent"))
-        (allow mach-lookup (global-name "com.apple.FSEvents"))
-        (allow mach-lookup (global-name "com.apple.diagnosticd"))
-        (allow mach-register)
-        (allow ipc-posix-shm-read-data)
-        (allow ipc-posix-shm-write-data)
-        (allow ipc-posix-shm-write-create)
-
-        ${conditionalNetworkingParams.networkSeatbeltRulesStr}
-
-        ;; Device nodes & terminal I/O
-        (allow file-read*
-          (literal "/dev/null")
-          (literal "/dev/urandom")
-          (literal "/dev/random")
-          (literal "/dev/zero")
-          (literal "/dev/ptmx")
-          (literal "/private/var/select/sh"))
-        (allow file-write* (literal "/dev/null"))
-        (allow file-read* file-write*
-          (literal "/dev/tty")
-          (literal "/dev/ptmx")
-          (regex #"^/dev/fd/")
-          (regex #"^/dev/ttys[0-9]")
-          (regex #"^/dev/pty")
-          (regex #"^/dev/ttyp"))
-        (allow file-ioctl
-          (literal "/dev/tty")
-          (literal "/dev/ptmx")
-          (regex #"^/dev/ttys[0-9]")
-          (regex #"^/dev/pty")
-          (regex #"^/dev/ttyp"))
-        (allow file-read-metadata
-          (literal "/dev/stdout")
-          (literal "/dev/stderr")
-          (literal "/dev/stdin")
-          (regex #"^/dev/ttyq")
-          (regex #"^/dev/ttyr")
-          (literal "/dev/dtracehelper"))
-
-        ;; System libraries & frameworks
-        (allow file-read*
-          (subpath "/usr/lib")
-          (subpath "/usr/bin")
-          (subpath "/usr/share")
-          (subpath "/bin")
-          (subpath "/System")
-          (subpath "/Library/Preferences"))
-
-        ;; DNS, TLS & name resolution
-        (allow file-read*
-          (literal "/private/etc/resolv.conf")
-          (literal "/private/var/run/resolv.conf")
-          (subpath "/private/etc/ssl")
-          (literal "/private/etc/passwd")
-          (literal "/private/etc/localtime")
-          (subpath "/private/etc/static")
-          (literal "/private/etc/hosts"))
-
-        ;; Security framework — system keychains & trust databases
-        (allow file-read*
-          (subpath "/private/var/db/mds")
-          (subpath "/Library/Keychains")
-          (literal "/private/var/run/systemkeychaincheck.done"))
-
-        ;; Temp directories
-        (allow file-read* file-write*
-          (subpath "/tmp")
-          (subpath "/private/tmp")
-          (subpath (param "TMPDIR"))
-          (subpath "/private/var/folders"))
-
-        ;; Nix store — full read access so symlinks into the store (e.g.
-        ;; home-manager-managed config files) are followable. Execution is
-        ;; still restricted to the allowed closure below.
-        (allow file-read-metadata
-          (literal "/nix")
-          (literal "/nix/store"))
-        (allow file-read* (subpath "/nix/store"))
-
-        ;; Filesystem traversal — stat() on parent dirs for path resolution
-        (allow file-read*
-          (literal "/")
-          (literal "/var")
-          (literal "/dev")
-          (literal "/private")
-          (literal "/private/var")
-          (literal "/etc")
-          (literal "/private/etc")
-          (literal "/private/var/db")
-          (literal "/Users")
-          (literal (param "HOME"))
-          (subpath (param "HOME"))
-          (literal (param "REAL_HOME"))
-          (literal (param "HOME_LOCAL"))
-          (literal (param "HOME_CACHE"))
-          (literal (param "HOME_LOCAL_SHARE"))
-          (literal (param "HOME_LOCAL_STATE"))
-          (literal (param "REPO_ROOT_PARENT")))
-
-        ;; Working directory & repository
-        (allow file-read* file-write* (subpath (param "CWD")))
-        (allow file-read* (subpath (param "REPO_ROOT")))
-        (allow file-read* file-write* (subpath (param "GIT_DIR")))
-        (allow file-read* (subpath (param "GIT_CONFIG_DIR")))
-
-        ;; Timezone
-        (allow file-read* (subpath "/private/var/db/timezone"))
-
-        ;; Explicit state directories & files
-        ${seatbeltAllowReadWriteExec}
-        ${seatbeltAllowFiles}
-      '';
+      seatbeltStaticRules = import ./lib/seatbelt-profile.nix {
+        networkRulesStr = conditionalNetworkingParams.networkSeatbeltRulesStr;
+        allowReadWriteExecStr = seatbeltAllowReadWriteExec;
+        allowFilesStr = seatbeltAllowFiles;
+      };
 
       seatbeltProfile = pkgs.runCommand "${outName}-sandbox.sb" {
         closurePaths = closurePathsFile;
