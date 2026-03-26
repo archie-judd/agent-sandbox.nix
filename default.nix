@@ -124,6 +124,51 @@ let
             [[ -n "$_resolved" ]] && _add_symlink_target "$_resolved"
           done < <(${pkgs.findutils}/bin/find "${dir}" -type l 2>/dev/null)
         '') stateDirs);
+
+      symlinkResolutionBashStr = ''
+        # Complete the set of already-bound path prefixes
+        ${stateDirsBoundPrefixBashStr}
+        BOUND_PREFIXES+=("$CWD")
+        BOUND_PREFIXES+=("/etc/resolv.conf" "/etc/passwd" "/etc/ssl/certs" "/etc/static" "/etc/pki")
+        [[ -n "$REPO_ROOT" ]] && BOUND_PREFIXES+=("$REPO_ROOT")
+        [[ -n "$GIT_DIR" ]] && BOUND_PREFIXES+=("$GIT_DIR")
+
+        _is_already_bound() {
+          local _target="$1"
+          local _prefix
+          for _prefix in "''${BOUND_PREFIXES[@]}"; do
+            [[ "$_target" == "$_prefix" || "$_target" == "$_prefix/"* ]] && return 0
+          done
+          return 1
+        }
+
+        RESOLVED_TARGETS=()
+        readonlyStateFileSymlinks=""
+        readWriteStateFileSymlinks=""
+
+        _add_symlink_target() {
+          local _target="$1"
+          local _existing
+          for _existing in "''${RESOLVED_TARGETS[@]}"; do
+            [[ "$_existing" == "$_target" ]] && return
+          done
+          RESOLVED_TARGETS+=("$_target")
+          _is_already_bound "$_target" && return
+          if [[ "$_target" == /nix/store/* ]]; then
+            readonlyStateFileSymlinks="$readonlyStateFileSymlinks --ro-bind $_target $_target"
+          else
+            readWriteStateFileSymlinks="$readWriteStateFileSymlinks --bind $_target $_target"
+          fi
+        }
+
+        # Resolve stateFile symlinks — bind resolved targets, not the symlink paths
+        STATE_FILE_BINDS=""
+        ${stateFilesSymlinkBashStr}
+
+        # Scan stateDirs for internal symlinks and bind their resolved targets
+        ${stateDirsSymlinkScanBashStr}
+      '';
+
       extraEnvStr = builtins.concatStringsSep " "
         (map (name: "--setenv ${name} ${builtins.toJSON extraEnv.${name}}")
           (builtins.attrNames extraEnv));
@@ -214,48 +259,7 @@ let
           BOUND_PREFIXES+=("$storePath")
         done < ${closurePathsFile}
 
-        # Complete the set of already-bound path prefixes
-        ${stateDirsBoundPrefixBashStr}
-        BOUND_PREFIXES+=("$CWD")
-        BOUND_PREFIXES+=("/etc/resolv.conf" "/etc/passwd" "/etc/ssl/certs" "/etc/static" "/etc/pki")
-        [[ -n "$REPO_ROOT" ]] && BOUND_PREFIXES+=("$REPO_ROOT")
-        [[ -n "$GIT_DIR" ]] && BOUND_PREFIXES+=("$GIT_DIR")
-
-        _is_already_bound() {
-          local _target="$1"
-          local _prefix
-          for _prefix in "''${BOUND_PREFIXES[@]}"; do
-            [[ "$_target" == "$_prefix" || "$_target" == "$_prefix/"* ]] && return 0
-          done
-          return 1
-        }
-
-        RESOLVED_TARGETS=()
-        readonlyStateFileSymlinks=""
-        readWriteStateFileSymlinks=""
-
-        _add_symlink_target() {
-          local _target="$1"
-          local _existing
-          for _existing in "''${RESOLVED_TARGETS[@]}"; do
-            [[ "$_existing" == "$_target" ]] && return
-          done
-          RESOLVED_TARGETS+=("$_target")
-          _is_already_bound "$_target" && return
-          if [[ "$_target" == /nix/store/* ]]; then
-            readonlyStateFileSymlinks="$readonlyStateFileSymlinks --ro-bind $_target $_target"
-          else
-            readWriteStateFileSymlinks="$readWriteStateFileSymlinks --bind $_target $_target"
-          fi
-        }
-
-        # Resolve stateFile symlinks — bind resolved targets, not the symlink paths
-        STATE_FILE_BINDS=""
-        ${stateFilesSymlinkBashStr}
-
-        # Scan stateDirs for internal symlinks and bind their resolved targets
-        ${stateDirsSymlinkScanBashStr}
-
+        ${symlinkResolutionBashStr}
         ${conditionalNetworkingParams.proxyStartupBashStr}
         ${conditionalNetworkingParams.bashTrapCleanupStr}
         ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.bubblewrap}/bin/bwrap \
