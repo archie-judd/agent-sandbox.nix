@@ -21,6 +21,7 @@ run_suite() {
 }
 
 run_suite "Basic sandbox tests" "test-basic.sh"
+run_suite "stateDir/stateFile and symlink resolution tests" "test-symlinks.sh"
 run_suite "Nix store isolation tests" "test-nix-store-isolation.sh"
 run_suite "Network restriction tests" "test-network.sh"
 run_suite "exposeRepoRoot tests" "test-expose-repo-root.sh"

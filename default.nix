@@ -95,8 +95,80 @@ let
         (map (file: ''touch "${file}"'') stateFiles);
       bindDirsStr = builtins.concatStringsSep " "
         (map (dir: ''--bind "${dir}" "${dir}"'') stateDirs);
-      bindFilesStr = builtins.concatStringsSep " "
-        (map (file: ''--bind "${file}" "${file}"'') stateFiles);
+      # Adds each stateDir to the BOUND_PREFIXES shell array at runtime
+      stateDirsBoundPrefixBashStr = builtins.concatStringsSep "\n"
+        (map (dir: ''BOUND_PREFIXES+=("${dir}")'') stateDirs);
+
+      # Per-stateFile: if it is a symlink resolve it and route through _add_symlink_target;
+      # otherwise bind directly. Populates STATE_FILE_BINDS at runtime.
+      stateFilesSymlinkBashStr = builtins.concatStringsSep "\n"
+        (map (file: ''
+          if [[ -L "${file}" ]]; then
+            _resolved=$(${pkgs.coreutils}/bin/readlink -f "${file}" 2>/dev/null) \
+              || { echo "WARNING: circular symlink detected at ${file}" >&2; true; }
+            if [[ -n "$_resolved" ]]; then
+              _add_symlink_target "$_resolved"
+            fi
+          else
+            STATE_FILE_BINDS="$STATE_FILE_BINDS --bind ${file} ${file}"
+          fi
+        '') stateFiles);
+
+      # Per-stateDir: recursively scan for symlinks inside the bound dir and route
+      # each resolved target through _add_symlink_target.
+      stateDirsSymlinkScanBashStr = builtins.concatStringsSep "\n"
+        (map (dir: ''
+          while IFS= read -r _symlink; do
+            _resolved=$(${pkgs.coreutils}/bin/readlink -f "$_symlink" 2>/dev/null) \
+              || { echo "WARNING: circular symlink detected at $_symlink" >&2; true; }
+            [[ -n "$_resolved" ]] && _add_symlink_target "$_resolved"
+          done < <(${pkgs.findutils}/bin/find "${dir}" -type l 2>/dev/null)
+        '') stateDirs);
+
+      symlinkResolutionBashStr = ''
+        # Complete the set of already-bound path prefixes
+        ${stateDirsBoundPrefixBashStr}
+        BOUND_PREFIXES+=("$CWD")
+        BOUND_PREFIXES+=("/etc/resolv.conf" "/etc/passwd" "/etc/ssl/certs" "/etc/static" "/etc/pki")
+        [[ -n "$REPO_ROOT" ]] && BOUND_PREFIXES+=("$REPO_ROOT")
+        [[ -n "$GIT_DIR" ]] && BOUND_PREFIXES+=("$GIT_DIR")
+
+        _is_already_bound() {
+          local _target="$1"
+          local _prefix
+          for _prefix in "''${BOUND_PREFIXES[@]}"; do
+            [[ "$_target" == "$_prefix" || "$_target" == "$_prefix/"* ]] && return 0
+          done
+          return 1
+        }
+
+        RESOLVED_TARGETS=()
+        readonlyStateFileSymlinks=""
+        readWriteStateFileSymlinks=""
+
+        _add_symlink_target() {
+          local _target="$1"
+          local _existing
+          for _existing in "''${RESOLVED_TARGETS[@]}"; do
+            [[ "$_existing" == "$_target" ]] && return
+          done
+          RESOLVED_TARGETS+=("$_target")
+          _is_already_bound "$_target" && return
+          if [[ "$_target" == /nix/store/* ]]; then
+            readonlyStateFileSymlinks="$readonlyStateFileSymlinks --ro-bind $_target $_target"
+          else
+            readWriteStateFileSymlinks="$readWriteStateFileSymlinks --bind $_target $_target"
+          fi
+        }
+
+        # Resolve stateFile symlinks — bind resolved targets, not the symlink paths
+        STATE_FILE_BINDS=""
+        ${stateFilesSymlinkBashStr}
+
+        # Scan stateDirs for internal symlinks and bind their resolved targets
+        ${stateDirsSymlinkScanBashStr}
+      '';
+
       extraEnvStr = builtins.concatStringsSep " "
         (map (name: "--setenv ${name} ${builtins.toJSON extraEnv.${name}}")
           (builtins.attrNames extraEnv));
@@ -181,10 +253,13 @@ let
 
         # Build per-path ro-bind flags for the nix store closure
         CLOSURE_BINDS=""
+        BOUND_PREFIXES=()
         while IFS= read -r storePath; do
           CLOSURE_BINDS="$CLOSURE_BINDS --ro-bind $storePath $storePath"
+          BOUND_PREFIXES+=("$storePath")
         done < ${closurePathsFile}
 
+        ${symlinkResolutionBashStr}
         ${conditionalNetworkingParams.proxyStartupBashStr}
         ${conditionalNetworkingParams.bashTrapCleanupStr}
         ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.bubblewrap}/bin/bwrap \
@@ -202,7 +277,9 @@ let
           $REPO_BIND \
           --bind "$CWD" "$CWD" \
           ${bindDirsStr} \
-          ${bindFilesStr} \
+          $STATE_FILE_BINDS \
+          $readonlyStateFileSymlinks \
+          $readWriteStateFileSymlinks \
           $GIT_BIND \
           --symlink ${bashWrapper}/bin/bash /bin/sh \
           --unshare-all \

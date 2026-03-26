@@ -33,10 +33,6 @@ expect_ok "can read /etc/resolv.conf" "cat /etc/resolv.conf > /dev/null"
 expect_ok "can run allowed binaries" "ls / > /dev/null"
 
 # --- stateDirs / stateFiles / extraEnv ---
-expect_ok "can write to stateDir" "echo test > \$HOME/.test-state-dir/file && cat \$HOME/.test-state-dir/file"
-expect_ok "can write to stateFile" "echo test > \$HOME/.test-state-file && cat \$HOME/.test-state-file"
-expect_fail "stateDir does not weaken isolation" "ls \$HOME/.ssh"
-
 if [ "$(run_output 'echo $TEST_VAR')" = "test-value" ]; then
 	echo "PASS: extraEnv variable is accessible"
 	PASS=$((PASS + 1))
