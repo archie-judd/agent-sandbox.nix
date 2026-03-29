@@ -19,86 +19,50 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs on both platfo
 
 ## Usage
 
-See [`examples/`](examples/) for ready-to-use templates. Authentication is covered [below](#authentication).
+Use a flake template or see [`shells/`](shells/) for ready-to-use shell.nix files. Authentication is covered [below](#authentication).
 
-### In a flake
+### Templates
 
-Here is an example flake that provides a development shell with a sandboxed claude binary.
+Flake templates are provided for quick project setup:
 
-```nix
-{
-  inputs.sandbox.url = "github:archie-judd/agent-sandbox.nix";
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+| Template | Description |
+|---|---|
+| `claude` | Dev shell with a sandboxed Claude Code binary |
+| `copilot` | Dev shell with a sandboxed GitHub Copilot CLI binary |
 
-  outputs = { nixpkgs, sandbox, ... }:
-    let
-      forAllSystems = nixpkgs.lib.genAttrs [
-        "x86_64-linux"
-        "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
-      ];
-    in {
-      devShells = forAllSystems (system:
-        let
-          pkgs = import nixpkgs { system = system; };
-          claude-sandboxed = sandbox.lib.${system}.mkSandbox {
-            pkg = pkgs.claude-code;
-            binName = "claude";
-            outName = "claude-sandboxed"; # or whatever alias you'd like
-            allowedPackages = [
-              pkgs.coreutils
-              pkgs.which
-              pkgs.git
-              pkgs.ripgrep
-              pkgs.fd
-              pkgs.gnused
-              pkgs.gnugrep
-              pkgs.findutils
-              pkgs.jq
-            ]; # bash is allowed by default - it is required by the sandbox
-            stateDirs = [ "$HOME/.claude" ];
-            stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
-            extraEnv = {
-              # Use literal strings for secrets to evaluate at runtime!
-              # builtins.getEnv will leak your token into the /nix/store.
-              CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
-              GITHUB_TOKEN = "$GITHUB_TOKEN";
-            };
-          };
-        in {
-          default = pkgs.mkShell {
-            packages = [ claude-sandboxed ];
-          };
-        });
-    };
-}
+Initialize a template in your project directory:
+
+```bash
+nix flake init -t github:archie-judd/agent-sandbox.nix#claude
+# or
+nix flake init -t github:archie-judd/agent-sandbox.nix#copilot
 ```
 
-Copy the above flake and adjust it to your needs.
-
-> **Note**: claude and most other AI CLI tools are not FOSS. You will need to set `NIXPKGS_ALLOW_UNFREE=1` and invoke the shell with `--impure`:
-
-You can enter a dev shell with the sandboxed binary with:
+This creates a `flake.nix` in your project (see [`templates/claude/flake.nix`](templates/claude/flake.nix) for what you get). Edit it to suit your needs, then enter the dev shell:
 
 ```bash
 NIXPKGS_ALLOW_UNFREE=1 nix develop --impure
 ```
 
-And invoke your wrapped binary (e.g. claude, in this case) with:
+> **Note**: Claude Code and most other AI CLI tools are not FOSS. You will need to set `NIXPKGS_ALLOW_UNFREE=1` and invoke the shell with `--impure`.
+
+And invoke your wrapped binary:
 
 ```bash
 claude-sandboxed --dangerously-skip-permissions # Claude Code's "YOLO mode"
+# or
+copilot-sandboxed --yolo
 ```
 
-If you want to keep "claude" as the alias, change the `outName` value to "claude".
+If you want to keep the original command name as the alias, change the `outName` value (e.g. to `"claude"` or `"copilot"`).
 
-> **Network Restrictions**: If you'd like to restrict network connection to particular domains, see [Network restrictions](#network-restrictions)
-
+> **Network Restrictions**: If you'd like to restrict network connections to particular domains, see [Network restrictions](#network-restrictions).
 
 ### In a shell.nix
 
-Provides a nix shell with a sandboxed copilot binary:
+You can also use a `shell.nix` instead of a flake. See [`shells/`](shells/) for ready-to-use templates.
+
+Here is an example that provides a nix shell with a sandboxed copilot binary:
 
 ```nix
 let
@@ -133,23 +97,13 @@ let
 in pkgs.mkShell { packages = [ copilot-sandboxed ]; }
 ```
 
-Copy the above shell and adjust it to your needs.
-
-You can enter a dev shell with the sandboxed binary with:
+Enter the dev shell with:
 
 ```bash
 nix-shell shell.nix
 ```
 
-And invoke your wrapped binary (e.g. copilot, in this case) with:
-
-```bash
-copilot-sandboxed --yolo
-```
-
-If you want to keep "copilot" as the alias, change the `outName` value to "copilot".
-
-> **Network Restrictions**: If you'd like to restrict network connection to particular domains, see [Network restrictions](#network-restrictions).
+> **Network Restrictions**: If you'd like to restrict network connections to particular domains, see [Network restrictions](#network-restrictions).
 
 ### Network restrictions
 
@@ -252,7 +206,7 @@ To give the agent its own git identity, pass the following environment variables
 
 ### Python with uv
 
-uv needs access to its cache dirs via `stateDirs`, otherwise it will re-download dependencies on every invocation. On NixOS, pre-compiled wheels will also fail to find glibc unless you thread `LD_LIBRARY_PATH` through from the host and use a nix-managed Python instead of a uv-managed one. See [`examples/claude-uv.shell.nix`](examples/claude-uv.shell.nix) for the full setup.
+uv needs access to its cache dirs via `stateDirs`, otherwise it will re-download dependencies on every invocation. On NixOS, pre-compiled wheels will also fail to find glibc unless you thread `LD_LIBRARY_PATH` through from the host and use a nix-managed Python instead of a uv-managed one. See [`shells/claude-uv.shell.nix`](shells/claude-uv.shell.nix) for the full setup.
 
 ### Node.js with npm
 
