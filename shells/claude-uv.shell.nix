@@ -7,7 +7,7 @@
 #
 # Usage:
 #   export CLAUDE_CODE_OAUTH_TOKEN="your_token_here"
-#   nix-shell examples/claude-uv.shell.nix
+#   nix-shell shells/claude-uv.shell.nix
 let
   pkgs = import <nixpkgs> { config.allowUnfree = true; };
   sandbox = import (fetchTarball

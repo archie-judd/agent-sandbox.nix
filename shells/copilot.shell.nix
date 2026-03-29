@@ -3,7 +3,7 @@
 #
 # Usage:
 #   export GITHUB_TOKEN="your_token_here"
-#   nix-shell examples/copilot.shell.nix
+#   nix-shell shells/copilot.shell.nix
 let
   pkgs = import <nixpkgs> { config.allowUnfree = true; };
   sandbox = import (fetchTarball
