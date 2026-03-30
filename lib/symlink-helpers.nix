@@ -93,6 +93,6 @@
   mkScanDirBashStr = dir: ''
     while IFS= read -r _symlink; do
       _follow_symlink_chain "$_symlink"
-    done < <(${pkgs.findutils}/bin/find "${dir}" -type l 2>/dev/null)
+    done < <(${pkgs.findutils}/bin/find "${dir}" -maxdepth 1 -type l 2>/dev/null)
   '';
 }
