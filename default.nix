@@ -287,6 +287,8 @@ let
           $GIT_BIND \
           --symlink ${bashWrapper}/bin/bash /bin/sh \
           --unshare-all \
+          --uid "$(id -u)" \
+          --gid "$(id -g)" \
           --share-net \
           --die-with-parent \
           --chdir "$CWD" \
