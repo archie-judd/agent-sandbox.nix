@@ -10,7 +10,7 @@ let
     nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
   } ''
     mkdir -p $out/bin
-    makeBinaryWrapper ${pkgs.bashNonInteractive}/bin/bash $out/bin/bash \
+    makeBinaryWrapper ${pkgs.bashInteractive}/bin/bash $out/bin/bash \
       --add-flags "--norc" \
       --add-flags "--noprofile"
   '';
@@ -139,10 +139,12 @@ let
 
         # Resolve stateFile symlinks — bind resolved targets, not the symlink paths
         STATE_FILE_BINDS=""
-        ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveFileBashStr stateFiles)}
+        ${builtins.concatStringsSep "\n"
+        (map symlinkHelpers.mkResolveFileBashStr stateFiles)}
 
         # Scan stateDirs for internal symlinks and bind their resolved targets
-        ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkScanDirBashStr stateDirs)}
+        ${builtins.concatStringsSep "\n"
+        (map symlinkHelpers.mkScanDirBashStr stateDirs)}
       '';
 
       extraEnvStr = builtins.concatStringsSep " "
