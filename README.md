@@ -121,16 +121,24 @@ By default, network access is unrestricted. But you can optionally restrict conn
     allowedPackages = [ ... ];
     ...
     restrictNetwork = true;
-    allowedDomains = [
-      "api.anthropic.com"
-      "sentry.io"
-    ];
+    allowedDomains = {
+      "anthropic.com" = "*";                          # all methods, including subdomains
+      "api.github.com" = [ "GET" "HEAD" ];            # read-only
+      "raw.githubusercontent.com" = [ "GET" "HEAD" ]; # read-only
+    };
   };
 ```
 
-`allowedDomains` are suffix-matched, so "anthropic.com" will capture all *.anthropic.com domains.
+`allowedDomains` accepts two formats:
 
-When `restrictNetwork = true`, network connections are routed through a localhost proxy that filters requests by domain. The proxy checks the target hostname against `allowedDomains`. Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
+- **Attrset (recommended):** map each domain to `"*"` (all HTTP methods allowed) or a list of permitted methods (e.g. `[ "GET" "HEAD" ]`).
+- **List:** `[ "anthropic.com" "sentry.io" ]` — equivalent to allowing all methods for each domain.
+
+Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.com` subdomains.
+
+When `restrictNetwork = true`, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted.
+
+Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
 
 ## Arguments
 
@@ -144,14 +152,14 @@ When `restrictNetwork = true`, network connections are routed through a localhos
 | `stateFiles` | no | Individual files the agent can read/write |
 | `extraEnv` | no | Additional environment variables as an attrset |
 | `restrictNetwork` | no | When `true`, network is limited to `allowedDomains` (default `false`) |
-| `allowedDomains` | no | Domains the sandbox can reach when `restrictNetwork = true` |
+| `allowedDomains` | no | Domains the sandbox can reach when `restrictNetwork = true`. Attrset mapping domains to `"*"` or a list of HTTP methods, or a list of domain strings (all methods allowed). |
 
 
 ## Authentication
 
-Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys. Interactive login flows (e.g. `claude /login`, `gh auth login`) will not work inside the sandbox.
+Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys, it is recommended to authenticate via environment variable. Interactive login flows (e.g. `claude /login`, `gh auth login`) may not work inside the sandbox.
 
-If your agent stores credentials in files (e.g. Claude Code uses `~/.claude/`), you can run the login flow unsandboxed first, then expose the credential directory via `stateDirs`. The sandboxed agent will pick up the cached credentials. Otherwise, use an environment variable token.
+If your agent stores credentials in files (e.g. Claude Code uses `~/.claude/`), you can run the login flow unsandboxed first, then expose the `~/.claude` directory via `stateDirs`. The sandboxed agent will pick up the cached credentials. Otherwise, use an environment variable token.
 
 ### Environment variable tokens
 
@@ -218,7 +226,7 @@ uv needs access to its cache dirs via `stateDirs`, otherwise it will re-download
 
 ### Node.js with npm
 
-For Node, you can simply add the npm cache as a state-dir.
+For Node, you can simply add the npm cache as a `stateDir`.
 
 ```nix
 allowedPackages = [ pkgs.nodejs pkgs.npm ];
@@ -241,7 +249,7 @@ bash-sandboxed = sandbox.mkSandbox {
   stateDirs = [ "$HOME/.claude" ];
   stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
   restrictNetwork = true;
-  allowedDomains = [ "httpbin.org" ];
+  allowedDomains = { "httpbin.org" = "*"; };
 };
 ```
 
@@ -285,9 +293,11 @@ If you are unable to debug, or suspect the AI can't access a file or folder it s
 ## Caveats
 
 - **`sandbox-exec` is deprecated on macOS.** It remains the only native unprivileged sandboxing mechanism and currently works on macOS 26 (Tahoe) and older, but may break in a future release.
-- **macOS only: `stateDirs` and `stateFiles` cannot be symlinks pointing outside the nix store.** The Darwin sandbox cannot resolve symlinks to unlisted locations, so access will fail.
+- **macOS only: symlinks inside `stateDirs` and `stateFiles` must point to already-allowed paths.** Seatbelt follows symlinks to their target — if the target isn't in the Nix store closure or another allowed path, access will be denied. Symlinks into the Nix store will work but are read-only.
+- **Linux only: only top-level symlinks inside `stateDirs` are resolved.** At startup, the sandbox scans each `stateDir` for symlinks in its immediate children and binds their targets into the sandbox. Symlinks inside subdirectories are not followed. If you have deeper symlinks, add the target path as an additional `stateDir`.
 - Tested on x86_64-linux and aarch64-darwin. Other architectures should work but are untested.
-- Network filtring is Proxy based. DNS resolution is blocked, but direct connections via known IP address are not prevented.
+
+- Network filtering is proxy-based. On Linux, direct internet access is additionally blocked at the network namespace level via `pasta`. On macOS, only localhost is reachable when `restrictNetwork = true`.
 
 ## Similar projects
 
