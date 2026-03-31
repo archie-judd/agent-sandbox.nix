@@ -36,6 +36,19 @@
               # builtins.getEnv will leak your token into the /nix/store.
               CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
               GITHUB_TOKEN = "$GITHUB_TOKEN";
+              GIT_AUTHOR_NAME = "claude";
+              GIT_AUTHOR_EMAIL = "claude@localhost";
+              GIT_COMMITTER_NAME = "claude";
+              GIT_COMMITTER_EMAIL = "claude@localhost";
+            };
+            restrictNetwork = true;
+            allowedDomains = {
+              # Anthropic
+              "anthropic.com" = "*";
+              "claude.com" = "*";
+              # GitHub
+              "raw.githubusercontent.com" = [ "GET" "HEAD" ];
+              "api.github.com" = [ "GET" "HEAD" ];
             };
           };
         in {

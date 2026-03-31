@@ -38,13 +38,13 @@ let
       GIT_COMMITTER_EMAIL = "claude@localhost";
     };
     restrictNetwork = true;
-    allowedDomains = [
+    allowedDomains = {
       # Anthropic
-      "anthropic.com"
-      "claude.com"
+      "anthropic.com" = "*";
+      "claude.com" = "*";
       # GitHub
-      "raw.githubusercontent.com"
-      "api.github.com"
-    ];
+      "raw.githubusercontent.com" = [ "GET" "HEAD" ];
+      "api.github.com" = [ "GET" "HEAD" ];
+    };
   };
 in pkgs.mkShell { packages = [ claude-sandboxed ]; }

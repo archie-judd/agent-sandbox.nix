@@ -67,17 +67,17 @@ let
     allowedPackages = commonPackages;
     extraEnv = commonEnv // pkgs.lib.optionalAttrs isLinux linuxEnv;
     restrictNetwork = true;
-    allowedDomains = [
+    allowedDomains = {
       # Anthropic
-      "anthropic.com"
-      "claude.com"
+      "anthropic.com" = "*";
+      "claude.com" = "*";
       # GitHub 
-      "githubusercontent.com"
-      "github.com"
+      "githubusercontent.com" = [ "GET" "HEAD" ];
+      "github.com" = [ "GET" "HEAD" ];
       # PyPI 
-      "pypi.org"
-      "pythonhosted.org"
-    ];
+      "pypi.org" = [ "GET" "HEAD" ];
+      "pythonhosted.org" = [ "GET" "HEAD" ];
+    };
 
   };
 

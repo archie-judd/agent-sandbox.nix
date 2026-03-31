@@ -56,13 +56,11 @@ copilot-sandboxed --yolo
 
 If you want to keep the original command name as the alias, change the `outName` value (e.g. to `"claude"` or `"copilot"`).
 
-> **Network Restrictions**: If you'd like to restrict network connections to particular domains, see [Network restrictions](#network-restrictions).
-
 ### In a shell.nix
 
 You can also use a `shell.nix` instead of a flake. See [`shells/`](shells/) for ready-to-use templates.
 
-Here is an example that provides a nix shell with a sandboxed copilot binary:
+Here is an example that provides a nix shell with a sandboxed Claude Code binary (see [`shells/claude.shell.nix`](shells/claude.shell.nix) for the full version):
 
 ```nix
 let
@@ -71,10 +69,10 @@ let
     "https://github.com/archie-judd/agent-sandbox.nix/archive/main.tar.gz") {
       pkgs = pkgs;
     };
-  copilot-sandboxed = sandbox.mkSandbox {
-    pkg = pkgs.github-copilot-cli;
-    binName = "copilot";
-    outName = "copilot-sandboxed"; # or whatever alias you'd like
+  claude-sandboxed = sandbox.mkSandbox {
+    pkg = pkgs.claude-code;
+    binName = "claude";
+    outName = "claude-sandboxed";
     allowedPackages = [
       pkgs.coreutils
       pkgs.which
@@ -86,15 +84,23 @@ let
       pkgs.findutils
       pkgs.jq
     ]; # bash is allowed by default - it is required by the sandbox
-    stateDirs = [ "$HOME/.config/github-copilot" "$HOME/.copilot" ];
-    stateFiles = [ ];
+    stateDirs = [ "$HOME/.claude" ];
+    stateFiles = [ "$HOME/.claude.json" "$HOME/.claude.json.lock" ];
     extraEnv = {
       # Use literal strings for secrets to evaluate at runtime!
       # builtins.getEnv will leak your token into the /nix/store.
+      CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
       GITHUB_TOKEN = "$GITHUB_TOKEN";
     };
+    restrictNetwork = true;
+    allowedDomains = {
+      "anthropic.com" = "*";
+      "claude.com" = "*";
+      "raw.githubusercontent.com" = [ "GET" "HEAD" ];
+      "api.github.com" = [ "GET" "HEAD" ];
+    };
   };
-in pkgs.mkShell { packages = [ copilot-sandboxed ]; }
+in pkgs.mkShell { packages = [ claude-sandboxed ]; }
 ```
 
 Enter the dev shell with:
@@ -102,8 +108,6 @@ Enter the dev shell with:
 ```bash
 nix-shell shell.nix
 ```
-
-> **Network Restrictions**: If you'd like to restrict network connections to particular domains, see [Network restrictions](#network-restrictions).
 
 ### Network restrictions
 
@@ -194,15 +198,15 @@ SSH based remotes (e.g. `git@github.com:...`) won't work by default — SSH keys
 
 ### Git identity
 
-To give the agent its own git identity, pass the following environment variables via `extraEnv`. E.g., for copilot:
+To give the agent its own git identity, pass the following environment variables via `extraEnv`:
 
 ```nix
     extraEnv = {
       ...
-      GIT_AUTHOR_NAME = "copilot";
-      GIT_AUTHOR_EMAIL = "copilot@localhost";
-      GIT_COMMITTER_NAME = "copilot";
-      GIT_COMMITTER_EMAIL = "copilot@localhost";
+      GIT_AUTHOR_NAME = "claude";
+      GIT_AUTHOR_EMAIL = "claude@localhost";
+      GIT_COMMITTER_NAME = "claude";
+      GIT_COMMITTER_EMAIL = "claude@localhost";
     };
 ```
 
