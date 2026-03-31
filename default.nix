@@ -623,7 +623,7 @@ let
         # Create an ephemeral HOME so subprocesses don't touch the real home.
         # Lives under /tmp which is already allowed read-write in the profile.
         REAL_HOME="$HOME"
-        SANDBOX_HOME=$(mktemp -d /tmp/sandbox-home.XXXXXX)
+        SANDBOX_HOME=$(mktemp -d /private/tmp/sandbox-home.XXXXXX)
 
         # Symlink state dirs/files into sandbox HOME so $HOME-relative lookups
         # reach the real paths through the Seatbelt-allowed targets.
