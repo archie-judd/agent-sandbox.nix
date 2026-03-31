@@ -145,7 +145,11 @@ When `restrictNetwork = true`, network connections are routed through a localhos
 
 ## Authentication
 
-Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys. Interactive login flows (e.g. `claude /login`, `gh auth login`) will not work inside the sandbox. You must authenticate via an environment variable token instead.
+Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys. Interactive login flows (e.g. `claude /login`, `gh auth login`) will not work inside the sandbox.
+
+If your agent stores credentials in files (e.g. Claude Code uses `~/.claude/`), you can run the login flow unsandboxed first, then expose the credential directory via `stateDirs`. The sandboxed agent will pick up the cached credentials. Otherwise, use an environment variable token.
+
+### Environment variable tokens
 
 Export your token in the host terminal before launching the sandbox — tokens are evaluated at runtime to prevent them from leaking into the Nix store:
 
