@@ -247,7 +247,7 @@ The easiest way to explore the sandbox environment is to wrap `bash` itself with
 ```nix
 # mirror your agent's config
 bash-sandboxed = sandbox.mkSandbox {
-  pkg = pkgs.bashNonInteractive;
+  pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "bash-sandboxed";
   allowedPackages = [ pkgs.coreutils ];

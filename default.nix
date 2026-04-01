@@ -24,16 +24,19 @@ let
   mkAllowlistFile = allowedDomains:
     let
       attrset = if builtins.isList allowedDomains then
-        builtins.listToAttrs
-          (map (d: { name = d; value = "*"; }) allowedDomains)
+        builtins.listToAttrs (map (d: {
+          name = d;
+          value = "*";
+        }) allowedDomains)
       else
         allowedDomains;
-    in pkgs.writeText "sandbox-allowlist.json"
-      (builtins.toJSON attrset);
+    in pkgs.writeText "sandbox-allowlist.json" (builtins.toJSON attrset);
   # Returns true if allowedDomains is non-empty (works for both list and attrset).
   hasAllowedDomains = allowedDomains:
-    if builtins.isList allowedDomains then allowedDomains != [ ]
-    else allowedDomains != { };
+    if builtins.isList allowedDomains then
+      allowedDomains != [ ]
+    else
+      allowedDomains != { };
   # Shared by mkLinuxSandbox and mkDarwinSandbox. Starts the MITM proxy,
   # blocks until it reports its listening port via a FIFO, and creates
   # a combined CA bundle for the sandbox to trust the proxy's ephemeral CA.
@@ -180,7 +183,7 @@ let
       # can only reach the host machine (where the proxy listens), not the
       # wider internet.
       routeRestrictScript = pkgs.writeScript "sandbox-route-restrict" ''
-        #!${pkgs.bashNonInteractive}/bin/bash
+        #!${pkgs.bashInteractive}/bin/bash
         set -euo pipefail
         IP="${pkgs.iproute2}/bin/ip"
         $IP route del default || { echo "FATAL: could not remove default route" >&2; exit 1; }
@@ -188,8 +191,7 @@ let
         exec "$@"
       '';
       conditionalNetworkingParams = if restrictNetwork then
-        let
-          allowlistFileStr = mkAllowlistFile allowedDomains;
+        let allowlistFileStr = mkAllowlistFile allowedDomains;
         in {
           warnIgnoredDomainsBashStr = "";
           proxyEnvBubblewrapStr = ''
@@ -204,17 +206,21 @@ let
               exit 1
             fi
           '' + mkProxyStartupBashStr allowlistFileStr "0.0.0.0";
-          bashTrapCleanupStr = ''trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"' EXIT'';
-          sandboxExecBashStr = ''SANDBOX_HOST_IP="$_HOST_IP" ${pkgs.passt}/bin/pasta -4 --config-net -a 10.0.2.1 -g 10.0.2.2 -n 255.255.255.0 -- ${routeRestrictScript} '';
+          bashTrapCleanupStr = ''
+            trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"' EXIT'';
+          sandboxExecBashStr = ''
+            SANDBOX_HOST_IP="$_HOST_IP" ${pkgs.passt}/bin/pasta -4 --config-net -a 10.0.2.1 -g 10.0.2.2 -n 255.255.255.0 -- ${routeRestrictScript} '';
           etcResolvBind =
             "--ro-bind /dev/null /etc/resolv.conf"; # Block DNS resolution when restrictNetwork is true.
-          sslCertEnvBubblewrapStr = ""; # CA cert env vars are set in caCertBubblewrapStr
+          sslCertEnvBubblewrapStr =
+            ""; # CA cert env vars are set in caCertBubblewrapStr
         }
       else {
-        warnIgnoredDomainsBashStr = if (hasAllowedDomains allowedDomains) then ''
-          echo "WARNING: allowedDomains is set but restrictNetwork is false — domains will be ignored" >&2
-        '' else
-          "";
+        warnIgnoredDomainsBashStr =
+          if (hasAllowedDomains allowedDomains) then ''
+            echo "WARNING: allowedDomains is set but restrictNetwork is false — domains will be ignored" >&2
+          '' else
+            "";
         proxyEnvBubblewrapStr = "";
         caCertBubblewrapStr = "";
         proxyStartupBashStr = "";
@@ -249,7 +255,7 @@ let
       executable = true;
       destination = "/bin/${outName}";
       text = ''
-        #!${pkgs.bashNonInteractive}/bin/bash
+        #!${pkgs.bashInteractive}/bin/bash
         CWD=$(pwd)
         ${conditionalNetworkingParams.warnIgnoredDomainsBashStr}
         ${mkDirsStr}
@@ -516,8 +522,7 @@ let
           (builtins.attrNames extraEnv));
 
       conditionalNetworkingParams = if restrictNetwork then
-        let
-          allowlistFileStr = mkAllowlistFile allowedDomains;
+        let allowlistFileStr = mkAllowlistFile allowedDomains;
         in {
           warnIgnoredDomainsBashStr = "";
           proxyEnvInlineBashStr = ''
@@ -531,20 +536,22 @@ let
             (allow network-bind (local ip "localhost:*"))
             (allow system-socket)
           '';
-          proxyStartupBashStr = mkProxyStartupBashStr allowlistFileStr "127.0.0.1";
+          proxyStartupBashStr =
+            mkProxyStartupBashStr allowlistFileStr "127.0.0.1";
           bashTrapCleanupStr = ''
             trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"; rm -rf "$SANDBOX_HOME"' EXIT'';
           sandboxExecBashStr = "";
 
         }
       else {
-        warnIgnoredDomainsBashStr = if (hasAllowedDomains allowedDomains) then ''
-          echo "WARNING: allowedDomains is set but restrictNetwork is false — domains will be ignored" >&2
-        '' else
-          "";
+        warnIgnoredDomainsBashStr =
+          if (hasAllowedDomains allowedDomains) then ''
+            echo "WARNING: allowedDomains is set but restrictNetwork is false — domains will be ignored" >&2
+          '' else
+            "";
         proxyEnvInlineBashStr = "";
         caCertEnvInlineBashStr = ''
-            SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" NIX_SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"'';
+          SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" NIX_SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"'';
         networkSeatbeltRulesStr = ''
           ;; Network
           (allow network*)
@@ -603,7 +610,7 @@ let
       executable = true;
       destination = "/bin/${outName}";
       text = ''
-        #!${pkgs.bashNonInteractive}/bin/bash
+        #!${pkgs.bashInteractive}/bin/bash
         CWD=$(pwd)
         ${conditionalNetworkingParams.warnIgnoredDomainsBashStr}
 

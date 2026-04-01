@@ -3,8 +3,8 @@ let
   pkgs = import <nixpkgs> { };
   sandbox = import ../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
-  pkg = pkgs.bashNonInteractive;
+  pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "sandboxed-bash";
-  allowedPackages = [ pkgs.coreutils pkgs.bashNonInteractive pkgs.git ];
+  allowedPackages = [ pkgs.coreutils pkgs.git ];
 }
