@@ -107,9 +107,12 @@
     (literal "/nix/store"))
   (allow file-read* (subpath "/nix/store"))
 
-  ;; Filesystem traversal — stat() on parent dirs for path resolution
-  (allow file-read*
-    (literal "/")
+  ;; Filesystem traversal — stat() on parent dirs for path resolution.
+  ;; "/" needs file-read* (process startup requires readdir on root).
+  ;; All other traversal paths use file-read-metadata so only stat() is
+  ;; allowed, preventing readdir() from enumerating directory contents.
+  (allow file-read* (literal "/"))
+  (allow file-read-metadata
     (literal "/var")
     (literal "/dev")
     (literal "/private")
@@ -118,8 +121,6 @@
     (literal "/private/etc")
     (literal "/private/var/db")
     (literal "/Users")
-    (literal (param "HOME"))
-    (subpath (param "HOME"))
     (literal (param "REAL_HOME"))
     (literal (param "HOME_LOCAL"))
     (literal (param "HOME_CACHE"))
@@ -127,8 +128,10 @@
     (literal (param "HOME_LOCAL_STATE"))
     (literal (param "REPO_ROOT_PARENT")))
 
-  ;; Sandbox HOME — full read + exec (copilot stores spawn helper binaries here) 
-  (allow file-read* process-exec (subpath (param "HOME")))
+  ;; Sandbox HOME — full read + exec (copilot stores spawn helper binaries here)
+  (allow file-read* process-exec
+    (literal (param "HOME"))
+    (subpath (param "HOME")))
 
   ;; Working directory & repository
   (allow file-read* file-write* (subpath (param "CWD")))
