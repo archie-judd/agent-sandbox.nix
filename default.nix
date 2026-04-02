@@ -42,7 +42,7 @@ let
   # a combined CA bundle for the sandbox to trust the proxy's ephemeral CA.
   mkProxyStartupBashStr = allowlistFileStr: listenAddr: ''
     # Start the MITM proxy and read its port via FIFO
-    _CA_CERT_FILE=$(mktemp /tmp/sandbox-ca-cert.XXXXXX.pem)
+    _CA_CERT_FILE=$(mktemp /tmp/sandbox-ca-cert.XXXXXX)
     _PROXY_PORT_FIFO=$(mktemp -u /tmp/sandbox-proxy-port.XXXXXX)
     mkfifo "$_PROXY_PORT_FIFO"
     # Open FIFO read-write so neither side blocks waiting for the other
@@ -63,7 +63,7 @@ let
       exit 1
     fi
     # Create a combined CA bundle: system certs + proxy's ephemeral CA
-    _COMBINED_CA_BUNDLE=$(mktemp /tmp/sandbox-ca-bundle.XXXXXX.pem)
+    _COMBINED_CA_BUNDLE=$(mktemp /tmp/sandbox-ca-bundle.XXXXXX)
     cat ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt "$_CA_CERT_FILE" > "$_COMBINED_CA_BUNDLE"
   '';
   /* mkLinuxSandbox — wraps a binary in a bubblewrap (bwrap) container.
