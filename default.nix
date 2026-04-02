@@ -205,7 +205,7 @@ let
               echo "ERROR: could not determine host IP for pasta network namespace" >&2
               exit 1
             fi
-          '' + mkProxyStartupBashStr allowlistFileStr "0.0.0.0";
+          '' + mkProxyStartupBashStr allowlistFileStr "$_HOST_IP";
           bashTrapCleanupStr = ''
             trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"' EXIT'';
           sandboxExecBashStr = ''
