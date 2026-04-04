@@ -11,7 +11,7 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 - Read/write the working directory from which the sandboxed agent is invoked.
 - Read/write explicitly declared state dirs and files.
 - Execution of binaries from `allowedPackages`, plus bash, which is provided by default.
-- Optionally restrict network access to particular domains.
+- Optionally restrict network access to particular domains and HTTP methods.
 - Environment variables from extraEnv (host environment is cleared).
 - Git (via the repository's .git directory), including from within worktrees.
 
