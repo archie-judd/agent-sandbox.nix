@@ -2,7 +2,7 @@
 
 Lightweight and declarative sandboxing for AI agents on Linux and macOS.
 
-Prevent your agents in YOLO mode from reading your dotfiles, accessing your SSH keys, deleting your $HOME or touching anything outside of the project. Works with any CLI-based AI agent. Network access is unrestricted by default, but can optionally be limited to specific domains.
+Prevent your agents in YOLO mode from deleting your $HOME, force pushing to main, or publishing your ssh keys on reddit. Works with any CLI-based AI agent.
 
 The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux and sandbox-exec on macOS.
 
