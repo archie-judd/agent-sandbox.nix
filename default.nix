@@ -540,7 +540,7 @@ let
           proxyStartupBashStr =
             mkProxyStartupBashStr allowlistFileStr "127.0.0.1";
           bashTrapCleanupStr = ''
-            trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"; rm -rf "$SANDBOX_HOME"' EXIT'';
+            trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"; rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT'';
           sandboxExecBashStr = "";
 
         }
@@ -559,7 +559,7 @@ let
           (allow system-socket)
         '';
         proxyStartupBashStr = "";
-        bashTrapCleanupStr = ''trap 'rm -rf "$SANDBOX_HOME"' EXIT'';
+        bashTrapCleanupStr = ''trap 'rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT'';
         sandboxExecBashStr = "exec ";
 
       };
@@ -582,6 +582,32 @@ let
             REPO_ROOT="/nonexistent-repo-root"
             REPO_ROOT_PARENT="/nonexistent-repo-root"
         fi
+      '';
+
+      # Walk from REPO_ROOT (or CWD if no git repo) up to REAL_HOME,
+      # collecting intermediate directories that need file-read-metadata
+      # for path resolution (realpathSync, lstat, etc.).
+      ancestorTraversalBashStr = ''
+        _WALK_FROM="$REPO_ROOT"
+        if [ "$_WALK_FROM" = "/nonexistent-repo-root" ]; then
+          _WALK_FROM="$CWD"
+        fi
+        ANCESTOR_DIRS=()
+        _CURRENT=$(dirname "$_WALK_FROM")
+        while [ "$_CURRENT" != "$REAL_HOME" ] && [ "$_CURRENT" != "/" ]; do
+          ANCESTOR_DIRS+=("$_CURRENT")
+          _CURRENT=$(dirname "$_CURRENT")
+        done
+      '';
+
+      # Copy the static seatbelt profile to a temp file and append
+      # file-read-metadata rules for each ancestor directory at runtime.
+      ancestorProfilePatchBashStr = ''
+        SANDBOX_PROFILE=$(mktemp /tmp/sandbox-profile-XXXXXX)
+        cp ${seatbeltProfile} "$SANDBOX_PROFILE"
+        for _dir in "''${ANCESTOR_DIRS[@]}"; do
+          printf '    (allow file-read-metadata (literal "%s"))\n' "$_dir" >> "$SANDBOX_PROFILE"
+        done
       '';
       seatbeltStaticRules = import ./lib/seatbelt-profile.nix {
         networkRulesStr = conditionalNetworkingParams.networkSeatbeltRulesStr;
@@ -638,6 +664,11 @@ let
         ${symlinkStateDirsStr}
         ${symlinkStateFilesStr}
 
+        # Walk ancestor directories between REAL_HOME and REPO_ROOT (or CWD)
+        # and patch the seatbelt profile at runtime with file-read-metadata rules.
+        ${ancestorTraversalBashStr}
+        ${ancestorProfilePatchBashStr}
+
         ${conditionalNetworkingParams.proxyStartupBashStr}
         ${conditionalNetworkingParams.bashTrapCleanupStr}
 
@@ -654,7 +685,7 @@ let
           ${conditionalNetworkingParams.proxyEnvInlineBashStr} \
           ${extraEnvInlineStr} \
           /usr/bin/sandbox-exec \
-          -f ${seatbeltProfile} \
+          -f "$SANDBOX_PROFILE" \
           -D CWD="$CWD" \
           -D GIT_DIR="$GIT_DIR_PARAM" \
           -D REPO_ROOT="$REPO_ROOT" \
