@@ -58,12 +58,59 @@ If you want to keep the original command name as the alias, change the `outName`
 
 > **Network Restrictions**: If you'd like to restrict network connections to particular domains, see [Network restrictions](#network-restrictions).
 
+### Arguments
+
+`mkSandbox` accepts the following arguments:
+
+| Argument | Required | Description |
+|---|---|---|
+| `pkg` | yes | Package containing the binary to wrap |
+| `binName` | yes | Name of the binary inside `pkg/bin/` |
+| `outName` | yes | Name for the resulting wrapped binary and the command to invoke it with |
+| `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH. `bash` and `cacert` are provided by default — the sandbox needs a shell to run, and `cacert` is required for HTTPS to work. |
+| `stateDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
+| `stateFiles` | no | Individual files the agent can read/write |
+| `extraEnv` | no | Additional environment variables as an attrset |
+| `restrictNetwork` | no | When `true`, network is limited to `allowedDomains` (default `false`) |
+| `allowedDomains` | no | Domains the sandbox can reach when `restrictNetwork = true`. Attrset mapping domains to `"*"` or a list of HTTP methods, or a list of domain strings (all methods allowed). |
+
+A minimal example:
+
+```nix
+sandbox.mkSandbox {
+  pkg = pkgs.claude-code;
+  binName = "claude";
+  outName = "claude-sandboxed";
+  allowedPackages = [ pkgs.coreutils pkgs.git pkgs.ripgrep ];
+  stateDirs = [ "$HOME/.claude" ];
+  stateFiles = [ "$HOME/.claude.json" ];
+  extraEnv = {
+    CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
+  };
+}
+```
+
+### Network restrictions
+
+By default, network access is unrestricted. But you can optionally restrict connections to specific domains by setting `restrictNetwork = true` and providing `allowedDomains`.
+
+`allowedDomains` accepts two formats:
+
+- **Attrset (recommended):** map each domain to `"*"` (all HTTP methods allowed) or a list of permitted methods (e.g. `[ "GET" "HEAD" ]`).
+- **List:** `[ "anthropic.com" "sentry.io" ]` — equivalent to allowing all methods for each domain.
+
+Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.com` subdomains.
+
+When `restrictNetwork = true`, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted.
+
+Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
+
 ### In a shell.nix
 
 You can also use a `shell.nix` instead of a flake. See [`shells/`](shells/) for ready-to-use templates.
 
-
-Here is an example that provides a nix shell with a sandboxed Claude Code binary (see [`shells/claude.shell.nix`](shells/claude.shell.nix) for the full version):
+<details>
+<summary><strong>Full shell.nix example for Claude Code</strong></summary>
 
 ```nix
 let
@@ -113,37 +160,7 @@ Enter the dev shell with:
 nix-shell shell.nix
 ```
 
-
-## Arguments
-
-| Argument | Required | Description |
-|---|---|---|
-| `pkg` | yes | Package containing the binary to wrap |
-| `binName` | yes | Name of the binary inside `pkg/bin/` |
-| `outName` | yes | Name for the resulting wrapped binary and the command to invoke it with |
-| `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH. `bash` and `cacert` are provided by default — the sandbox needs a shell to run, and `cacert` is required for HTTPS to work. |
-| `stateDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
-| `stateFiles` | no | Individual files the agent can read/write |
-| `extraEnv` | no | Additional environment variables as an attrset |
-| `restrictNetwork` | no | When `true`, network is limited to `allowedDomains` (default `false`) |
-| `allowedDomains` | no | Domains the sandbox can reach when `restrictNetwork = true`. Attrset mapping domains to `"*"` or a list of HTTP methods, or a list of domain strings (all methods allowed). |
-
-
-### Network restrictions
-
-By default, network access is unrestricted. But you can optionally restrict connections to specific domains by setting `restrictNetwork = true` and providing `allowedDomains` (as shown in the example above).
-
-`allowedDomains` accepts two formats:
-
-- **Attrset (recommended):** map each domain to `"*"` (all HTTP methods allowed) or a list of permitted methods (e.g. `[ "GET" "HEAD" ]`).
-- **List:** `[ "anthropic.com" "sentry.io" ]` — equivalent to allowing all methods for each domain.
-
-Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.com` subdomains.
-
-When `restrictNetwork = true`, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted.
-
-Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
-
+</details>
 
 ## Authentication
 
@@ -214,7 +231,7 @@ The sandbox allows access to the local git directory, including from within work
 
 Interacting with remotes requires authentication. The recommended approach is to use HTTPS rather than SSH based remotes. The simplest way to authenticate is by passing a token via `extraEnv` (e.g. `GITHUB_TOKEN`), but you can also configure a [git credential helper](https://git-scm.com/doc/credential-helpers) to store your token for reuse so you don't have to pass it via environment variable.
 
-SSH based remotes (e.g. `git@github.com:...`) won't work by default — SSH keys are not accessible because `$HOME` is masked, and when `restrictNetwork = true` the proxy only handles HTTP/HTTPS so SSH traffic is blocked entirely. You can expose your SSH directory via `stateDirs` (e.g. `$HOME/.ssh`) and set `restrictNetwork = false` to enable SSH based git remotes, but this is not recommended. 
+SSH based remotes (e.g. `git@github.com:...`) won't work by default — SSH keys are not accessible because `$HOME` is masked, and when `restrictNetwork = true` the proxy only handles HTTP/HTTPS so SSH traffic is blocked entirely. You can expose your SSH directory via `stateDirs` (e.g. `$HOME/.ssh`) and set `restrictNetwork = false` to enable SSH based git remotes, but this is not recommended.
 
 ### Git identity
 
@@ -249,7 +266,10 @@ stateDirs = [ "$HOME/.npm" ]; # Allow npm cache
 
 If the agent fails to perform a tool call, or file read/write, the sandbox is likely blocking a path that needs to be added to `stateDirs` or `stateFiles`.
 
-The easiest way to explore the sandbox environment is to wrap `bash` itself with the same config as your agent and poke around interactively:
+The easiest way to explore the sandbox environment is to wrap `bash` itself with the same config as your agent and poke around interactively.
+
+<details>
+<summary><strong>Interactive debugging with a sandboxed bash</strong></summary>
 
 ```nix
 # mirror your agent's config
@@ -294,6 +314,8 @@ You may need to add them to `allowedDomains`.
 log show --predicate 'eventMessage CONTAINS "deny"' --last 1m
 ```
 
+</details>
+
 If you are unable to debug, or suspect the AI can't access a file or folder it should have access to by default, please raise an issue.
 
 ## Platform notes
@@ -313,11 +335,11 @@ If you are unable to debug, or suspect the AI can't access a file or folder it s
 
 There are several other tools for sandboxing AI agents. Here are a few:
 
-[**Anthropic sandbox-runtime (srt)**](https://github.com/anthropic-experimental/sandbox-runtime/tree/main) — An npm package that also uses bubblewrap on Linux and sandbox-exec on Macos. 
+[**Anthropic sandbox-runtime (srt)**](https://github.com/anthropic-experimental/sandbox-runtime/tree/main) — An npm package that also uses bubblewrap on Linux and sandbox-exec on Macos.
 
 [**jail.nix**](https://git.sr.ht/~alexdavid/jail.nix) — A nix library for building bubblewrap sandboxes. It's not built to be agent-specific but can be used for agent sandboxing. Linux only.
 
-[**jailed-agents**](https://github.com/andersonjoseph/jailed-agents) — A nix library that provides pre-configured per-agent sandboxes using bubblewrap. Linux only. 
+[**jailed-agents**](https://github.com/andersonjoseph/jailed-agents) — A nix library that provides pre-configured per-agent sandboxes using bubblewrap. Linux only.
 
 [**agent-box**](https://github.com/fletchgqc/agentbox) — A rust CLI that uses disposable containers with Jujutsu or Git worktrees. MacOS and Linux.
 
