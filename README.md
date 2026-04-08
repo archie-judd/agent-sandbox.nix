@@ -19,7 +19,7 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs on both platfo
 
 ## Usage
 
-Use a flake template or see [`shells/`](shells/) for ready-to-use shell.nix files. Authentication is covered [below](#authentication).
+The quickest way to get started is with a flake template. If you prefer a `shell.nix`, see [`shells/`](shells/) for ready-to-use examples. Authentication is covered [below](#authentication).
 
 ### Templates
 
@@ -55,55 +55,6 @@ copilot-sandboxed --yolo
 ```
 
 If you want to keep the original command name as the alias, change the `outName` value (e.g. to `"claude"` or `"copilot"`).
-
-> **Network Restrictions**: If you'd like to restrict network connections to particular domains, see [Network restrictions](#network-restrictions).
-
-### Arguments
-
-`mkSandbox` accepts the following arguments:
-
-| Argument | Required | Description |
-|---|---|---|
-| `pkg` | yes | Package containing the binary to wrap |
-| `binName` | yes | Name of the binary inside `pkg/bin/` |
-| `outName` | yes | Name for the resulting wrapped binary and the command to invoke it with |
-| `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH. `bash` and `cacert` are provided by default — the sandbox needs a shell to run, and `cacert` is required for HTTPS to work. |
-| `stateDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
-| `stateFiles` | no | Individual files the agent can read/write |
-| `extraEnv` | no | Additional environment variables as an attrset |
-| `restrictNetwork` | no | When `true`, network is limited to `allowedDomains` (default `false`) |
-| `allowedDomains` | no | Domains the sandbox can reach when `restrictNetwork = true`. Attrset mapping domains to `"*"` or a list of HTTP methods, or a list of domain strings (all methods allowed). |
-
-A minimal example:
-
-```nix
-sandbox.mkSandbox {
-  pkg = pkgs.claude-code;
-  binName = "claude";
-  outName = "claude-sandboxed";
-  allowedPackages = [ pkgs.coreutils pkgs.git pkgs.ripgrep ];
-  stateDirs = [ "$HOME/.claude" ];
-  stateFiles = [ "$HOME/.claude.json" ];
-  extraEnv = {
-    CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
-  };
-}
-```
-
-### Network restrictions
-
-By default, network access is unrestricted. But you can optionally restrict connections to specific domains by setting `restrictNetwork = true` and providing `allowedDomains`.
-
-`allowedDomains` accepts two formats:
-
-- **Attrset (recommended):** map each domain to `"*"` (all HTTP methods allowed) or a list of permitted methods (e.g. `[ "GET" "HEAD" ]`).
-- **List:** `[ "anthropic.com" "sentry.io" ]` — equivalent to allowing all methods for each domain.
-
-Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.com` subdomains.
-
-When `restrictNetwork = true`, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted.
-
-Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
 
 ### In a shell.nix
 
@@ -161,6 +112,58 @@ nix-shell shell.nix
 ```
 
 </details>
+
+### Arguments
+
+`mkSandbox` accepts the following arguments:
+
+| Argument | Required | Description |
+|---|---|---|
+| `pkg` | yes | Package containing the binary to wrap |
+| `binName` | yes | Name of the binary inside `pkg/bin/` |
+| `outName` | yes | Name for the resulting wrapped binary and the command to invoke it with |
+| `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH. `bash` and `cacert` are provided by default — the sandbox needs a shell to run, and `cacert` is required for HTTPS to work. |
+| `stateDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
+| `stateFiles` | no | Individual files the agent can read/write |
+| `extraEnv` | no | Additional environment variables as an attrset |
+| `restrictNetwork` | no | When `true`, network is limited to `allowedDomains` (default `false`) |
+| `allowedDomains` | no | Domains the sandbox can reach when `restrictNetwork = true`. Attrset mapping domains to `"*"` or a list of HTTP methods, or a list of domain strings (all methods allowed). |
+
+A minimal example — the arguments are the same whether you use a flake or a `shell.nix`:
+
+```nix
+mkSandbox {
+  pkg = pkgs.claude-code;
+  binName = "claude";
+  outName = "claude-sandboxed";
+  allowedPackages = [ pkgs.coreutils pkgs.git pkgs.ripgrep ];
+  stateDirs = [ "$HOME/.claude" ];
+  stateFiles = [ "$HOME/.claude.json" ];
+  extraEnv = {
+    CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
+  };
+  restrictNetwork = true;
+  allowedDomains = {
+    "anthropic.com" = "*";
+    "claude.com" = "*";
+  };
+}
+```
+
+### Network restrictions
+
+By default, network access is unrestricted. But you can optionally restrict connections to specific domains by setting `restrictNetwork = true` and providing `allowedDomains`.
+
+`allowedDomains` accepts two formats:
+
+- **Attrset (recommended):** map each domain to `"*"` (all HTTP methods allowed) or a list of permitted methods (e.g. `[ "GET" "HEAD" ]`).
+- **List:** `[ "anthropic.com" "sentry.io" ]` — equivalent to allowing all methods for each domain.
+
+Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.com` subdomains.
+
+When `restrictNetwork = true`, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted.
+
+Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
 
 ## Authentication
 
