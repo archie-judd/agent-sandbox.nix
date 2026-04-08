@@ -147,35 +147,18 @@ Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for lim
 
 ## Authentication
 
-Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys, it is recommended to authenticate via environment variable. Interactive login flows (e.g. `claude /login`, `gh auth login`) may not work inside the sandbox.
+Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys. The recommended approach is to authenticate via environment variable. Interactive login flows (e.g. `claude /login`, `gh auth login`) may not work inside the sandbox.
 
-If your agent stores credentials in files (e.g. Claude Code uses `~/.claude/`), you can run the login flow unsandboxed first, then expose the `~/.claude` directory via `stateDirs`. The sandboxed agent will pick up the cached credentials. Otherwise, use an environment variable token.
-
-### macOS Keychain credentials
-
-On macOS, Claude Code stores credentials in the system Keychain rather than in files. Since the sandbox cannot access the Keychain, you need to export the credentials to a file after logging in:
-
-```bash
-# Log in outside the sandbox first
-claude /login
-
-# Export credentials from Keychain to a file the sandbox can read
-security find-generic-password -a "$USER" -s "Claude Code-credentials" -w > ~/.claude/.credentials.json
-```
-
-The sandboxed agent will read credentials from `~/.claude/.credentials.json` when Keychain access is unavailable.
-
-### Environment variable tokens
+### Environment variable tokens (recommended)
 
 Export your token in the host terminal before launching the sandbox — tokens are evaluated at runtime to prevent them from leaking into the Nix store:
 
-```bash
+```
 # Claude Code
 export CLAUDE_CODE_OAUTH_TOKEN="<your_token_here>"
 
 # GitHub Copilot CLI
 export GITHUB_TOKEN="<your_token_here>"
-
 ```
 
 Pass the variable reference (not the value) into `extraEnv`:
@@ -187,16 +170,41 @@ extraEnv = {
 };
 ```
 
-Alternatively, if you store your secret in a file (for example if you use sops), you can set a command that will read the secret at runtime.
+Alternatively, if you store your secret in a file (for example if you use sops), you can set a command that will read the secret at runtime:
 
 ```nix
 extraEnv = {
-  CLAUDE_CODE_OAUTH_TOKEN = "$(${pkgs.coreutils}/bin/cat /run/secrets/claude-code-oauth-token)"; # or wherever your sops secrets directory is
+  CLAUDE_CODE_OAUTH_TOKEN = "$(${pkgs.coreutils}/bin/cat /run/secrets/claude-code-oauth-token)";
   ...
 };
 ```
 
-> **Tested agents:** `claude-code` and `copilot-cli`. Other agents should work as long as they support token-based auth via an environment variable.
+### Credential files via `stateDirs`
+
+If your agent stores credentials in files (e.g. Claude Code uses `~/.claude/`), you can run the login flow unsandboxed first, then expose the credential directory via `stateDirs`. The sandboxed agent will pick up the cached credentials.
+
+<details>
+<summary><strong>macOS Keychain workaround</strong></summary>
+
+On macOS, Claude Code stores credentials in the system Keychain rather than in files. Since the sandbox cannot access the Keychain, the environment variable approach above is the simplest option.
+
+If you can't use an environment variable token, you can export the Keychain credentials to a file that the sandbox can read:
+
+```bash
+# Log in outside the sandbox first
+claude /login
+
+# Export credentials from Keychain to a file the sandbox can read
+security find-generic-password -a "$USER" -s "Claude Code-credentials" -w > ~/.claude/.credentials.json
+```
+
+Then expose `~/.claude` via `stateDirs`. The sandboxed agent will read credentials from `~/.claude/.credentials.json` when Keychain access is unavailable.
+
+</details>
+
+### Tested agents
+
+`claude-code` and `copilot-cli`. Other agents should work as long as they support token-based auth via an environment variable.
 
 ## Git
 
