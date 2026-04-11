@@ -53,7 +53,7 @@ If you want to keep the original command name as the alias, change the `outName`
 
 ### Arguments
 
-`mkSandbox` accepts the following arguments:
+`mkSandbox`, the library's entrypoint, accepts the following arguments:
 
 | Argument | Required | Description |
 |---|---|---|
