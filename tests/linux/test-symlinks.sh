@@ -93,5 +93,23 @@ expect_ok "double symlink in stateDir: chain traversable inside sandbox" "cat \$
 
 rm -f "$_MID_SYM" "$HOME/.test-state-dir/double-link"
 
+# --- Test I: sibling symlinks into a single non-closure nix-store directory ---
+# Regression for home-manager-files: both symlinks' targets live under a shared
+# non-closure ancestor (home-manager-files/.config/...). Earlier, the ancestor
+# was pushed to BOUND_PREFIXES as a --dir (empty mountpoint), causing the
+# second sibling to be skipped as "already bound" and left dangling in the
+# sandbox.
+_HM_LIKE=$(mktemp -d /tmp/sandbox-hm-like.XXXXXX)
+mkdir -p "$_HM_LIKE/cfg"
+echo "content-a" > "$_HM_LIKE/cfg/a"
+echo "content-b" > "$_HM_LIKE/cfg/b"
+ln -sfn "$_HM_LIKE/cfg/a" "$HOME/.test-state-dir/sibling-a"
+ln -sfn "$_HM_LIKE/cfg/b" "$HOME/.test-state-dir/sibling-b"
+
+expect_ok "sibling symlinks: first target readable" "cat \$HOME/.test-state-dir/sibling-a"
+expect_ok "sibling symlinks: second target readable (not shadowed by --dir ancestor)" "cat \$HOME/.test-state-dir/sibling-b"
+
+rm -rf "$_HM_LIKE" "$HOME/.test-state-dir/sibling-a" "$HOME/.test-state-dir/sibling-b"
+
 print_results
 exit_status
