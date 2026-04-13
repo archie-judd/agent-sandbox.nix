@@ -22,6 +22,7 @@
   # appends a resolved path (and its missing parent dirs) to those variables.
   addSymlinkTargetBashStr = ''
     RESOLVED_TARGETS=()
+    SEEN_PARENT_DIRS=()
     readonlyStateFileSymlinks=""
     readWriteStateFileSymlinks=""
     SYMLINK_PARENT_DIRS=""
@@ -39,12 +40,22 @@
       else
         readWriteStateFileSymlinks="$readWriteStateFileSymlinks --bind $_target $_target"
       fi
-      local _dir
+      # Emit --dir entries for ancestor dirs so bwrap has mountpoints. These
+      # ancestors are NOT added to BOUND_PREFIXES: --dir only creates an empty
+      # dir, it does not expose its contents, so sibling files under the same
+      # ancestor still need their own --ro-bind. SEEN_PARENT_DIRS dedupes the
+      # --dir emission without affecting bind decisions.
+      local _dir _seen _existing
       _dir=$(dirname "$_target")
       while [[ "$_dir" != "/" ]]; do
         _is_already_bound "$_dir" && break
+        _seen=0
+        for _existing in "''${SEEN_PARENT_DIRS[@]}"; do
+          [[ "$_existing" == "$_dir" ]] && { _seen=1; break; }
+        done
+        (( _seen )) && break
         SYMLINK_PARENT_DIRS="$SYMLINK_PARENT_DIRS --dir $_dir"
-        BOUND_PREFIXES+=("$_dir")
+        SEEN_PARENT_DIRS+=("$_dir")
         _dir=$(dirname "$_dir")
       done
     }
