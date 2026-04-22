@@ -13,6 +13,7 @@ let
     makeBinaryWrapper ${pkgs.bashInteractive}/bin/bash $out/bin/bash \
       --add-flags "--norc" \
       --add-flags "--noprofile"
+    ln -s bash $out/bin/sh
   '';
   # Serializes allowedDomains to a JSON config file for the proxy.
   # Accepts two formats:
