@@ -27,6 +27,9 @@
               pkgs.gnused
               pkgs.gnugrep
               pkgs.findutils
+              pkgs.diffutils
+              pkgs.less
+              pkgs.gawk
               pkgs.jq
             ]; # bash is allowed by default - it is required by the sandbox
             stateDirs = [ "$HOME/.config/github-copilot" "$HOME/.copilot" ];

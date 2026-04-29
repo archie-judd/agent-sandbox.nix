@@ -23,6 +23,9 @@ let
       pkgs.gnused
       pkgs.gnugrep
       pkgs.findutils
+      pkgs.diffutils
+      pkgs.less
+      pkgs.gawk
       pkgs.jq
     ];
     stateDirs = [ "$HOME/.config/github-copilot" "$HOME/.copilot" ];
