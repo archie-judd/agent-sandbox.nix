@@ -269,6 +269,7 @@ If you are unable to debug, or suspect the AI can't access a file or folder it s
 
 ## Caveats
 
+- **The agent can modify its own sandbox configuration.** Because the working directory is fully writable, a sandboxed agent can edit `flake.nix` (or any other `.nix` file in the project). Changes to the sandbox config only take effect the next time `nix develop` is run, so the practical risk is low — but it's worth reviewing `git diff` before re-entering the shell if you've run the agent in an untrusted or adversarial context.
 - **`sandbox-exec` is deprecated on macOS.** It remains the only native unprivileged sandboxing mechanism and currently works on macOS 26 (Tahoe) and older, but may break in a future release.
 - **macOS only: symlinks inside `stateDirs` and `stateFiles` must point to already-allowed paths.** Seatbelt follows symlinks to their target — if the target isn't in the Nix store closure or another allowed path, access will be denied. Symlinks into the Nix store will work but are read-only.
 - **Linux only: only top-level symlinks inside `stateDirs` are resolved.** At startup, the sandbox scans each `stateDir` for symlinks in its immediate children and binds their targets into the sandbox. Symlinks inside subdirectories are not followed. If you have deeper symlinks, add the target path as an additional `stateDir`.
