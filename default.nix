@@ -271,6 +271,12 @@ let
           BOUND_PREFIXES+=("$storePath")
         done < ${closurePathsFile}
 
+        # Build arguments for nix files in the current working directory
+        BWRAP_NIX_FILES=()
+        for f in "$CWD"/*.nix; do
+          [ -e "$f" ] && BWRAP_NIX_FILES+=(--bind /dev/null "$f")
+        done
+
         ${symlinkResolutionBashStr}
         ${conditionalNetworkingParams.proxyStartupBashStr}
         ${conditionalNetworkingParams.bashTrapCleanupStr}
@@ -288,6 +294,8 @@ let
           --tmpfs "$HOME" \
           $REPO_BIND \
           --bind "$CWD" "$CWD" \
+          --ro-bind / / \
+          "''${BWRAP_NIX_FILES[@]}" \
           ${bindDirsStr} \
           $STATE_FILE_BINDS \
           $SYMLINK_PARENT_DIRS \

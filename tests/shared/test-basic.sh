@@ -2,6 +2,7 @@
 # Basic sandbox isolation and access tests (shared across platforms)
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "{}" >> test.nix
 
 source "$SCRIPT_DIR/../lib.sh"
 
@@ -24,6 +25,7 @@ echo
 expect_fail "cannot read ~/.ssh" "ls \$HOME/.ssh"
 expect_fail "cannot read ~/.bash_history" "cat \$HOME/.bash_history"
 expect_fail "cannot read /root" "ls /root"
+expect_fail "cannot read CWD *.nix files" "cat ./test.nix"
 
 # --- Basic access ---
 expect_ok "can write to CWD" "touch ./sandbox-test-file && rm ./sandbox-test-file"

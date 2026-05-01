@@ -136,6 +136,7 @@
   (allow file-read* (subpath (param "REPO_ROOT")))
   (allow file-read* file-write* (subpath (param "GIT_DIR")))
   (allow file-read* (subpath (param "GIT_CONFIG_DIR")))
+  (deny file-read* (regex (string-append "^" (regex-quote (param "CWD")) "/[^/]*\\.nix$")))
 
   ;; Timezone
   (allow file-read* (subpath "/private/var/db/timezone"))
