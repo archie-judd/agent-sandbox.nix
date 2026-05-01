@@ -294,7 +294,6 @@ let
           --tmpfs "$HOME" \
           $REPO_BIND \
           --bind "$CWD" "$CWD" \
-          --ro-bind / / \
           "''${BWRAP_NIX_FILES[@]}" \
           ${bindDirsStr} \
           $STATE_FILE_BINDS \
