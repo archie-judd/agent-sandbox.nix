@@ -121,8 +121,10 @@ let
   # /bin/sh symlink targets are always reachable in the store closure.
   # bashWrapper forces --norc --noprofile on every bash invocation so
   # that the sandboxed process cannot source /etc/bashrc or /etc/profile.
+  # coreutils is included for /usr/bin/env (shebang resolution) only — it is
+  # not in implicitPackages so it does not leak into PATH.
   closurePathsFile =
-    pkgs.writeClosure (allowedPackages ++ implicitPackages ++ [ pkg ]);
+    pkgs.writeClosure (allowedPackages ++ implicitPackages ++ [ pkg pkgs.coreutils ]);
 
   gitDetectionBashStr = ''
     GIT_BIND=""
@@ -178,6 +180,7 @@ in pkgs.writeTextFile {
       $readWriteStateFileSymlinks \
       $GIT_BIND \
       --symlink ${bashWrapper}/bin/bash /bin/sh \
+      --symlink ${pkgs.coreutils}/bin/env /usr/bin/env \
       --unshare-all \
       --uid "$(id -u)" \
       --gid "$(id -g)" \
