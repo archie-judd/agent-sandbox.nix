@@ -165,14 +165,37 @@ On macOS, Claude Code stores credentials in the system Keychain rather than in f
 If you can't use an environment variable token, you can export the Keychain credentials to a file that the sandbox can read:
 
 ```bash
-# Log in outside the sandbox first
+# First Log in outside the sandbox first
 claude /login
-
-# Export credentials from Keychain to a file the sandbox can read
-security find-generic-password -a "$USER" -s "Claude Code-credentials" -w > ~/.claude/.credentials.json
 ```
 
+```bash
+# Then export credentials from Keychain to a file the sandbox can read
+security dump-keychain 2>&1 \
+  | grep -o 'Claude Code-credentials[^"]*' \
+  | sort -u \
+  | while read entry; do
+      security find-generic-password -a "$USER" -s "$entry" -w 2>/dev/null
+    done \
+  | python3 -c "
+import sys, json
+most_recent = None
+for line in sys.stdin:
+    try:
+        creds = json.loads(line.strip())
+        exp = creds.get('claudeAiOauth', {}).get('expiresAt', 0)
+        if most_recent is None or exp > most_recent[1]:
+            most_recent = (line.strip(), exp)
+    except: pass
+if most_recent: print(most_recent[0])
+" > ~/.claude/.credentials.json
+```
+
+This finds all Claude Code credential entries in the Keychain and exports the one with the most recent expiry.
+
 Then expose `~/.claude` via `stateDirs`. The sandboxed agent will read credentials from `~/.claude/.credentials.json` when Keychain access is unavailable.
+
+Note: OAuth access tokens expire. You will need to re-run the export command periodically to refresh the credentials file.
 
 </details>
 
