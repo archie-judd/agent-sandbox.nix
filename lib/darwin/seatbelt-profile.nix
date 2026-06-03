@@ -46,25 +46,31 @@
     (literal "/dev/ptmx")
     (literal "/private/var/select/sh"))
   (allow file-write* (literal "/dev/null"))
+  ;; /dev/tty (the controlling-terminal alias) is intentionally NOT allowed:
+  ;; it lets a process bypass piped stdin to prompt the human directly, and
+  ;; opens the door to escape-sequence/TIOCSTI injection into the parent
+  ;; shell. The legacy BSD pty families (/dev/pty*, /dev/ttyp*, /dev/ttyq*,
+  ;; /dev/ttyr*) are likewise omitted — modern macOS allocates via
+  ;; /dev/ptmx + /dev/ttysNNN exclusively.
+  ;;
+  ;; Access to the modern pty slave (/dev/ttysNNN) is pinned to the single
+  ;; tty the wrapper was launched on, via (param "MY_TTY"). When stdin is
+  ;; not a tty the wrapper passes a nonexistent path so no slave is
+  ;; reachable. This prevents a sandboxed process from opening another
+  ;; Terminal/iTerm/tmux pane's pty owned by the same UID
+  ;; (escape-sequence injection, TIOCSTI input injection, keystroke
+  ;; eavesdropping).
   (allow file-read* file-write*
-    (literal "/dev/tty")
     (literal "/dev/ptmx")
     (regex #"^/dev/fd/")
-    (regex #"^/dev/ttys[0-9]")
-    (regex #"^/dev/pty")
-    (regex #"^/dev/ttyp"))
+    (literal (param "MY_TTY")))
   (allow file-ioctl
-    (literal "/dev/tty")
     (literal "/dev/ptmx")
-    (regex #"^/dev/ttys[0-9]")
-    (regex #"^/dev/pty")
-    (regex #"^/dev/ttyp"))
+    (literal (param "MY_TTY")))
   (allow file-read-metadata
     (literal "/dev/stdout")
     (literal "/dev/stderr")
     (literal "/dev/stdin")
-    (regex #"^/dev/ttyq")
-    (regex #"^/dev/ttyr")
     (literal "/dev/dtracehelper"))
 
   ;; System libraries & frameworks

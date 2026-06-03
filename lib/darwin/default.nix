@@ -36,8 +36,17 @@
 
      Device nodes & TTY:
        /dev/null, /dev/urandom, /dev/random, /dev/zero for reads.
-       /dev/tty and /dev/ttysNNN for terminal I/O and ioctl (e.g.,
-       querying terminal size). /dev/fd/* for file descriptor access.
+       /dev/ptmx and /dev/fd/* for pty allocation and fd-numbered access.
+       The pty slave (/dev/ttysNNN) is restricted to the single tty the
+       wrapper was launched on, injected as -D MY_TTY=<path> and
+       referenced by the profile as (param "MY_TTY"). When stdin is not
+       a tty the wrapper passes /nonexistent-tty so no slave is reachable.
+       /dev/tty itself is NOT allowed — it lets a process bypass piped
+       stdin to talk to the human and is the classic vector for
+       escape-sequence / TIOCSTI injection into the parent shell. The
+       legacy BSD pty families (/dev/pty*, /dev/ttyp*, /dev/ttyq*,
+       /dev/ttyr*) are also omitted; modern macOS uses /dev/ptmx +
+       /dev/ttysNNN exclusively.
 
      System libraries:
        /usr/lib, /usr/share, /System — Apple frameworks and dylibs.
@@ -236,6 +245,19 @@ let
       fi
     '';
 
+  # Pin the seatbelt /dev/ttys* allow rule to the single pty slave the
+  # wrapper was launched on. When stdin is piped/redirected, fall back to
+  # a nonexistent path so the rule matches nothing.
+  ttyDetectionBashStr =
+    # bash
+    ''
+      if _tty=$(tty 2>/dev/null) && [[ "$_tty" == /dev/* ]]; then
+          MY_TTY="$_tty"
+      else
+          MY_TTY="/nonexistent-tty"
+      fi
+    '';
+
   # Walk from one directory up to an ancestor, collecting intermediate
   # directories that need file-read-metadata for seatbelt path traversal.
   # Both arguments are bash expressions (e.g. "$REPO_ROOT", "$REAL_HOME").
@@ -320,6 +342,7 @@ in pkgs.writeTextFile {
       ${mkFilesStr}
 
       ${gitDetectionBashStr}
+      ${ttyDetectionBashStr}
 
       # Capture real HOME paths before redirecting
       GIT_CONFIG_DIR="$HOME/.config/git"
@@ -364,6 +387,7 @@ in pkgs.writeTextFile {
         -D GIT_DIR="$GIT_DIR_PARAM" \
         -D REPO_ROOT="$REPO_ROOT" \
         -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
+        -D MY_TTY="$MY_TTY" \
         -D GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
         -D TMPDIR="/tmp" \
         -D HOME="$SANDBOX_HOME"  \
