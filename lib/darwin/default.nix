@@ -367,6 +367,7 @@ in pkgs.writeTextFile {
       ${ancestorProfilePatchBashStr}
 
       ${conditionalNetworkingParams.proxyStartupBashStr}
+      ${conditionalNetworkingParams.networkRuntimePatchBashStr}
       ${conditionalNetworkingParams.bashTrapCleanupStr}
 
 

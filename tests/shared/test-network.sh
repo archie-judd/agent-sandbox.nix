@@ -100,5 +100,48 @@ expect_fail "raw TCP bypass blocked (bash /dev/tcp)" \
 expect_fail "direct IP for allowed domain blocked (--connect-to)" \
 	'curl -sf --max-time 5 --connect-to ::1.1.1.1: http://httpbin.org/get'
 
+# Test 18: host services on 127.0.0.1 other than the proxy are unreachable.
+# Stands in for the real threat: a user running a local service (Postgres,
+# Redis, a dev API) on 127.0.0.1. Without the proxy-port pin, a sandboxed
+# agent could connect directly via --noproxy and bypass the proxy's filter.
+# On Darwin this is enforced by the seatbelt rule being pinned to the proxy
+# port. On Linux the sandbox's network namespace has its own 127.0.0.1, so
+# the host's listener is already unreachable for unrelated reasons.
+#
+# We use nc as the listener (universally available) and bash /dev/tcp from
+# inside the sandbox as the probe — no HTTP, just a raw TCP connect. If the
+# sandbox can connect, the seatbelt let it through (FAIL). If it can't, the
+# seatbelt blocked it (PASS). We pre-verify the listener is actually up so
+# we never confuse a setup glitch for a sandbox denial.
+#
+# Hardcoded port (below the ephemeral range on macOS so the proxy can't
+# land on it). If something else is already using it we abort loudly rather
+# than silently false-passing.
+HOST_SERVICE_PORT=18917
+if nc -z 127.0.0.1 "$HOST_SERVICE_PORT" 2>/dev/null; then
+	echo "FAIL: test setup — 127.0.0.1:$HOST_SERVICE_PORT already in use; cannot run host-service test" >&2
+	exit 1
+fi
+( nc -l 127.0.0.1 "$HOST_SERVICE_PORT" >/dev/null 2>&1 ) &
+_HOST_SERVICE_PID=$!
+trap 'kill "$_HOST_SERVICE_PID" 2>/dev/null || true' EXIT
+_ready=0
+for _ in 1 2 3 4 5; do
+	if nc -z 127.0.0.1 "$HOST_SERVICE_PORT" 2>/dev/null; then
+		_ready=1
+		break
+	fi
+	sleep 0.2
+done
+if [ "$_ready" -ne 1 ]; then
+	echo "FAIL: test setup — nc listener never came up on 127.0.0.1:$HOST_SERVICE_PORT" >&2
+	kill "$_HOST_SERVICE_PID" 2>/dev/null || true
+	exit 1
+fi
+expect_fail "host service on non-proxy 127.0.0.1 port unreachable from sandbox" \
+	"exec 3<>/dev/tcp/127.0.0.1/$HOST_SERVICE_PORT"
+kill "$_HOST_SERVICE_PID" 2>/dev/null || true
+trap - EXIT
+
 print_results
 exit_status

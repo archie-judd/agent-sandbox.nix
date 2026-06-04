@@ -12,13 +12,20 @@ in if restrictNetwork then
     caCertEnvInlineBashStr = ''
       SSL_CERT_FILE="$_COMBINED_CA_BUNDLE" NIX_SSL_CERT_FILE="$_COMBINED_CA_BUNDLE" NODE_EXTRA_CA_CERTS="$_CA_CERT_FILE" REQUESTS_CA_BUNDLE="$_COMBINED_CA_BUNDLE"'';
     networkSeatbeltRulesStr = ''
-      ;; Network — restricted to localhost only (proxy-based domain filtering)
-      (allow network-outbound (remote ip "localhost:*"))
+      ;; Network — restricted to localhost only (proxy-based domain filtering).
+      ;; The outbound localhost rule is appended at runtime by
+      ;; networkRuntimePatchBashStr once the proxy port is known, so it can
+      ;; be pinned to that specific port. This prevents the sandbox from
+      ;; reaching other loopback services (local databases, dev servers,
+      ;; etc.) directly, bypassing the proxy's domain/method filtering.
       (allow network-outbound (remote unix-socket))
       (allow network-bind (local ip "localhost:*"))
       (allow system-socket)
     '';
     proxyStartupBashStr = mkProxyStartupBashStr allowlistFileStr "127.0.0.1";
+    networkRuntimePatchBashStr = ''
+      printf '    (allow network-outbound (remote ip "localhost:%s"))\n' "$_PROXY_PORT" >> "$SANDBOX_PROFILE"
+    '';
     bashTrapCleanupStr = ''
       trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"; rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT'';
     sandboxExecBashStr = "";
@@ -37,6 +44,7 @@ else {
     (allow system-socket)
   '';
   proxyStartupBashStr = "";
+  networkRuntimePatchBashStr = "";
   bashTrapCleanupStr =
     ''trap 'rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT'';
   sandboxExecBashStr = "exec ";
