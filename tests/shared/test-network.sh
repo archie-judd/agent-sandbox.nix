@@ -105,8 +105,9 @@ expect_fail "direct IP for allowed domain blocked (--connect-to)" \
 # Redis, a dev API) on 127.0.0.1. Without the proxy-port pin, a sandboxed
 # agent could connect directly via --noproxy and bypass the proxy's filter.
 # On Darwin this is enforced by the seatbelt rule being pinned to the proxy
-# port. On Linux the sandbox's network namespace has its own 127.0.0.1, so
-# the host's listener is already unreachable for unrelated reasons.
+# port. On Linux, pasta's namespace-to-host loopback forwarding is disabled via
+# -T none -U none, so host loopback services are never forwarded into the
+# sandbox network namespace.
 #
 # We use nc as the listener (universally available) and bash /dev/tcp from
 # inside the sandbox as the probe — no HTTP, just a raw TCP connect. If the

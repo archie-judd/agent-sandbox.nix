@@ -7,12 +7,19 @@ let
   # Removes the default route and adds a host-only route so the namespace
   # can only reach the host machine (where the proxy listens), not the
   # wider internet.
+  # Also installs an nftables OUTPUT rule that restricts TCP to the host to
+  # the proxy port only, preventing direct access to other host services
+  # (SSH, databases, dev servers, etc.) on the same machine.
   routeRestrictScript = pkgs.writeScript "sandbox-route-restrict" ''
     #!${pkgs.bashInteractive}/bin/bash
     set -euo pipefail
     IP="${pkgs.iproute2}/bin/ip"
+    NFT="${pkgs.nftables}/bin/nft"
     $IP route del default || { echo "FATAL: could not remove default route" >&2; exit 1; }
     $IP route add "$SANDBOX_HOST_IP"/32 via 10.0.2.2 || { echo "FATAL: could not add host route" >&2; exit 1; }
+    $NFT add table ip sandbox_filter
+    $NFT add chain ip sandbox_filter output '{ type filter hook output priority 0 ; policy accept ; }'
+    $NFT add rule ip sandbox_filter output ip daddr "$SANDBOX_HOST_IP" tcp dport != "$SANDBOX_PROXY_PORT" drop
     exec "$@"
   '';
 in if restrictNetwork then
@@ -37,7 +44,7 @@ in if restrictNetwork then
       trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"' EXIT'';
 
     sandboxExecBashStr = ''
-      SANDBOX_HOST_IP="$_HOST_IP" ${pkgs.passt}/bin/pasta -4 --config-net -a 10.0.2.1 -g 10.0.2.2 -n 255.255.255.0 -- ${routeRestrictScript} '';
+      SANDBOX_HOST_IP="$_HOST_IP" SANDBOX_PROXY_PORT="$_PROXY_PORT" ${pkgs.passt}/bin/pasta -4 --config-net -a 10.0.2.1 -g 10.0.2.2 -n 255.255.255.0 -t none -u none -T none -U none -- ${routeRestrictScript} '';
     etcResolvBind =
       "--ro-bind /dev/null /etc/resolv.conf"; # Block DNS resolution when restrictNetwork is true.
     sslCertEnvBubblewrapStr =
