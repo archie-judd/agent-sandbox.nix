@@ -153,7 +153,12 @@
 */
 { pkgs, shared }:
 { pkg, binName, outName, allowedPackages, stateDirs ? [ ], stateFiles ? [ ]
-, extraEnv ? { }, restrictNetwork ? false, allowedDomains ? [ ] }:
+, extraEnv ? { }, restrictNetwork ? false, allowedDomains ? [ ]
+  # Internal: maps "host" → "addr:port" so the proxy dials the local address
+  # for those hosts instead of resolving the original. Used by the test
+  # harness to point fake domains at a local httpbin. Not part of the
+  # public API — leading underscore signals internal-only.
+, _proxyRedirects ? { } }:
 let
   bashWrapper = shared.bashWrapper;
   implicitPackages = [ pkgs.cacert bashWrapper ];
@@ -221,6 +226,7 @@ let
     shared = shared;
     restrictNetwork = restrictNetwork;
     allowedDomains = allowedDomains;
+    _proxyRedirects = _proxyRedirects;
   };
 
   # cacert and bashWrapper are always included: cacert so SSL/TLS

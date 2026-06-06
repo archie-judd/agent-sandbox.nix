@@ -1,4 +1,4 @@
-{ pkgs, shared, restrictNetwork, allowedDomains }:
+{ pkgs, shared, restrictNetwork, allowedDomains, _proxyRedirects ? { } }:
 let
   mkAllowlistFile = shared.mkAllowlistFile;
   hasAllowedDomains = shared.hasAllowedDomains;
@@ -22,7 +22,8 @@ in if restrictNetwork then
       (allow network-bind (local ip "localhost:*"))
       (allow system-socket)
     '';
-    proxyStartupBashStr = mkProxyStartupBashStr allowlistFileStr "127.0.0.1";
+    proxyStartupBashStr =
+      mkProxyStartupBashStr allowlistFileStr "127.0.0.1" _proxyRedirects;
     networkRuntimePatchBashStr = ''
       printf '    (allow network-outbound (remote ip "localhost:%s"))\n' "$_PROXY_PORT" >> "$SANDBOX_PROFILE"
     '';

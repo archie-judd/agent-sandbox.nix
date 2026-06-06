@@ -38,17 +38,29 @@ let
       allowedDomains != [ ]
     else
       allowedDomains != { };
+  # Internal: serializes _proxyRedirects ({ host = "addr:port"; ... }) to the
+  # SANDBOX_PROXY_REDIRECT env var value the proxy expects. Empty redirects
+  # produces an empty string so the env var is not set at all in production.
+  mkRedirectsEnvBashStr = redirects:
+    if redirects == { } then
+      ""
+    else
+      let
+        entries =
+          pkgs.lib.mapAttrsToList (host: addr: "${host}=${addr}") redirects;
+        joined = builtins.concatStringsSep "," entries;
+      in ''SANDBOX_PROXY_REDIRECT="${joined}" '';
   # Shared by mkLinuxSandbox and mkDarwinSandbox. Starts the MITM proxy,
   # blocks until it reports its listening port via a FIFO, and creates
   # a combined CA bundle for the sandbox to trust the proxy's ephemeral CA.
-  mkProxyStartupBashStr = allowlistFileStr: listenAddr: ''
+  mkProxyStartupBashStr = allowlistFileStr: listenAddr: redirects: ''
     # Start the MITM proxy and read its port via FIFO
     _CA_CERT_FILE=$(mktemp /tmp/sandbox-ca-cert.XXXXXX)
     _PROXY_PORT_FIFO=$(mktemp -u /tmp/sandbox-proxy-port.XXXXXX)
     mkfifo "$_PROXY_PORT_FIFO"
     # Open FIFO read-write so neither side blocks waiting for the other
     exec 3<> "$_PROXY_PORT_FIFO"
-    ${sandboxProxy}/bin/sandbox-proxy ${allowlistFileStr} "$_CA_CERT_FILE" ${listenAddr} > "$_PROXY_PORT_FIFO" 2>>/tmp/sandbox-proxy.log &
+    ${mkRedirectsEnvBashStr redirects}${sandboxProxy}/bin/sandbox-proxy ${allowlistFileStr} "$_CA_CERT_FILE" ${listenAddr} > "$_PROXY_PORT_FIFO" 2>>/tmp/sandbox-proxy.log &
     _PROXY_PID=$!
     # Block until the proxy writes its port (or 5s timeout via background kill)
     ( sleep 5 && kill -0 $$ 2>/dev/null && echo >&2 "ERROR: sandbox proxy timed out" && kill $$ ) &

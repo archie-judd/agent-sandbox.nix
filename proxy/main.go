@@ -30,6 +30,44 @@ type DomainPolicy struct {
 // Config maps domain names to their policies. The "*" key is the default policy.
 type Config map[string]DomainPolicy
 
+// Redirects maps a lowercase hostname to a local "host:port" address.
+// When a request arrives for one of these hosts, the proxy dials the local
+// address with plain TCP instead of resolving and dialing the original host.
+//
+// This is an internal escape hatch used by the test harness to point fake
+// domains at a local httpbin instance, so tests don't depend on public
+// services. Set via the SANDBOX_PROXY_REDIRECT env var. Not part of the
+// public API and not documented for end users.
+type Redirects map[string]string
+
+// parseRedirectEnv parses SANDBOX_PROXY_REDIRECT.
+// Format: "host=addr:port[,host=addr:port]..."
+// All upstream dials are plain TCP; the proxy still MITMs client HTTPS
+// with its own CA, so HTTPS requests still exercise the MITM path.
+func parseRedirectEnv(s string) (Redirects, error) {
+	out := make(Redirects)
+	if s == "" {
+		return out, nil
+	}
+	for _, entry := range strings.Split(s, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		eq := strings.IndexByte(entry, '=')
+		if eq < 0 {
+			return nil, fmt.Errorf("invalid redirect entry %q: missing '='", entry)
+		}
+		host := strings.ToLower(strings.TrimSpace(entry[:eq]))
+		addr := strings.TrimSpace(entry[eq+1:])
+		if host == "" || addr == "" {
+			return nil, fmt.Errorf("invalid redirect entry %q: empty host or address", entry)
+		}
+		out[host] = addr
+	}
+	return out, nil
+}
+
 const maxURLBytes = 8192
 
 // directTransport bypasses ProxyFromEnvironment so the proxy itself
@@ -129,6 +167,23 @@ func isMethodAllowed(host, method string, cfg Config) bool {
 		return true
 	}
 	return policy.Methods[strings.ToUpper(method)]
+}
+
+// lookupRedirect finds the redirect address for a host. Matches exact first,
+// then longest suffix — mirrors lookupPolicy so a subdomain that passes the
+// allowlist by suffix match also gets redirected.
+func lookupRedirect(host string, redirects Redirects) (string, bool) {
+	host = strings.ToLower(host)
+	if addr, ok := redirects[host]; ok {
+		return addr, true
+	}
+	var bestDomain, bestAddr string
+	for d, addr := range redirects {
+		if strings.HasSuffix(host, "."+d) && len(d) > len(bestDomain) {
+			bestDomain, bestAddr = d, addr
+		}
+	}
+	return bestAddr, bestDomain != ""
 }
 
 func hostOnly(addr string) string {
@@ -281,6 +336,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	redirects, err := parseRedirectEnv(os.Getenv("SANDBOX_PROXY_REDIRECT"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "parse SANDBOX_PROXY_REDIRECT:", err)
+		os.Exit(1)
+	}
+
 	ca, err := newCertAuthority()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "generate CA:", err)
@@ -308,11 +369,11 @@ func main() {
 		if err != nil {
 			continue
 		}
-		go handle(conn, cfg, ca)
+		go handle(conn, cfg, ca, redirects)
 	}
 }
 
-func handle(conn net.Conn, cfg Config, ca *certAuthority) {
+func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 	defer conn.Close()
 	br := bufio.NewReader(conn)
 	req, err := http.ReadRequest(br)
@@ -330,7 +391,7 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority) {
 		}
 		// MITM: intercept the TLS connection to inspect HTTP requests
 		fmt.Fprintf(conn, "HTTP/1.1 200 Connection Established\r\n\r\n")
-		handleMITM(conn, host, req.Host, cfg, ca)
+		handleMITM(conn, host, req.Host, cfg, ca, redirects)
 	} else {
 		// Plaintext HTTP — check domain first, then apply full filtering
 		if !isDomainAllowed(host, cfg) {
@@ -350,6 +411,15 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority) {
 		if req.URL.Scheme == "" {
 			req.URL.Scheme = "http"
 		}
+		// Apply redirect: dial the local override instead of the original
+		// host, preserving the Host header the client sees.
+		if addr, ok := lookupRedirect(host, redirects); ok {
+			if req.Host == "" {
+				req.Host = req.URL.Host
+			}
+			req.URL.Host = addr
+			req.URL.Scheme = "http"
+		}
 		req.RequestURI = "" // Must be empty for RoundTrip
 		resp, err := directTransport.RoundTrip(req)
 		if err != nil {
@@ -362,7 +432,7 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority) {
 	}
 }
 
-func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *certAuthority) {
+func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *certAuthority, redirects Redirects) {
 	// Mint a certificate for this host
 	leafCert, err := ca.mintCert(host)
 	if err != nil {
@@ -382,26 +452,30 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 	defer clientTLS.Close()
 
 	// Upstream connection is established lazily on the first allowed request,
-	// so blocked requests never trigger a TLS handshake to the remote server.
-	var upstreamTLS *tls.Conn
+	// so blocked requests never trigger a connection to the remote server.
+	var upstreamConn net.Conn
 	var upstreamBuf *bufio.Reader
 	dialUpstream := func() error {
-		if upstreamTLS != nil {
+		if upstreamConn != nil {
 			return nil
 		}
-		conn, err := tls.Dial("tcp", hostPort, &tls.Config{
-			ServerName: host,
-		})
+		var conn net.Conn
+		var err error
+		if addr, ok := lookupRedirect(host, redirects); ok {
+			conn, err = net.Dial("tcp", addr)
+		} else {
+			conn, err = tls.Dial("tcp", hostPort, &tls.Config{ServerName: host})
+		}
 		if err != nil {
 			return err
 		}
-		upstreamTLS = conn
-		upstreamBuf = bufio.NewReader(upstreamTLS)
+		upstreamConn = conn
+		upstreamBuf = bufio.NewReader(upstreamConn)
 		return nil
 	}
 	defer func() {
-		if upstreamTLS != nil {
-			upstreamTLS.Close()
+		if upstreamConn != nil {
+			upstreamConn.Close()
 		}
 	}()
 
@@ -448,7 +522,7 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		req.URL.Host = ""
 		// RequestURI must be the path for a direct (non-proxy) request
 		req.RequestURI = req.URL.RequestURI()
-		if err := req.Write(upstreamTLS); err != nil {
+		if err := req.Write(upstreamConn); err != nil {
 			fmt.Fprintf(os.Stderr, "%s upstream write error for %s: %v\n", time.Now().Format(time.RFC3339), host, err)
 			return
 		}

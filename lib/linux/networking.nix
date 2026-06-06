@@ -1,4 +1,4 @@
-{ pkgs, shared, restrictNetwork, allowedDomains }:
+{ pkgs, shared, restrictNetwork, allowedDomains, _proxyRedirects ? { } }:
 let
   mkAllowlistFile = shared.mkAllowlistFile;
   hasAllowedDomains = shared.hasAllowedDomains;
@@ -38,7 +38,7 @@ in if restrictNetwork then
         echo "ERROR: could not determine host IP for pasta network namespace" >&2
         exit 1
       fi
-    '' + mkProxyStartupBashStr allowlistFileStr "$_HOST_IP";
+    '' + mkProxyStartupBashStr allowlistFileStr "$_HOST_IP" _proxyRedirects;
 
     bashTrapCleanupStr = ''
       trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"' EXIT'';
