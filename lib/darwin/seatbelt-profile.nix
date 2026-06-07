@@ -6,14 +6,40 @@
 #   networkRulesStr      — (allow network*) or restricted-proxy rules
 #   allowReadWriteExecStr — per-stateDir allow rules  (subpath, file-read/write/exec)
 #   allowFilesStr        — per-stateFile allow rules  (literal, file-read/write)
-{ networkRulesStr, allowReadWriteExecStr, allowFilesStr }: ''
+{
+  networkRulesStr,
+  allowReadWriteExecStr,
+  allowFilesStr,
+}:
+# scheme
+''
   (version 1)
   (deny default)
 
   ;; Process control
   (allow process-fork)
   (allow signal)
+
+  ;; sysctls — broad read, with explicit denies for the process-snooping
+  ;; OIDs. Without these, sysctl({1, 49, pid}) (KERN_PROCARGS2) returns
+  ;; the full argv+envp of any host-UID process — a complete exfil path
+  ;; for env-var secrets the host shell has set (CLAUDE_CODE_OAUTH_TOKEN,
+  ;; GITHUB_TOKEN, AWS_*, …) before launching the sandbox. The integer-
+  ;; MIB form of sysctl(2) resolves to the same canonical names
+  ;; internally, so the name-deny catches both sysctl() and sysctlbyname()
+  ;; callers. seatbelt is last-match-wins, so the denies override the
+  ;; blanket allow.
+  ;;
+  ;; Host-identifying single OIDs (kern.hostname, kern.uuid, hw.model,
+  ;; kern.boottime, …) are intentionally NOT denied here — seatbelt does
+  ;; not appear to intercept them through this filter, and denying
+  ;; kern.hostname in particular breaks uname(2) (which reads hostname
+  ;; as part of a single struct). They remain an accepted leak.
   (allow sysctl-read)
+  (deny sysctl-read
+    (sysctl-name "kern.procargs")     ;; deprecated argv reader
+    (sysctl-name "kern.procargs2")    ;; argv + envp of any host-UID process
+    (sysctl-name-regex #"^kern\.proc\."))  ;; kern.proc.all, kern.proc.pid.*, etc.
 
   ;; Process execution — per-store-path rules are appended by the builder
   (allow process-exec (subpath (param "CWD")))

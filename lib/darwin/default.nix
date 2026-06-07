@@ -17,7 +17,13 @@
      (allow process-exec)     — allow exec() so the agent can run tools
      (allow process-fork)     — allow fork() for subprocesses
      (allow signal)           — allow sending/receiving signals
-     (allow sysctl-read)      — allow reading kernel tuning values
+     (allow sysctl-read)      — allow reading kernel tuning values, with
+                                explicit denies for kern.proc.*,
+                                kern.procargs and kern.procargs2 — the
+                                last of which is the env-var extraction
+                                primitive that would otherwise expose
+                                every host process's argv+envp via
+                                sysctl({1,49,pid}) (KERN_PROCARGS2)
 
      Mach IPC:
        Scoped to system services that most programs need. Each
