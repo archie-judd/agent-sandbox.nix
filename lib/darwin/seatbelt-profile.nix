@@ -82,6 +82,15 @@
     (subpath "/bin")
     (subpath "/System"))
 
+  ;; ...but NOT /System/Volumes/*. On Tahoe (and Catalina+), the data volume
+  ;; mounts at /System/Volumes/Data, with /Library, /Users, /private/var
+  ;; firmlinked from there. The broad /System allow above would otherwise
+  ;; expose the entire data volume via its canonical Data-volume address,
+  ;; bypassing every narrower deny on the synthetic /Library/Preferences,
+  ;; /Users/<u>, /private/var/folders paths. Last-match-wins, so this deny
+  ;; overrides the allow above.
+  (deny file-read* (subpath "/System/Volumes"))
+
   ;; DNS, TLS & name resolution
   (allow file-read*
     (literal "/private/etc/resolv.conf")
