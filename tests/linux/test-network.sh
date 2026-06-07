@@ -57,5 +57,36 @@ else
 	trap - EXIT
 fi
 
+# Test: sandbox cannot reach the pasta gateway (10.0.2.2) on non-proxy TCP ports.
+# pasta translates connections to 10.0.2.2 into host loopback connections, so
+# without this rule a sandboxed agent can reach SSH, databases, and any other
+# service on 127.0.0.1 — bypassing the external-IP rule entirely.
+# We bind a listener on the host's 127.0.0.1 (pasta forwards 10.0.2.2:<port>
+# → 127.0.0.1:<port>) and probe it from inside the sandbox via 10.0.2.2.
+PASTA_GW_PORT=18919
+if nc -z 127.0.0.1 "$PASTA_GW_PORT" 2>/dev/null; then
+	echo "FAIL: test setup — 127.0.0.1:$PASTA_GW_PORT already in use; cannot run pasta-gateway test" >&2
+	exit 1
+fi
+( nc -l 127.0.0.1 "$PASTA_GW_PORT" >/dev/null 2>&1 ) &
+_PASTA_GW_SVC_PID=$!
+trap 'kill "$_PASTA_GW_SVC_PID" 2>/dev/null || true' EXIT
+_ready=0
+for _ in 1 2 3 4 5; do
+	if nc -z 127.0.0.1 "$PASTA_GW_PORT" 2>/dev/null; then
+		_ready=1; break
+	fi
+	sleep 0.2
+done
+if [ "$_ready" -ne 1 ]; then
+	echo "FAIL: test setup — nc listener never came up on 127.0.0.1:$PASTA_GW_PORT" >&2
+	kill "$_PASTA_GW_SVC_PID" 2>/dev/null || true
+	exit 1
+fi
+expect_fail "pasta gateway non-proxy port unreachable from sandbox (nftables)" \
+	"curl -sf --noproxy '*' --max-time 2 http://10.0.2.2:$PASTA_GW_PORT/"
+kill "$_PASTA_GW_SVC_PID" 2>/dev/null || true
+trap - EXIT
+
 print_results
 exit_status
