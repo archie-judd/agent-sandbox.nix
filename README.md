@@ -227,6 +227,8 @@ To give the agent its own git identity, pass the following environment variables
     };
 ```
 
+> **Note:** `.git/config` is read-only inside the sandbox, so `git config` commands run by the agent will not persist. Use `extraEnv` (as above) or configure git on the host before entering the sandbox.
+
 ## Common Patterns / Recipes
 
 ### Python with uv
