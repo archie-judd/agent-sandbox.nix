@@ -88,5 +88,38 @@ expect_fail "pasta gateway non-proxy port unreachable from sandbox (nftables)" \
 kill "$_PASTA_GW_SVC_PID" 2>/dev/null || true
 trap - EXIT
 
+# Test: sandbox cannot send UDP to the pasta gateway (10.0.2.2).
+# The nftables OUTPUT chain now has policy drop; only TCP to the proxy
+# port is accepted, so UDP is dropped before it reaches pasta's forwarder.
+# UDP is connectionless — the send from the sandbox always succeeds locally —
+# so we verify on the listener side: start a UDP listener on host loopback
+# (pasta forwards 10.0.2.2:<port> → 127.0.0.1:<port>), let the sandbox send
+# a datagram, then assert the listener received nothing.
+PASTA_GW_UDP_PORT=18921
+_UDP_TMP=$(mktemp)
+trap 'rm -f "$_UDP_TMP"' EXIT
+( nc -lu 127.0.0.1 "$PASTA_GW_UDP_PORT" >"$_UDP_TMP" 2>/dev/null ) &
+_UDP_SVC_PID=$!
+trap 'kill "$_UDP_SVC_PID" 2>/dev/null || true; rm -f "$_UDP_TMP"' EXIT
+sleep 0.3  # nc -lu binds immediately; brief pause is enough
+run "bash -c 'echo probe >/dev/udp/10.0.2.2/$PASTA_GW_UDP_PORT'" || true  # send always returns 0
+sleep 0.3  # give pasta time to forward if it were going to
+expect_ok "udp to pasta gateway dropped (listener received nothing)" \
+	"[ ! -s '$_UDP_TMP' ]"
+kill "$_UDP_SVC_PID" 2>/dev/null || true
+trap - EXIT
+rm -f "$_UDP_TMP"
+
+# Test: sandbox cannot ping the pasta gateway (ICMP blocked by default-drop).
+# First confirm that unprivileged ping to the namespace's own loopback works;
+# if it doesn't (e.g. ping_group_range not permissive in this namespace) we
+# skip the gateway probe rather than record a false positive.
+if run "ping -c 1 -W 2 127.0.0.1"; then
+	expect_fail "icmp to pasta gateway dropped" \
+		'ping -c 1 -W 2 10.0.2.2'
+else
+	echo "SKIP: unprivileged ping not available in this namespace; skipping ICMP test" >&2
+fi
+
 print_results
 exit_status

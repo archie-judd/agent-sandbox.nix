@@ -9,10 +9,10 @@ let
   # Removes the default route and adds a host-only route so the namespace
   # can only reach the host machine (where the proxy listens), not the
   # wider internet.
-  # Also installs nftables OUTPUT rules that restrict TCP to the proxy port
-  # only — one rule for the host's external IP and one for the pasta gateway
-  # (10.0.2.2), which would otherwise forward to host loopback services
-  # (SSH, databases, dev servers, etc.) bypassing the external-IP rule.
+  # Installs an nftables OUTPUT chain with default-drop policy. Only
+  # in-namespace loopback and TCP to the proxy port on the host IP /
+  # pasta gateway are accepted — all other protocols (UDP, ICMP, …)
+  # and non-proxy TCP ports are blocked.
   routeRestrictScript = pkgs.writeScript "sandbox-route-restrict" ''
     #!${pkgs.bashInteractive}/bin/bash
     set -euo pipefail
@@ -21,9 +21,10 @@ let
     $IP route del default || { echo "FATAL: could not remove default route" >&2; exit 1; }
     $IP route add "$SANDBOX_HOST_IP"/32 via ${pastaGatewayIp} || { echo "FATAL: could not add host route" >&2; exit 1; }
     $NFT add table ip sandbox_filter
-    $NFT add chain ip sandbox_filter output '{ type filter hook output priority 0 ; policy accept ; }'
-    $NFT add rule ip sandbox_filter output ip daddr "$SANDBOX_HOST_IP" tcp dport != "$SANDBOX_PROXY_PORT" drop
-    $NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} tcp dport != "$SANDBOX_PROXY_PORT" drop
+    $NFT add chain ip sandbox_filter output '{ type filter hook output priority 0 ; policy drop ; }'
+    $NFT add rule ip sandbox_filter output oif lo accept
+    $NFT add rule ip sandbox_filter output ip daddr "$SANDBOX_HOST_IP" tcp dport "$SANDBOX_PROXY_PORT" accept
+    $NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} tcp dport "$SANDBOX_PROXY_PORT" accept
     exec "$@"
   '';
 in if restrictNetwork then
