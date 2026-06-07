@@ -28,7 +28,6 @@
       RESOLVED_TARGETS=()
       SEEN_PARENT_DIRS=()
       readonlyStateFileSymlinks=""
-      readWriteStateFileSymlinks=""
       SYMLINK_PARENT_DIRS=""
 
       _add_symlink_target() {
@@ -39,11 +38,15 @@
         done
         RESOLVED_TARGETS+=("$_target")
         _is_already_bound "$_target" && return
-        if [[ "$_target" == /nix/store/* ]]; then
-          readonlyStateFileSymlinks="$readonlyStateFileSymlinks --ro-bind $_target $_target"
-        else
-          readWriteStateFileSymlinks="$readWriteStateFileSymlinks --bind $_target $_target"
+        # Reject targets outside the declared sandbox paths. This prevents an
+        # agent from planting a symlink (in a stateDir or via a stateFile) that
+        # expands the sandbox on the next startup (e.g. ~/.claude/evil -> /etc/shadow).
+        # Nix store paths are exempt: they are immutable and agent-unwritable.
+        if [[ "$_target" != /nix/store/* ]]; then
+          echo "sandbox: WARNING: ignoring symlink to '$_target' — target is outside permitted paths; declare it as a stateDir or stateFile to allow access" >&2
+          return
         fi
+        readonlyStateFileSymlinks="$readonlyStateFileSymlinks --ro-bind $_target $_target"
         # Emit --dir entries for ancestor dirs so bwrap has mountpoints. These
         # ancestors are NOT added to BOUND_PREFIXES: --dir only creates an empty
         # dir, it does not expose its contents, so sibling files under the same
@@ -107,7 +110,7 @@
       fi
     '';
 
-  # Per-stateDir: recursively scan for symlinks inside the bound dir and walk
+  # Per-stateDir: scan for top-level symlinks inside the bound dir and walk
   # each symlink chain via _follow_symlink_chain.
   mkScanDirBashStr = dir:
     # bash

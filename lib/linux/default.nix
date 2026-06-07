@@ -198,7 +198,6 @@ in pkgs.writeTextFile {
         $STATE_FILE_BINDS \
         $SYMLINK_PARENT_DIRS \
         $readonlyStateFileSymlinks \
-        $readWriteStateFileSymlinks \
         $GIT_BIND \
         --symlink ${bashWrapper}/bin/bash /bin/sh \
         --symlink ${pkgs.coreutils}/bin/env /usr/bin/env \
