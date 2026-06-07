@@ -148,7 +148,10 @@ let
       GIT_BIND=""
       REPO_BIND=""
       if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
-        GIT_BIND="--bind $GIT_DIR $GIT_DIR"
+        # hooks/ and config are ro to prevent git hook injection: an agent
+        # could otherwise drop an executable hook or set core.hooksPath to
+        # redirect execution to a writable directory on the next host git op.
+        GIT_BIND="--bind $GIT_DIR $GIT_DIR --ro-bind $GIT_DIR/hooks $GIT_DIR/hooks --ro-bind $GIT_DIR/config $GIT_DIR/config"
         REPO_ROOT=$(dirname "$GIT_DIR")
         REPO_BIND="--ro-bind $REPO_ROOT $REPO_ROOT"
       fi
