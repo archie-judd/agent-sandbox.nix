@@ -247,10 +247,14 @@ let
     ''
       if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
           GIT_DIR_PARAM="$GIT_DIR"
+          GIT_HOOKS_DIR_PARAM="$GIT_DIR/hooks"
+          GIT_CONFIG_FILE_PARAM="$GIT_DIR/config"
           REPO_ROOT=$(dirname "$GIT_DIR_PARAM")
           REPO_ROOT_PARENT=$(dirname "$REPO_ROOT")
       else
           GIT_DIR_PARAM="/nonexistent-git-dir"
+          GIT_HOOKS_DIR_PARAM="/nonexistent-git-hooks-dir"
+          GIT_CONFIG_FILE_PARAM="/nonexistent-git-config-file"
           REPO_ROOT="/nonexistent-repo-root"
           REPO_ROOT_PARENT="/nonexistent-repo-root"
       fi
@@ -397,6 +401,8 @@ in pkgs.writeTextFile {
         -f "$SANDBOX_PROFILE" \
         -D CWD="$CWD" \
         -D GIT_DIR="$GIT_DIR_PARAM" \
+        -D GIT_HOOKS_DIR="$GIT_HOOKS_DIR_PARAM" \
+        -D GIT_CONFIG_FILE="$GIT_CONFIG_FILE_PARAM" \
         -D REPO_ROOT="$REPO_ROOT" \
         -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
         -D MY_TTY="$MY_TTY" \
