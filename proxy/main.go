@@ -194,6 +194,14 @@ func hostOnly(addr string) string {
 	return h
 }
 
+func portOf(addr string) string {
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return ""
+	}
+	return p
+}
+
 // --- CA and certificate minting ---
 
 const maxCachedCerts = 1024
@@ -384,6 +392,11 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 	host := hostOnly(req.Host)
 
 	if req.Method == http.MethodConnect {
+		if portOf(req.Host) != "443" {
+			fmt.Fprintf(os.Stderr, "%s blocked non-443 CONNECT: %s\n", time.Now().Format(time.RFC3339), req.Host)
+			fmt.Fprintf(conn, "HTTP/1.1 403 Forbidden\r\n\r\n")
+			return
+		}
 		if !isDomainAllowed(host, cfg) {
 			fmt.Fprintf(os.Stderr, "%s blocked domain: %s\n", time.Now().Format(time.RFC3339), req.Host)
 			fmt.Fprintf(conn, "HTTP/1.1 403 Forbidden\r\n\r\n")
@@ -393,6 +406,11 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 		fmt.Fprintf(conn, "HTTP/1.1 200 Connection Established\r\n\r\n")
 		handleMITM(conn, host, req.Host, cfg, ca, redirects)
 	} else {
+		if p := portOf(req.Host); p != "" && p != "80" {
+			fmt.Fprintf(os.Stderr, "%s blocked non-80 plaintext: %s\n", time.Now().Format(time.RFC3339), req.Host)
+			fmt.Fprintf(conn, "HTTP/1.1 403 Forbidden\r\n\r\n")
+			return
+		}
 		// Plaintext HTTP — check domain first, then apply full filtering
 		if !isDomainAllowed(host, cfg) {
 			fmt.Fprintf(os.Stderr, "%s blocked domain: %s\n", time.Now().Format(time.RFC3339), req.Host)

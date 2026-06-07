@@ -180,5 +180,15 @@ run() { "$NET_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
 expect_ok "localhost resolves inside sandbox (no EAI_AGAIN)" \
 	'curl --noproxy "*" --max-time 2 -o /dev/null http://localhost:19200/; rc=$?; [ "$rc" -ne 6 ]'
 
+run() { "$NET_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+
+# Test: non-443 CONNECT is blocked (port validation, fix #2)
+expect_fail "non-443 CONNECT blocked (httpbin.test:8080)" \
+	'curl -sf --max-time 10 -o /dev/null https://httpbin.test:8080/get'
+
+# Test: non-80 plaintext HTTP port is blocked (port validation, fix #2)
+expect_fail "non-80 plaintext port blocked (httpbin.test:8081)" \
+	'curl -sf --max-time 10 -o /dev/null http://httpbin.test:8081/get'
+
 print_results
 exit_status
