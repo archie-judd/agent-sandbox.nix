@@ -96,7 +96,7 @@
     (literal "/private/etc/resolv.conf")
     (literal "/private/var/run/resolv.conf")
     (subpath "/private/etc/ssl")
-    (literal "/private/etc/passwd")
+    (literal (param "SANDBOX_PASSWD"))
     (literal "/private/etc/localtime")
     (subpath "/private/etc/static")
     (literal "/private/etc/hosts"))

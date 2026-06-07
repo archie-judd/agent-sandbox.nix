@@ -34,7 +34,7 @@ in if restrictNetwork then
       printf '    (allow network-outbound (remote ip "localhost:%s"))\n' "$_PROXY_PORT" >> "$SANDBOX_PROFILE"
     '';
     bashTrapCleanupStr = ''
-      trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"; rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT'';
+      trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"; rm -f "$_SANDBOX_PASSWD"; rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT'';
     sandboxExecBashStr = "";
   }
 else {
@@ -53,6 +53,6 @@ else {
   proxyStartupBashStr = "";
   networkRuntimePatchBashStr = "";
   bashTrapCleanupStr =
-    ''trap 'rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT'';
+    ''trap 'rm -f "$_SANDBOX_PASSWD"; rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT'';
   sandboxExecBashStr = "exec ";
 }

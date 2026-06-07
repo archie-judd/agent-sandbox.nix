@@ -370,6 +370,8 @@ in pkgs.writeTextFile {
       # Lives under /tmp which is already allowed read-write in the profile.
       REAL_HOME="$HOME"
       SANDBOX_HOME=$(mktemp -d /private/tmp/sandbox-home.XXXXXX)
+      _SANDBOX_PASSWD=$(mktemp /tmp/sandbox-passwd.XXXXXX)
+      printf 'user:x:%s:%s:sandbox user:%s:/bin/sh\n' "$(id -u)" "$(id -g)" "$REAL_HOME" > "$_SANDBOX_PASSWD"
 
       # Symlink state dirs/files into sandbox HOME so $HOME-relative lookups
       # reach the real paths through the Seatbelt-allowed targets.
@@ -410,6 +412,7 @@ in pkgs.writeTextFile {
         -D TMPDIR="/tmp" \
         -D HOME="$SANDBOX_HOME"  \
         -D REAL_HOME="$REAL_HOME" \
+        -D SANDBOX_PASSWD="$_SANDBOX_PASSWD" \
         -D HOME_CACHE="$SANDBOX_HOME/.cache" \
         -D HOME_LOCAL="$SANDBOX_HOME/.local" \
         -D HOME_LOCAL_STATE="$SANDBOX_HOME/.local/state" \
