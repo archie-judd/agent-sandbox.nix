@@ -179,6 +179,7 @@
   # harness to point fake domains at a local httpbin. Not part of the
   # public API — leading underscore signals internal-only.
   _proxyRedirects ? { },
+  useDevshell ? false
 }:
 let
   bashWrapper = shared.bashWrapper;
@@ -394,6 +395,21 @@ let
         } > $out
       '';
 
+  conditionalGetDevshellPath = pkgs.lib.optionalString useDevshell ''
+    if nix print-dev-env "$CWD" >/dev/null 2>&1; then
+      DEVSHELL_PATH="$(nix print-dev-env --json "$CWD" 2> /dev/null | ${pkgs.lib.getExe pkgs.jq} -r '.variables.PATH.value')"
+    else
+      DEVSHELL_PATH=
+    fi
+  '';
+
+  conditionalDevshellPatchProfile = pkgs.lib.optionalString useDevshell ''
+    if [ -n "$DEVSHELL_PATH" ]; then
+      DEVSHELL_CLOSURE=$(echo "$DEVSHELL_PATH" | tr ':' '\n' | sed 's/\\bin//g' | xargs -I{} nix path-info --recursive {} | sort | uniq)
+      echo "$DEVSHELL_CLOSURE" | xargs -I{} ${pkgs.lib.getExe' pkgs.coreutils "echo"} -e "    (allow file-read* (subpath \"{}\"))\n    (allow process-exec (subpath \"{}\"))" >> $SANDBOX_PROFILE
+    fi
+  '';
+
 in
 pkgs.writeTextFile {
   name = outName;
@@ -441,12 +457,14 @@ pkgs.writeTextFile {
       ${conditionalNetworkingParams.networkRuntimePatchBashStr}
       ${conditionalNetworkingParams.bashTrapCleanupStr}
 
+      ${conditionalGetDevshellPath}
+      ${conditionalDevshellPatchProfile}
 
       ${conditionalNetworkingParams.sandboxExecBashStr}/usr/bin/env -i \
         HOME="$SANDBOX_HOME" \
         TERM="$TERM" \
         SHELL="${bashWrapper}/bin/bash" \
-        PATH="${pathStr}" \
+        PATH="${pkgs.lib.optionalString useDevshell "$DEVSHELL_PATH:"}${pathStr}" \
         SSL_CERT_DIR="${pkgs.cacert}/etc/ssl/certs" \
         GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
         TMPDIR=/tmp \
