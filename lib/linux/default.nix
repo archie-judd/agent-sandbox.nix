@@ -85,6 +85,7 @@
   # harness to point fake domains at a local httpbin. Not part of the
   # public API — leading underscore signals internal-only.
   _proxyRedirects ? { },
+  useDevshell ? false
 }:
 let
   bashWrapper = shared.bashWrapper;
@@ -213,6 +214,21 @@ let
       fi
     '';
 
+  conditionalGetDevshellPath = pkgs.lib.optionalString useDevshell ''
+    if nix print-dev-env "$CWD" >/dev/null 2>&1; then
+      DEVSHELL_PATH="$(nix print-dev-env --json "$CWD" 2> /dev/null | ${pkgs.lib.getExe pkgs.jq} -r '.variables.PATH.value')"
+    else
+      DEVSHELL_PATH=
+    fi
+  '';
+  conditionalDevshellExtraClosure = pkgs.lib.optionalString useDevshell ''
+    if [ -n "$DEVSHELL_PATH" ]; then
+      DEVSHELL_CLOSURE=$(echo "$DEVSHELL_PATH" | tr ':' '\n' | sed 's/\\bin//g' | xargs -I{} nix path-info --recursive {} | sort | uniq)
+    else
+      DEVSHELL_CLOSURE=
+    fi
+  '';
+
 in
 pkgs.writeTextFile {
   name = outName;
@@ -228,13 +244,22 @@ pkgs.writeTextFile {
         ${mkFilesStr}
         ${gitDetectionBashStr}
 
+        ${conditionalGetDevshellPath}
+        ${conditionalDevshellExtraClosure}
+
         # Build per-path ro-bind flags for the nix store closure
         CLOSURE_BINDS=""
         BOUND_PREFIXES=()
         while IFS= read -r storePath; do
           CLOSURE_BINDS="$CLOSURE_BINDS --ro-bind $storePath $storePath"
           BOUND_PREFIXES+=("$storePath")
-        done < ${closurePathsFile}
+        done < <(
+          cat ${closurePathsFile}
+          if [ -n "$DEVSHELL_CLOSURE" ]; then
+            printf '%s\n' $DEVSHELL_CLOSURE
+          fi
+        )
+
 
       ${symlinkResolutionBashStr}
       ${sandboxPasswdBashStr}
@@ -275,7 +300,7 @@ pkgs.writeTextFile {
         --setenv HOME "$HOME" \
         --setenv TERM "$TERM" \
         --setenv SHELL "${bashWrapper}/bin/bash" \
-        --setenv PATH "${pathStr}" \
+        --setenv PATH "${pkgs.lib.optionalString useDevshell "$DEVSHELL_PATH:"}${pathStr}" \
         --setenv SSL_CERT_DIR "${pkgs.cacert}/etc/ssl/certs" \
         --setenv TMPDIR /tmp \
         ${conditionalNetworkingParams.sslCertEnvBubblewrapStr} \
