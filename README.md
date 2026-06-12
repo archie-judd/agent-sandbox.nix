@@ -8,13 +8,32 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 
 Tested with Claude's frontier models — see [Security](#security) for the threat model and known limits.
 
+<details>
+<summary><strong>V0.x -> V1.x Migration guide</strong></summary>
+<br>
+
+A few arguments were renamed, and `restrictNetwork` was removed. If you use an old name you'll get a clear error telling you the new one. Update your config like this:
+
+| Old | New |
+|---|---|
+| `extraEnv = { … }` | `env = { … }` |
+| `stateDirs = [ … ]` | `rwDirs = [ … ]` |
+| `stateFiles = [ … ]` | `rwFiles = [ … ]` |
+| `restrictNetwork = true; allowedDomains = …` | `allowedDomains = …` |
+| `restrictNetwork = true; allowedDomains = [ ]` | `allowedDomains = [ ]` |
+| `restrictNetwork = false` | remove it — just don't set `allowedDomains` |
+
+Network access is now controlled by `allowedDomains` on its own: leave it unset for open internet, list the domains you want to allow, or use `[ ]` to block everything.
+
+</details>
+
 ## What the sandbox allows
 
 - **Project directory** — read/write access to the directory you launch the agent from.
-- **Declared state** — read/write access to anything you list in `stateDirs` or `stateFiles`.
+- **Declared state** — read/write access to anything you list in `rwDirs` or `rwFiles`.
 - **Allowed packages** — the binaries you list in `allowedPackages` are on the agent's PATH (plus `bash` and `cacert`).
-- **Network** — unrestricted by default. Set `restrictNetwork = true` to limit access to the domains and methods in `allowedDomains`.
-- **Environment** — only variables you pass via `extraEnv` reach the agent; the host environment is otherwise cleared.
+- **Network** — unrestricted by default. Set `allowedDomains` to limit the agent to specific domains (and, optionally, specific HTTP methods).
+- **Environment** — only variables you pass via `env` reach the agent; the host environment is otherwise cleared.
 - **Git** — the repo's `.git` directory is exposed, including when it sits outside the project tree (worktrees).
 
 Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappears when the sandbox exits.
@@ -63,11 +82,10 @@ If you want to keep the original command name as the alias, change the `outName`
 | `binName` | yes | Name of the binary inside `pkg/bin/` |
 | `outName` | yes | Name for the resulting wrapped binary and the command to invoke it with |
 | `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH. `bash` and `cacert` are provided by default — the sandbox needs a shell to run, and `cacert` is required for HTTPS to work. |
-| `stateDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
-| `stateFiles` | no | Individual files the agent can read/write |
-| `extraEnv` | no | Additional environment variables as an attrset |
-| `restrictNetwork` | no | When `true`, network is limited to `allowedDomains` (default `false`) |
-| `allowedDomains` | no | Domains the sandbox can reach when `restrictNetwork = true`. Attrset mapping domains to `"*"` or a list of HTTP methods, or a list of domain strings (all methods allowed). |
+| `rwDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
+| `rwFiles` | no | Individual files the agent can read/write |
+| `env` | no | Additional environment variables as an attrset |
+| `allowedDomains` | no | Limits which domains the sandbox can reach. Leave unset for open internet. Accepts a list of domains (all methods allowed), or an attrset mapping each domain to `"*"` or a list of HTTP methods. `[ ]` blocks all internet access. |
 
 A minimal example — the arguments are the same whether you use a flake or a `shell.nix`:
 
@@ -77,13 +95,12 @@ mkSandbox {
   binName = "claude";
   outName = "claude-sandboxed";
   allowedPackages = [ pkgs.coreutils pkgs.git pkgs.ripgrep ];
-  stateDirs = [ "$HOME/.claude" ];
-  stateFiles = [ ];
-  extraEnv = {
+  rwDirs = [ "$HOME/.claude" ];
+  rwFiles = [ ];
+  env = {
     CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
     CLAUDE_CONFIG_DIR = "$HOME/.claude";
   };
-  restrictNetwork = true;
   allowedDomains = {
     "anthropic.com" = "*";
     "claude.com" = "*";
@@ -94,10 +111,10 @@ mkSandbox {
 ```
 
 <details>
-<summary><strong>Why set <code>CLAUDE_CONFIG_DIR</code> and not add <code>~/.claude.json</code> as a <code>stateFile</code>?</strong></summary>
+<summary><strong>Why set <code>CLAUDE_CONFIG_DIR</code> and not add <code>~/.claude.json</code> as a <code>rwFile</code>?</strong></summary>
 <br>
 
-`CLAUDE_CONFIG_DIR` is set to `$HOME/.claude` so that `~/.claude.json` is written inside the read/write `stateDir`. If you instead add `~/.claude.json` as a `stateFile`, when Claude updates configuration it writes temporary files to the ephemeral home root. It then tries to rename these to `~/.claude.json`, which can fail or behave unexpectedly because the temporary files land outside any declared `stateDir` or `stateFile`. This can occasionally corrupt the `~/.claude.json` file.
+`CLAUDE_CONFIG_DIR` is set to `$HOME/.claude` so that `~/.claude.json` is written inside the read/write `rwDir`. If you instead add `~/.claude.json` as a `rwFile`, when Claude updates configuration it writes temporary files to the ephemeral home root. It then tries to rename these to `~/.claude.json`, which can fail or behave unexpectedly because the temporary files land outside any declared `rwDir` or `rwFile`. This can occasionally corrupt the `~/.claude.json` file.
 <br>
 <br>
 
@@ -107,7 +124,7 @@ mkSandbox {
 
 ### Network restrictions
 
-By default, network access is unrestricted. But you can optionally restrict connections to specific domains by setting `restrictNetwork = true` and providing `allowedDomains`.
+By default, network access is unrestricted. To restrict it, set `allowedDomains` — the sandbox can then only reach the domains you list. Leave it unset for open internet, or set it to `[ ]` to block all network access.
 
 `allowedDomains` accepts two formats:
 
@@ -116,7 +133,7 @@ By default, network access is unrestricted. But you can optionally restrict conn
 
 Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.com` subdomains.
 
-When `restrictNetwork = true`, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted.
+When `allowedDomains` is set, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted.
 
 Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
 
@@ -136,10 +153,10 @@ export CLAUDE_CODE_OAUTH_TOKEN="<your_token_here>"
 export GITHUB_TOKEN="<your_token_here>"
 ```
 
-Pass the variable reference (not the value) into `extraEnv`:
+Pass the variable reference (not the value) into `env`:
 
 ```nix
-extraEnv = {
+env = {
   CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
   ...
 };
@@ -148,15 +165,15 @@ extraEnv = {
 Alternatively, if you store your secret in a file (for example if you use sops), you can set a command that will read the secret at runtime:
 
 ```nix
-extraEnv = {
+env = {
   CLAUDE_CODE_OAUTH_TOKEN = "$(${pkgs.coreutils}/bin/cat /run/secrets/claude-code-oauth-token)";
   ...
 };
 ```
 
-### Credential files via `stateDirs`
+### Credential files via `rwDirs`
 
-If your agent stores credentials in files (e.g. Claude Code uses `~/.claude/`), you can run the login flow unsandboxed first, then expose the credential directory via `stateDirs`. The sandboxed agent will pick up the cached credentials.
+If your agent stores credentials in files (e.g. Claude Code uses `~/.claude/`), you can run the login flow unsandboxed first, then expose the credential directory via `rwDirs`. The sandboxed agent will pick up the cached credentials.
 
 <details>
 <summary><strong>On macOS you will need to export the credentials from the Keychain first</strong></summary>
@@ -194,7 +211,7 @@ if most_recent: print(most_recent[0])
 
 This finds all Claude Code credential entries in the Keychain and exports the one with the most recent expiry.
 
-Then expose `~/.claude` via `stateDirs`. The sandboxed agent will read credentials from `~/.claude/.credentials.json` when Keychain access is unavailable.
+Then expose `~/.claude` via `rwDirs`. The sandboxed agent will read credentials from `~/.claude/.credentials.json` when Keychain access is unavailable.
 
 Note: OAuth access tokens expire. You will need to re-run the export command periodically to refresh the credentials file.
 
@@ -210,16 +227,16 @@ The sandbox allows access to the local git directory, including from within work
 
 ### Remote access (push / pull / fetch)
 
-Interacting with remotes requires authentication. The recommended approach is to use HTTPS rather than SSH based remotes. The simplest way to authenticate is by passing a token via `extraEnv` (e.g. `GITHUB_TOKEN`), but you can also configure a [git credential helper](https://git-scm.com/doc/credential-helpers) to store your token for reuse so you don't have to pass it via environment variable.
+Interacting with remotes requires authentication. The recommended approach is to use HTTPS rather than SSH based remotes. The simplest way to authenticate is by passing a token via `env` (e.g. `GITHUB_TOKEN`), but you can also configure a [git credential helper](https://git-scm.com/doc/credential-helpers) to store your token for reuse so you don't have to pass it via environment variable.
 
-SSH based remotes (e.g. `git@github.com:...`) won't work by default — SSH keys are not accessible because `$HOME` is masked, and when `restrictNetwork = true` the proxy only handles HTTP/HTTPS so SSH traffic is blocked entirely. You can expose your SSH directory via `stateDirs` (e.g. `$HOME/.ssh`) and set `restrictNetwork = false` to enable SSH based git remotes, but this is not recommended.
+SSH based remotes (e.g. `git@github.com:...`) won't work by default — SSH keys are not accessible because `$HOME` is masked, and when `allowedDomains` is set the proxy only handles HTTP/HTTPS so SSH traffic is blocked entirely. You can expose your SSH directory via `rwDirs` (e.g. `$HOME/.ssh`) and leave `allowedDomains` unset (open network) to enable SSH based git remotes, but this is not recommended.
 
 ### Git identity
 
-To give the agent its own git identity, pass the following environment variables via `extraEnv`:
+To give the agent its own git identity, pass the following environment variables via `env`:
 
 ```nix
-    extraEnv = {
+    env = {
       ...
       GIT_AUTHOR_NAME = "claude";
       GIT_AUTHOR_EMAIL = "claude@localhost";
@@ -228,26 +245,26 @@ To give the agent its own git identity, pass the following environment variables
     };
 ```
 
-> **Note:** `.git/config` is read-only inside the sandbox, so `git config` commands run by the agent will not persist. Use `extraEnv` (as above) or configure git on the host before entering the sandbox.
+> **Note:** `.git/config` is read-only inside the sandbox, so `git config` commands run by the agent will not persist. Use `env` (as above) or configure git on the host before entering the sandbox.
 
 ## Common Patterns / Recipes
 
 ### Python with uv
 
-uv needs access to its cache dirs via `stateDirs`, otherwise it will re-download dependencies on every invocation. On NixOS, pre-compiled wheels will also fail to find glibc unless you thread `LD_LIBRARY_PATH` through from the host and use a nix-managed Python instead of a uv-managed one. See [`shells/claude-uv.shell.nix`](shells/claude-uv.shell.nix) for the full setup.
+uv needs access to its cache dirs via `rwDirs`, otherwise it will re-download dependencies on every invocation. On NixOS, pre-compiled wheels will also fail to find glibc unless you thread `LD_LIBRARY_PATH` through from the host and use a nix-managed Python instead of a uv-managed one. See [`shells/claude-uv.shell.nix`](shells/claude-uv.shell.nix) for the full setup.
 
 ### Node.js with npm
 
-For Node, you can simply add the npm cache as a `stateDir`.
+For Node, you can simply add the npm cache as a `rwDir`.
 
 ```nix
 allowedPackages = [ pkgs.nodejs pkgs.npm ];
-stateDirs = [ "$HOME/.npm" ]; # Allow npm cache
+rwDirs = [ "$HOME/.npm" ]; # Allow npm cache
 ```
 
 ## Debugging
 
-If the agent fails to perform a tool call, or file read/write, the sandbox is likely blocking a path that needs to be added to `stateDirs` or `stateFiles`.
+If the agent fails to perform a tool call, or file read/write, the sandbox is likely blocking a path that needs to be added to `rwDirs` or `rwFiles`.
 
 The easiest way to explore the sandbox environment is to wrap `bash` itself with the same config as your agent and poke around interactively.
 
@@ -258,9 +275,8 @@ bash-sandboxed = sandbox.mkSandbox {
   binName = "bash";
   outName = "bash-sandboxed";
   allowedPackages = [ pkgs.coreutils ];
-  stateDirs = [ "$HOME/.claude" ];
-  stateFiles = [];
-  restrictNetwork = true;
+  rwDirs = [ "$HOME/.claude" ];
+  rwFiles = [];
   allowedDomains = { "httpbin.org" = "*"; };
 };
 ```
@@ -269,20 +285,20 @@ Running `bash-sandboxed` drops you into a shell with exactly the same filesystem
 
 ```bash
 touch /tmp/test && rm /tmp/test   # /tmp should be writable
-curl https://example.com          # depends on restrictNetwork setting
+curl https://example.com          # depends on your allowedDomains setting
 which git                         # allowedPackages should be on PATH
 ls /some/other/path               # should fail — confirming sandbox is active
 cat ~/.ssh/id_ed25519             # should fail - shouldn't be able to read unspecified files in $HOME
-ls $HOME                          # empty dir with symlinks to stateDirs
+ls $HOME                          # empty dir with symlinks to rwDirs
 touch $HOME/.test && rm $HOME/.test  # writes allowed (but ephemeral)
-ls $HOME/.claude                  # should work if in stateDirs (symlinked)
+ls $HOME/.claude                  # should work if in rwDirs (symlinked)
 curl https://httpbin.org/get      # allowed domain — should work
 curl https://example.com          # blocked domain — should fail
 ```
 
-See [`debug/bash.shell.nix`](debug/bash.shell.nix) for a ready-to-use template (has `restrictNetwork = true` with `httpbin.org` allowed for testing).
+See [`debug/bash.shell.nix`](debug/bash.shell.nix) for a ready-to-use template (has `allowedDomains` set to `httpbin.org` for testing).
 
-**Network issues:** If `restrictNetwork = true` and requests are failing, check which domains are being blocked:
+**Network issues:** If you've set `allowedDomains` and requests are failing, check which domains are being blocked:
 
 ```bash
 tail -f /tmp/sandbox-proxy.log
@@ -307,8 +323,8 @@ This section explains what the sandbox is and isn't designed to protect against,
 If the agent does something it shouldn't — runs a bad prompt, processes a malicious file, picks up a compromised dependency, or hallucinates a destructive command — the sandbox stops the damage from spreading outside the project directory. Concretely:
 
 - It can't read your SSH keys, browser sessions, password manager, other projects' source code, or anything else in your home directory outside the paths you explicitly expose.
-- It can't delete or modify files outside the project directory and your declared `stateDirs` / `stateFiles`.
-- It can't reach the internet outside the domains you allow (when `restrictNetwork = true`).
+- It can't delete or modify files outside the project directory and your declared `rwDirs` / `rwFiles`.
+- It can't reach the internet outside the domains you allow (when `allowedDomains` is set).
 - It can't talk to local services on your laptop — databases, dev servers, the SSH agent, other terminal windows, etc.
 - It can only run the tools you list in `allowedPackages`.
 - It can't see your other running programs, read environment variables they have set, or interfere with other terminals you have open.
@@ -318,7 +334,7 @@ If the agent does something it shouldn't — runs a bad prompt, processes a mali
 The sandbox is an **isolation** boundary, not an **anonymity** boundary, and not a defense against an attacker who has already taken over your machine in some other way.
 
 - The agent can fingerprint your machine. It can see your hostname, hardware model, CPU, RAM, OS version, and rough network details. If you need the agent to *not know which machine it's running on*, this isn't the tool — you want a VM or a separate device.
-- Anything you hand the agent, it has. If you expose your `~/.claude` directory (or any credential file) via `stateDirs`, or pass a token through `extraEnv`, the agent can read it — that's how it logs in. A compromised agent has the same access to those credentials as your shell does. Treat this the way you'd treat handing the token to any other CLI tool you didn't write yourself.
+- Anything you hand the agent, it has. If you expose your `~/.claude` directory (or any credential file) via `rwDirs`, or pass a token through `env`, the agent can read it — that's how it logs in. A compromised agent has the same access to those credentials as your shell does. Treat this the way you'd treat handing the token to any other CLI tool you didn't write yourself.
 - The agent can edit its own sandbox config. `flake.nix` lives inside the project directory and is writable from inside the sandbox. An agent could weaken its own restrictions for the *next* session. Changes don't take effect until you re-enter the dev shell, so it's worth reviewing `git diff` before you do.
 - No defense against root or kernel bugs. If something on your machine has already gained administrator-level access, or there's a deeper bug in the operating system itself, this sandbox can't stop it.
 
@@ -341,7 +357,7 @@ If your threat model is *"I assume the agent is actively malicious and need it t
 ## Caveats
 
 - `sandbox-exec` is deprecated on macOS. It remains the only native unprivileged sandboxing mechanism and currently works on macOS 26 (Tahoe) and older, but may break in a future release.
-- Symlinks inside `stateDirs` and `stateFiles` are only followed to already-permitted paths. A symlink is usable only if its target is the Nix store, the working directory, the Git directory, or another declared `stateDir`/`stateFile`. Anything else is blocked — this prevents an agent from planting a symlink during a session to expand its own sandbox on the next startup (e.g. `~/.claude/evil -> /etc/shadow`). To expose a non-permitted path that's currently reached via a symlink, declare it explicitly as a `stateDir` or `stateFile`. Symlinks into the Nix store are read-only. Platform differences: on Linux, only top-level symlinks inside a `stateDir` are detected (the startup scan is one level deep) and blocked targets produce a `sandbox: WARNING` line on startup; on macOS, symlinks are followed at any depth and denials happen at runtime — check `log show --predicate 'eventMessage CONTAINS "deny"'`.
+- Symlinks inside `rwDirs` and `rwFiles` are only followed to already-permitted paths. A symlink is usable only if its target is the Nix store, the working directory, the Git directory, or another declared `rwDir`/`rwFile`. Anything else is blocked — this prevents an agent from planting a symlink during a session to expand its own sandbox on the next startup (e.g. `~/.claude/evil -> /etc/shadow`). To expose a non-permitted path that's currently reached via a symlink, declare it explicitly as a `rwDir` or `rwFile`. Symlinks into the Nix store are read-only. Platform differences: on Linux, only top-level symlinks inside a `rwDir` are detected (the startup scan is one level deep) and blocked targets produce a `sandbox: WARNING` line on startup; on macOS, symlinks are followed at any depth and denials happen at runtime — check `log show --predicate 'eventMessage CONTAINS "deny"'`.
 - Tested on x86_64-linux and aarch64-darwin. Other architectures should work but are untested.
 
 ## Similar projects
