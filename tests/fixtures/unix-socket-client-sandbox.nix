@@ -3,10 +3,13 @@
 # to a UNIX-domain socket on the host is denied. See
 # tests/darwin/test-unix-socket-egress-denied.sh.
 #
-# IMPORTANT: a non-null allowedDomains (filtered mode) is required for this
-# test. With allowedDomains omitted (open mode) the static profile contains
-# (allow network*) which permits all socket ops, including AF_UNIX connect —
-# so the regression would silently pass for the wrong reason.
+# Open and filtered modes both deny AF_UNIX outbound, by different
+# mechanisms: filtered mode never grants (allow network*), so AF_UNIX falls
+# under deny-default; open mode grants (allow network*) but layers a
+# (deny network-outbound (remote unix-socket)) on top (with a path-literal
+# allow for /private/var/run/mDNSResponder so DNS still works). This
+# fixture exercises the filtered-mode mechanism; the open-mode mechanism
+# is covered by tests/darwin/test-localhost-denied-unrestricted.sh.
 let
   pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
