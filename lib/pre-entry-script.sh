@@ -17,7 +17,7 @@
 # declaration. After probing, exec the real command unchanged.
 if command -v git >/dev/null 2>&1; then
   if ! { git var GIT_AUTHOR_IDENT && git var GIT_COMMITTER_IDENT; } >/dev/null 2>&1; then
-    printf "[WARN][agent-sandbox.nix] no git identity declared; git commit will fail. Set GIT_AUTHOR_*/GIT_COMMITTER_* in env, or bind a gitconfig — see the README.\n\n" >&2
+    printf "[WARN][agent-sandbox.nix] no git identity declared; git commit will fail. Set GIT_AUTHOR_*/GIT_COMMITTER_* in env, or bind a gitconfig — see the README.\n" >&2
   fi
 fi
 
