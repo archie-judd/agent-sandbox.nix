@@ -258,6 +258,7 @@ builtins.seq
           ${symlinkResolutionBashStr}
           ${sandboxPasswdBashStr}
           ${conditionalNetworkingParams.proxyStartupBashStr}
+          ${conditionalNetworkingParams.resolvConfSetupBashStr}
           ${trapBashStr}
           ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.coreutils}/bin/env -i ${pkgs.bubblewrap}/bin/bwrap \
             ${conditionalNetworkingParams.etcResolvBind} \
