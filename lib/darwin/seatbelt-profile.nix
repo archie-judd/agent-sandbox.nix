@@ -188,7 +188,6 @@
   ;; fetches still work because they write objects/ and refs/, not these.
   (deny file-write* (subpath (param "GIT_HOOKS_DIR")))
   (deny file-write* (literal (param "GIT_CONFIG_FILE")))
-  (allow file-read* (subpath (param "GIT_CONFIG_DIR")))
 
   ;; Timezone
   (allow file-read* (subpath "/private/var/db/timezone"))

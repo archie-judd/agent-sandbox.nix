@@ -40,10 +40,12 @@ let
     CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
     CLAUDE_CONFIG_DIR = "$HOME/.claude";
     GITHUB_TOKEN = "$GITHUB_TOKEN";
-    GIT_AUTHOR_NAME = "claude-agent";
-    GIT_AUTHOR_EMAIL = "claude-agent@localhost";
-    GIT_COMMITTER_NAME = "claude-agent";
-    GIT_COMMITTER_EMAIL = "claude-agent@localhost";
+    # Declare your git identity here (or bind your host gitconfig - see the
+    # README):
+    # GIT_AUTHOR_NAME = "Your Name";
+    # GIT_AUTHOR_EMAIL = "you@example.com";
+    # GIT_COMMITTER_NAME = "Your Name";
+    # GIT_COMMITTER_EMAIL = "you@example.com";
   };
 
   # On NixOS, use a nix-managed Python and tell uv not to install its own.

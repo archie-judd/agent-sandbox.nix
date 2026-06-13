@@ -25,10 +25,12 @@ let
       CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
       GITHUB_TOKEN = "$GITHUB_TOKEN";
       CLAUDE_CONFIG_DIR = "$HOME/.claude";
-      GIT_AUTHOR_NAME = "claude";
-      GIT_AUTHOR_EMAIL = "claude@localhost";
-      GIT_COMMITTER_NAME = "claude";
-      GIT_COMMITTER_EMAIL = "claude@localhost";
+      # Declare your git identity here (or bind your host gitconfig - see the
+      # README):
+      # GIT_AUTHOR_NAME = "Your Name";
+      # GIT_AUTHOR_EMAIL = "you@example.com";
+      # GIT_COMMITTER_NAME = "Your Name";
+      # GIT_COMMITTER_EMAIL = "you@example.com";
     };
     allowedDomains = {
       "anthropic.com" = "*";

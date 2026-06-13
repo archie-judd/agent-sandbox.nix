@@ -94,6 +94,10 @@
 }:
 let
   bashWrapper = shared.bashWrapper;
+  # Runs inside the sandbox ahead of the agent binary: probes for a declared
+  # git identity and warns the user at launch if none is found, then exec's
+  # the real command. See lib/pre-entry-script.sh.
+  preEntryScript = pkgs.writeShellScript "pre-entry-script" (builtins.readFile ../pre-entry-script.sh);
   emptyFile = pkgs.writeText "sandbox-empty" "";
   implicitPackages = [
     pkgs.cacert
@@ -188,6 +192,7 @@ let
     ++ [
       pkg
       pkgs.coreutils
+      preEntryScript
     ]
   );
 
@@ -236,7 +241,7 @@ builtins.seq
       text =
         # bash
         ''
-            #!${pkgs.bashInteractive}/bin/bash
+          #!${pkgs.bashInteractive}/bin/bash
             CWD=$(pwd)
             ${mkDirsStr}
             ${mkFilesStr}
@@ -292,11 +297,14 @@ builtins.seq
             --setenv PATH "${pathStr}" \
             --setenv SSL_CERT_DIR "${pkgs.cacert}/etc/ssl/certs" \
             --setenv TMPDIR /tmp \
+            --setenv GIT_CONFIG_COUNT 1 \
+            --setenv GIT_CONFIG_KEY_0 user.useConfigOnly \
+            --setenv GIT_CONFIG_VALUE_0 true \
             ${conditionalNetworkingParams.sslCertEnvBubblewrapStr} \
             ${conditionalNetworkingParams.caCertBubblewrapStr} \
             ${conditionalNetworkingParams.proxyEnvBubblewrapStr} \
             ${extraEnvStr} \
-            ${pkg}/bin/${binName} "$@"
+            ${preEntryScript} ${pkg}/bin/${binName} "$@"
         '';
     }
   )

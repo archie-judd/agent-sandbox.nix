@@ -223,7 +223,7 @@ Note: OAuth access tokens expire. You will need to re-run the export command per
 
 ## Git
 
-The sandbox allows access to the local git directory, including from within worktrees. Committing, switching branches and other local operations are allowed without any extra configuration.
+The sandbox allows access to the local git directory, including from within worktrees. Switching branches, reading history and other local operations work without any extra configuration. Committing requires a declared git identity — see [Git identity](#git-identity).
 
 ### Remote access (push / pull / fetch)
 
@@ -233,19 +233,24 @@ SSH based remotes (e.g. `git@github.com:...`) won't work by default — SSH keys
 
 ### Git identity
 
-To give the agent its own git identity, pass the following environment variables via `env`:
+`$HOME` is masked inside the sandbox, so your global gitconfig is not visible and git's `user.name` / `user.email` are unset. The sandbox never fabricates an identity if none are provided. This means `git commit` without a declared identity will fails loudly (`fatal: ... auto-detection is disabled`).
 
-```nix
-    env = {
-      ...
-      GIT_AUTHOR_NAME = "claude";
-      GIT_AUTHOR_EMAIL = "claude@localhost";
-      GIT_COMMITTER_NAME = "claude";
-      GIT_COMMITTER_EMAIL = "claude@localhost";
-    };
-```
+To get correctly-attributed commits, declare a real identity in one of two ways:
 
-> **Note:** `.git/config` is read-only inside the sandbox, so `git config` commands run by the agent will not persist. Use `env` (as above) or configure git on the host before entering the sandbox.
+- **Via `env`** (fully self-contained):
+
+  ```nix
+      env = {
+        GIT_AUTHOR_NAME = "Your Name";
+        GIT_AUTHOR_EMAIL = "you@example.com";
+        GIT_COMMITTER_NAME = "Your Name";
+        GIT_COMMITTER_EMAIL = "you@example.com";
+      };
+  ```
+
+- **By binding your host gitconfig.** Set your identity on the host (`git config --global user.name "..."; git config --global user.email "..."`), then bind `$HOME/.config/git` (or your `~/.gitconfig`) into the sandbox via `rwDirs`. git reads it at its normal lookup path.
+
+> **Note:** do not run `git config --global ...` inside the sandbox to set your identity this — `$HOME` is an ephemeral tmpfs there, so it won't persist. Set it on the host and bind your config file, or use `env`.
 
 ## Common Patterns / Recipes
 

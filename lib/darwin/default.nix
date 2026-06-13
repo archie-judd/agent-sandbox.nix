@@ -117,8 +117,6 @@
                               differ from CWD if CWD is a subdirectory
       $GIT_DIR (subpath)    — the .git dir (may be outside repo root
                               for worktrees)
-      $GIT_CONFIG_DIR       — ~/.config/git (read-only) for user
-                              gitconfig, gitignore, etc.
 
     rwDirs / rwFiles:
       Each gets a (allow file-read* file-write* ...) rule. Dirs use
@@ -188,6 +186,10 @@
 }:
 let
   bashWrapper = shared.bashWrapper;
+  # Runs inside the sandbox ahead of the agent binary: probes for a declared
+  # git identity and warns the user at launch if none is found, then exec's
+  # the real command. See lib/pre-entry-script.sh.
+  preEntryScript = pkgs.writeShellScript "pre-entry-script" (builtins.readFile ../pre-entry-script.sh);
   implicitPackages = [
     pkgs.cacert
     bashWrapper
@@ -277,7 +279,10 @@ let
   # is always reachable in the store closure. bashWrapper forces
   # --norc --noprofile on every bash invocation so that the sandboxed
   # process cannot source /etc/bashrc or /etc/profile.
-  closurePathsFile = pkgs.writeClosure (allowedPackages ++ implicitPackages ++ [ pkg ]);
+  closurePathsFile = pkgs.writeClosure (allowedPackages ++ implicitPackages ++ [
+    pkg
+    preEntryScript
+  ]);
 
   gitDetectionBashStr =
     # bash
@@ -424,9 +429,6 @@ builtins.seq
           ${gitDetectionBashStr}
           ${ttyDetectionBashStr}
 
-          # Capture real HOME paths before redirecting
-          GIT_CONFIG_DIR="$HOME/.config/git"
-
           # Resolve rwDirs/rwFiles paths while $HOME still points at real home
           ${resolveStateDirsStr}
           ${resolveStateFilesStr}
@@ -459,8 +461,10 @@ builtins.seq
             SHELL="${bashWrapper}/bin/bash" \
             PATH="${pathStr}" \
             SSL_CERT_DIR="${pkgs.cacert}/etc/ssl/certs" \
-            GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
             TMPDIR=/tmp \
+            GIT_CONFIG_COUNT="1" \
+            GIT_CONFIG_KEY_0="user.useConfigOnly" \
+            GIT_CONFIG_VALUE_0="true" \
             ${conditionalNetworkingParams.caCertEnvInlineBashStr} \
             ${conditionalNetworkingParams.proxyEnvInlineBashStr} \
             ${extraEnvInlineStr} \
@@ -473,7 +477,6 @@ builtins.seq
             -D REPO_ROOT="$REPO_ROOT" \
             -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
             -D MY_TTY="$MY_TTY" \
-            -D GIT_CONFIG_DIR="$GIT_CONFIG_DIR" \
             -D TMPDIR="/tmp" \
             -D HOME="$SANDBOX_HOME"  \
             -D REAL_HOME="$REAL_HOME" \
@@ -482,7 +485,7 @@ builtins.seq
             -D HOME_LOCAL="$SANDBOX_HOME/.local" \
             -D HOME_LOCAL_STATE="$SANDBOX_HOME/.local/state" \
             -D HOME_LOCAL_SHARE="$SANDBOX_HOME/.local/share" ${stateDirFlags} ${stateFileFlags} \
-            ${pkg}/bin/${binName} "$@"
+            ${preEntryScript} ${pkg}/bin/${binName} "$@"
         '';
     }
   )

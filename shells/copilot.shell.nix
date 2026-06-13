@@ -23,10 +23,12 @@ let
     rwFiles = [ ];
     env = {
       GITHUB_TOKEN = "$GITHUB_TOKEN";
-      GIT_AUTHOR_NAME = "copilot";
-      GIT_AUTHOR_EMAIL = "copilot@localhost";
-      GIT_COMMITTER_NAME = "copilot";
-      GIT_COMMITTER_EMAIL = "copilot@localhost";
+      # Declare your git identity here (or bind your host gitconfig - see the
+      # README):
+      # GIT_AUTHOR_NAME = "Your Name";
+      # GIT_AUTHOR_EMAIL = "you@example.com";
+      # GIT_COMMITTER_NAME = "Your Name";
+      # GIT_COMMITTER_EMAIL = "you@example.com";
     };
     allowedDomains = {
       "githubcopilot.com" = "*";
