@@ -4,12 +4,15 @@
 #
 # Arguments:
 #   networkRulesStr      — (allow network*) or restricted-proxy rules
+#   nixSupportRulesStr   — Nix daemon socket + full-store exec rules when
+#                          allowNix is set; empty string otherwise
 #   allowReadWriteExecStr — per-rwDir allow rules  (subpath, file-read/write/exec)
 #   allowFilesStr        — per-rwFile allow rules  (literal, file-read/write)
 #   allowReadOnlyStr      — per-roDir allow rules  (subpath, file-read*; no exec)
 #   allowFilesReadOnlyStr — per-roFile allow rules (literal, file-read*)
 {
   networkRulesStr,
+  nixSupportRulesStr,
   allowReadWriteExecStr,
   allowFilesStr,
   allowReadOnlyStr,
@@ -65,6 +68,16 @@
   (allow ipc-posix-shm-write-create)
 
   ${networkRulesStr}
+
+  ;; Nix daemon support (only when allowNix is set). Emitted after the
+  ;; network rules so the socket allow wins over the blanket
+  ;; (deny network-outbound (remote unix-socket)) in unrestricted mode
+  ;; (seatbelt is last-match-wins), and supplies the missing permission
+  ;; in restricted (proxy) mode. The process-exec grant covers the whole
+  ;; store so the agent can exec results built by the daemon after sandbox
+  ;; start (e.g. `nix-shell -p`) — paths that aren't in the
+  ;; allowedPackages closure.
+  ${nixSupportRulesStr}
 
   ;; Device nodes & terminal I/O
   (allow file-read*
