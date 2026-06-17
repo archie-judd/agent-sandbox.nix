@@ -438,13 +438,19 @@ let
     else
       "";
 
-  # Detect the daemon socket path at runtime (honouring an override) so the
-  # profile's (param "NIX_DAEMON_SOCKET_PATH") resolves to the real socket.
+  # Detect the daemon socket path at runtime (honouring an override) and
+  # canonicalize it: the kernel resolves symlinks before invoking the
+  # seatbelt hook, so (path-literal …) must hold the resolved path or the
+  # rule never matches. Determinate Nix on macOS exposes the upstream path
+  # as a symlink onto /var/run/nix-daemon.socket; without readlink -f the
+  # connect is denied and the client reports EPERM against the unresolved
+  # path. On installs where the path isn't a symlink, readlink -f is a no-op.
   nixDaemonSocketBashStr =
     if allowNix then
       # bash
       ''
         NIX_DAEMON_SOCKET_PATH="''${NIX_DAEMON_SOCKET_PATH:-/nix/var/nix/daemon-socket/socket}"
+        NIX_DAEMON_SOCKET_PATH=$(${pkgs.coreutils}/bin/readlink -f "$NIX_DAEMON_SOCKET_PATH" 2>/dev/null || echo "$NIX_DAEMON_SOCKET_PATH")
       ''
     else
       "";
