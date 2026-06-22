@@ -20,7 +20,38 @@ Tested with Claude's frontier models — see [Security](#security) for the threa
 
 Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappears when the sandbox exits.
 
-## Usage
+## Contents
+
+<!-- vim-markdown-toc GFM -->
+
+* [Usage and configuration](#usage-and-configuration)
+    * [Templates](#templates)
+    * [Arguments](#arguments)
+    * [Network restrictions](#network-restrictions)
+* [Authentication](#authentication)
+    * [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
+    * [Credential files via `rwDirs`](#credential-files-via-rwdirs)
+    * [Tested agents](#tested-agents)
+* [Git](#git)
+    * [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
+    * [Git identity](#git-identity)
+* [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
+* [Common Patterns / Recipes](#common-patterns--recipes)
+    * [Python with uv](#python-with-uv)
+    * [Node.js with npm](#nodejs-with-npm)
+* [Debugging](#debugging)
+* [Security](#security)
+    * [What it protects against](#what-it-protects-against)
+    * [What it doesn't protect against](#what-it-doesnt-protect-against)
+    * [Specific things worth being aware of](#specific-things-worth-being-aware-of)
+    * [Linux vs macOS](#linux-vs-macos)
+    * [Is this the right tool for me?](#is-this-the-right-tool-for-me)
+* [Caveats](#caveats)
+* [Similar projects](#similar-projects)
+
+<!-- vim-markdown-toc -->
+
+## Usage and configuration
 
 The quickest way to get started is with a flake template. If you prefer a `shell.nix`, see [`shells/`](shells/) for ready-to-use examples. Authentication is covered [below](#authentication).
 
