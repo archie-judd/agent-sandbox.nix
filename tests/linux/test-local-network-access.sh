@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Test: localNetworkAccess allows explicitly configured localhost targets for
-# both same-sandbox services and host-loopback services on Linux while
-# preserving the default block for neighboring ports.
+# Test: localNetworkAccess allows explicitly configured host-loopback targets on
+# Linux while preserving sandbox-local loopback and the default block for
+# neighboring host-loopback ports.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEST_CWD="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -17,6 +17,7 @@ run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$@") >/dev/null 2>&1;
 
 ALLOWED_PORT=18934
 DENIED_PORT=18935
+INSIDE_PORT=18936
 
 TESTDIR_ROOT="$TEST_CWD/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
@@ -40,14 +41,14 @@ for port in "$ALLOWED_PORT" "$DENIED_PORT"; do
 done
 
 echo "=== Explicit localNetworkAccess allowlist (Linux) ==="
-echo "ALLOWED_PORT=$ALLOWED_PORT DENIED_PORT=$DENIED_PORT"
+echo "ALLOWED_PORT=$ALLOWED_PORT DENIED_PORT=$DENIED_PORT INSIDE_PORT=$INSIDE_PORT"
 echo
 
 expect_ok "curl is available" "command -v curl"
 expect_ok "python3 is available" "command -v python3"
 
-expect_status "can reach allowlisted service started inside same sandbox" 0 \
-	"python3 '$SCRIPT_DIR/../helpers/inside-http-loopback.py' '$ALLOWED_PORT'"
+expect_status "can reach service started inside same sandbox on non-forwarded loopback port" 0 \
+	"python3 '$SCRIPT_DIR/../helpers/inside-http-loopback.py' '$INSIDE_PORT'"
 
 "$HOST_PYTHON3" -c '
 import signal, socket, sys, threading
