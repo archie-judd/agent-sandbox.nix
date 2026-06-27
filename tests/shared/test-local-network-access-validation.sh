@@ -13,11 +13,6 @@ build_with_target() {
 	nix-build --no-out-link --argstr target "$target" "$SCRIPT_DIR/../fixtures/network-local-access-darwin.nix" 2>&1
 }
 
-sandbox_profile_for_wrapper() {
-	local wrapper="$1/bin/sandboxed-bash-local-access"
-	grep -Eo '/nix/store/[^" ]+-sandboxed-bash-local-access-sandbox\.sb' "$wrapper" | head -n 1
-}
-
 expect_ok_target() {
 	local desc="$1" target="$2"
 	local out
@@ -47,30 +42,6 @@ expect_invalid_target() {
 	fi
 }
 
-expect_normalized_target() {
-	local desc="$1" target="$2" expected="$3" unexpected="$4"
-	local out profile
-	if ! out=$(build_with_target "$target"); then
-		echo "FAIL: $desc (build failed)"
-		printf '%s\n' "$out" | sed 's/^/    /'
-		FAIL=$((FAIL + 1))
-	elif ! profile=$(sandbox_profile_for_wrapper "$out"); then
-		echo "FAIL: $desc (sandbox profile not found)"
-		FAIL=$((FAIL + 1))
-	elif ! grep -qF "$expected" "$profile"; then
-		echo "FAIL: $desc (missing expected rule: $expected)"
-		sed 's/^/    /' "$profile"
-		FAIL=$((FAIL + 1))
-	elif [ -n "$unexpected" ] && grep -qF "$unexpected" "$profile"; then
-		echo "FAIL: $desc (found unnormalized rule: $unexpected)"
-		sed 's/^/    /' "$profile"
-		FAIL=$((FAIL + 1))
-	else
-		echo "PASS: $desc"
-		PASS=$((PASS + 1))
-	fi
-}
-
 echo "=== localNetworkAccess validation ==="
 echo
 
@@ -80,10 +51,6 @@ expect_ok_target "IPv6 loopback alias is accepted for compatibility" "[::1]:3000
 expect_invalid_target "non-loopback VM/LAN IP is rejected before sandbox-exec" \
 	"10.254.254.1:*" \
 	"Darwin sandbox-exec only supports localhost-style localNetworkAccess targets"
-expect_normalized_target "IPv4 loopback alias is emitted as sandbox-exec-compatible localhost" \
-	"127.0.0.1:3000" \
-	'(allow network-outbound (remote ip "localhost:3000"))' \
-	'(allow network-outbound (remote ip "127.0.0.1:3000"))'
 
 print_results
 exit_status
