@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Test: localNetworkAccess allows explicitly configured host-loopback targets on
-# Linux while preserving sandbox-local loopback and the default block for
-# neighboring host-loopback ports.
+# Test: allowedLocalPorts allows explicitly configured host-local TCP ports
+# while preserving the default block for neighboring host-local TCP ports.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEST_CWD="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/network-local-access.nix")
-SHELL="$SANDBOXED/bin/sandboxed-bash-local-access"
+SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/allowed-local-ports.nix")
+SHELL="$SANDBOXED/bin/sandboxed-bash-allowed-local-ports"
 
 HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
 
@@ -17,11 +16,10 @@ run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$@") >/dev/null 2>&1;
 
 ALLOWED_PORT=18934
 DENIED_PORT=18935
-INSIDE_PORT=18936
 
 TESTDIR_ROOT="$TEST_CWD/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
-TESTDIR=$(mktemp -d "$TESTDIR_ROOT/local-network-access-linux.XXXXXX")
+TESTDIR=$(mktemp -d "$TESTDIR_ROOT/allowed-local-ports-darwin.XXXXXX")
 
 SERVER_PID=""
 cleanup() {
@@ -40,15 +38,15 @@ for port in "$ALLOWED_PORT" "$DENIED_PORT"; do
 	fi
 done
 
-echo "=== Explicit localNetworkAccess allowlist (Linux) ==="
-echo "ALLOWED_PORT=$ALLOWED_PORT DENIED_PORT=$DENIED_PORT INSIDE_PORT=$INSIDE_PORT"
+echo "=== allowedLocalPorts (Darwin) ==="
+echo "ALLOWED_PORT=$ALLOWED_PORT DENIED_PORT=$DENIED_PORT"
 echo
 
 expect_ok "curl is available" "command -v curl"
 expect_ok "python3 is available" "command -v python3"
 
-expect_status "can reach service started inside same sandbox on non-forwarded loopback port" 0 \
-	"python3 '$SCRIPT_DIR/../helpers/inside-http-loopback.py' '$INSIDE_PORT'"
+expect_status "can reach service started inside same sandbox on allowed port" 0 \
+	"python3 '$SCRIPT_DIR/../helpers/inside-http-loopback.py' '$ALLOWED_PORT'"
 
 "$HOST_PYTHON3" -c '
 import signal, socket, sys, threading
@@ -95,14 +93,11 @@ if [ "$_ready" -ne 1 ]; then
 	exit 1
 fi
 
-expect_ok "can reach allowlisted host-loopback target through localhost" \
-	"curl -sf --noproxy '*' --max-time 3 http://localhost:$ALLOWED_PORT/"
+expect_ok "can reach allowed host-local TCP port" \
+	"curl -sf --noproxy '*' --max-time 3 http://127.0.0.1:$ALLOWED_PORT/"
 
-expect_fail "cannot reach non-allowlisted host-loopback target through localhost" \
-	"curl -sf --noproxy '*' --max-time 3 http://localhost:$DENIED_PORT/"
-
-expect_fail "cannot reach non-allowlisted host-loopback target through pasta gateway" \
-	"curl -sf --noproxy '*' --max-time 3 http://10.0.2.2:$DENIED_PORT/"
+expect_fail "cannot reach non-allowed host-local TCP port" \
+	"curl -sf --noproxy '*' --max-time 3 http://127.0.0.1:$DENIED_PORT/"
 
 print_results
 exit_status

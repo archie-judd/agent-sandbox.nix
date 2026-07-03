@@ -130,46 +130,21 @@ let
         exit 1
       fi
     '';
-  localNetworkTargetPattern = "(localhost|127[.]0[.]0[.]1|[[]::1[]]):([0-9]+|[*])";
-  localNetworkTargetPort =
-    target:
-    let
-      match = builtins.match localNetworkTargetPattern target;
-    in
-    builtins.elemAt match 1;
-  normalizeLocalNetworkTarget = target: "localhost:${localNetworkTargetPort target}";
-  validateLocalNetworkAccess =
-    localNetworkAccess:
-    if !(builtins.isAttrs localNetworkAccess) then
-      builtins.throw "${errorPrefix} localNetworkAccess must be an attrset with 'enable' and 'allowedTargets'"
+  validateAllowedLocalPorts =
+    allowedLocalPorts:
+    if !(builtins.isList allowedLocalPorts) then
+      builtins.throw "${errorPrefix} allowedLocalPorts must be a list of integers from 1 to 65535, or \"*\""
     else
       let
-        enable = localNetworkAccess.enable or false;
-        allowedTargets = localNetworkAccess.allowedTargets or [ ];
-        normalized = {
-          enable = enable;
-          allowedTargets = allowedTargets;
-        };
-        # macOS Seatbelt rejects arbitrary hosts in (remote ip ...): the host
-        # must be "localhost" or "*". localNetworkAccess is intentionally
-        # local-only, so accept localhost plus the documented loopback aliases
-        # and emit them as localhost in the Darwin profile. Linux uses the same
-        # target shape and maps the port to the pasta host-loopback gateway.
-        invalidTargets = builtins.filter (
-          target:
-          !(builtins.isString target) || builtins.match localNetworkTargetPattern target == null
-        ) allowedTargets;
+        validPort = port: port == "*" || (builtins.isInt port && port >= 1 && port <= 65535);
+        invalidPorts = builtins.filter (port: !validPort port) allowedLocalPorts;
       in
-      if !(builtins.isBool enable) then
-        builtins.throw "${errorPrefix} localNetworkAccess.enable must be a boolean"
-      else if !(builtins.isList allowedTargets) then
-        builtins.throw "${errorPrefix} localNetworkAccess.allowedTargets must be a list of strings"
-      else if !enable && allowedTargets != [ ] then
-        builtins.throw "${errorPrefix} localNetworkAccess targets require localNetworkAccess.enable = true"
-      else if invalidTargets != [ ] then
-        builtins.throw "${errorPrefix} localNetworkAccess only supports localhost-style targets. Use localhost:<port>, 127.0.0.1:<port>, or [::1]:<port>; non-loopback IPs such as VM/LAN addresses cannot be allowlisted safely. Invalid target(s): ${builtins.toJSON invalidTargets}"
+      if invalidPorts != [ ] then
+        builtins.throw "${errorPrefix} allowedLocalPorts must only contain integers from 1 to 65535, or \"*\". Invalid port(s): ${builtins.toJSON invalidPorts}"
+      else if builtins.elem "*" allowedLocalPorts then
+        [ "*" ]
       else
-        normalized;
+        pkgs.lib.unique allowedLocalPorts;
   assertNoLegacyArgs =
     {
       restrictNetwork,
@@ -214,8 +189,6 @@ in
   warnPrefix = warnPrefix;
   errorPrefix = errorPrefix;
   assertNoLegacyArgs = assertNoLegacyArgs;
-  validateLocalNetworkAccess = validateLocalNetworkAccess;
-  localNetworkTargetPort = localNetworkTargetPort;
-  normalizeLocalNetworkTarget = normalizeLocalNetworkTarget;
+  validateAllowedLocalPorts = validateAllowedLocalPorts;
   assertBindsExistBashStr = assertBindsExistBashStr;
 }

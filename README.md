@@ -13,7 +13,7 @@ Tested with Claude's frontier models — see [Security](#security) for the threa
 - **Project directory** — read/write access to the directory you launch the agent from.
 - **Declared state** — read/write access to anything you list in `rwDirs` / `rwFiles`, or read-only access via `roDirs` / `roFiles`.
 - **Allowed packages** — the binaries you list in `allowedPackages` are on the agent's PATH (plus `bash` and `cacert`).
-- **Network** — unrestricted internet by default, with host-local services blocked. Set `allowedDomains` to limit internet domains, and use `localNetworkAccess` for explicit host-loopback opt-ins.
+- **Network** — unrestricted internet by default, with host-local services blocked. Set `allowedDomains` to limit internet domains, and use `allowedLocalPorts` for explicit host-local TCP port access.
 - **Environment** — only variables you pass via `env` reach the agent; the host environment is otherwise cleared.
 - **Git** — the repo's `.git` directory is exposed, including when it sits outside the project tree (worktrees).
 - **Nix** — disabled by default. Optionally allow the agent to run nix commands.
@@ -24,30 +24,33 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
 
 <!-- vim-markdown-toc GFM -->
 
-* [Usage and configuration](#usage-and-configuration)
-    * [Templates](#templates)
-    * [Arguments](#arguments)
-    * [Network restrictions](#network-restrictions)
-* [Authentication](#authentication)
-    * [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
-    * [Credential files via `rwDirs`](#credential-files-via-rwdirs)
-    * [Tested agents](#tested-agents)
-* [Git](#git)
-    * [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
-    * [Git identity](#git-identity)
-* [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
-* [Common Patterns / Recipes](#common-patterns--recipes)
-    * [Python with uv](#python-with-uv)
-    * [Node.js with npm](#nodejs-with-npm)
-* [Debugging](#debugging)
-* [Security](#security)
-    * [What it protects against](#what-it-protects-against)
-    * [What it doesn't protect against](#what-it-doesnt-protect-against)
-    * [Specific things worth being aware of](#specific-things-worth-being-aware-of)
-    * [Linux vs macOS](#linux-vs-macos)
-    * [Is this the right tool for me?](#is-this-the-right-tool-for-me)
-* [Caveats](#caveats)
-* [Similar projects](#similar-projects)
+- [agent-sandbox.nix](#agent-sandboxnix)
+  - [What the sandbox allows](#what-the-sandbox-allows)
+  - [Contents](#contents)
+  - [Usage and configuration](#usage-and-configuration)
+    - [Templates](#templates)
+    - [Arguments](#arguments)
+    - [Network restrictions](#network-restrictions)
+  - [Authentication](#authentication)
+    - [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
+    - [Credential files via `rwDirs`](#credential-files-via-rwdirs)
+    - [Tested agents](#tested-agents)
+  - [Git](#git)
+    - [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
+    - [Git identity](#git-identity)
+  - [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
+  - [Common Patterns / Recipes](#common-patterns--recipes)
+    - [Python with uv](#python-with-uv)
+    - [Node.js with npm](#nodejs-with-npm)
+  - [Debugging](#debugging)
+  - [Security](#security)
+    - [What it protects against](#what-it-protects-against)
+    - [What it doesn't protect against](#what-it-doesnt-protect-against)
+    - [Specific things worth being aware of](#specific-things-worth-being-aware-of)
+    - [Linux vs macOS](#linux-vs-macos)
+    - [Is this the right tool for me?](#is-this-the-right-tool-for-me)
+  - [Caveats](#caveats)
+  - [Similar projects](#similar-projects)
 
 <!-- vim-markdown-toc -->
 
@@ -72,7 +75,7 @@ A few arguments were renamed, and `restrictNetwork` was removed. If you use an o
 
 Network access is now controlled by `allowedDomains` on its own: leave it unset for open internet, list the domains you want to allow, or use `[ ]` to block everything.
 
-**If you relied on host loopback reachability:** previously, leaving `restrictNetwork` unset let the agent reach host-local services (Ollama, a local database, a local MCP server, etc.). That no longer works by default — host loopback is blocked unless you explicitly opt into each local target with `localNetworkAccess`.
+**If you relied on host loopback reachability:** previously, leaving `restrictNetwork` unset let the agent reach host-local services (Ollama, a local database, a local MCP server, etc.). That no longer works by default — host loopback is blocked unless you explicitly opt in with `allowedLocalPorts`.
 
 </details>
 
@@ -123,7 +126,7 @@ If you want to keep the original command name as the alias, change the `outName`
 | `allowNix` | no | If `true`, expose the host's `nix-daemon` socket and the full Nix store so the agent can run `nix build`, `nix run`, `nix develop`, etc. `pkgs.nix` is added to PATH automatically. Defaults to `false`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox). |
 | `env` | no | Additional environment variables as an attrset |
 | `allowedDomains` | no | Limits which domains the sandbox can reach. Leave unset for open internet. Accepts a list of domains (all methods allowed), or an attrset mapping each domain to `"*"` or a list of HTTP methods. `[ ]` blocks all internet access. |
-| `localNetworkAccess` | no | Controls explicit host-loopback opt-ins. Defaults to `{ enable = false; allowedTargets = [ ]; }`. When enabled, only listed localhost-style `allowedTargets` such as `"localhost:3000"`, `"127.0.0.1:3000"`, or `"[::1]:3000"` may reach host-local services. |
+| `allowedLocalPorts` | no | Host-local TCP ports the sandbox may reach. Defaults to `[ ]`. Entries must be integers from `1` to `65535`, or `"*"` to allow all host-local TCP ports. |
 
 Paths declared in `rwDirs` / `rwFiles` / `roDirs` / `roFiles` must exist on the host before launch — the sandbox exits with a clear error if any are missing.
 
@@ -164,7 +167,7 @@ mkSandbox {
 
 ### Network restrictions
 
-`allowedDomains` controls internet/domain access. It does not allow host-local targets.
+`allowedDomains` controls internet/domain access. It does not allow host-local TCP ports.
 
 By default, internet access is unrestricted and host-local services — databases, dev servers, SSH agent, Docker socket, etc. — are blocked. To restrict internet access, set `allowedDomains` — the sandbox can then only reach the domains you list. Leave it unset for open internet, or set it to `[ ]` to block all internet access.
 
@@ -179,22 +182,15 @@ When `allowedDomains` is set, all HTTP/HTTPS traffic is routed through a filteri
 
 For local client/server integration tests:
 
-- A server and client started inside the same sandbox can use sandbox-local loopback without `localNetworkAccess`.
+- A server and client started inside the same sandbox can use sandbox-local loopback without `allowedLocalPorts`.
 - Host-local services stay blocked by default on both Linux/NixOS and Darwin.
-- Use `localNetworkAccess.allowedTargets` when the sandbox must reach a trusted service running on the host loopback.
+- Use `allowedLocalPorts` when the sandbox must reach trusted host-local TCP services.
 
 ```nix
-localNetworkAccess = {
-  enable = true;
-  allowedTargets = [
-    "localhost:3000"
-    "127.0.0.1:3000"
-    "[::1]:3000"
-  ];
-};
+allowedLocalPorts = [ 3000 5432 ];
 ```
 
-Each `allowedTargets` entry means “allow the sandbox to reach this host-loopback target”. On Darwin, entries are emitted as Seatbelt `remote ip` localhost targets. On Linux/NixOS, matching sandbox `localhost:<port>` TCP connections are forwarded to the pasta host-loopback gateway. `sandbox-exec` cannot safely allowlist arbitrary VM/LAN IPs such as `"10.254.254.1:*"`, so the cross-platform API only accepts localhost-style targets. Use `localhost:<port>` where possible. `<port>` may be a number or `*`. `127.0.0.1:<port>` and bracketed `[::1]:<port>` are accepted for compatibility and normalized internally. Keep the list as narrow as possible; broad entries can expose host-local services.
+Use `"*"` to allow all host-local TCP ports. Keep the list as narrow as possible; broad entries can expose host-local services.
 
 Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
 
@@ -413,7 +409,7 @@ If the agent does something it shouldn't — runs a bad prompt, processes a mali
 - It can't read your SSH keys, browser sessions, password manager, other projects' source code, or anything else in your home directory outside the paths you explicitly expose.
 - It can't delete or modify files outside the project directory and your declared `rwDirs` / `rwFiles`.
 - It can't reach the internet outside the domains you allow (when `allowedDomains` is set).
-- It can't talk to local services on your laptop — databases, dev servers, the SSH agent, other terminal windows, etc. — unless you explicitly allow a localhost target with `localNetworkAccess`.
+- It can't talk to local services on your laptop — databases, dev servers, the SSH agent, other terminal windows, etc. — unless you explicitly allow host-local TCP ports with `allowedLocalPorts`.
 - It can only run the tools you list in `allowedPackages`.
 - It can't see your other running programs, read environment variables they have set, or interfere with other terminals you have open.
 
@@ -434,7 +430,7 @@ The sandbox is an **isolation** boundary, not an **anonymity** boundary, and not
 
 ### Linux vs macOS
 
-Both platforms enforce the same default protections. The mechanisms differ: Linux uses bubblewrap plus pasta network namespaces, so sandbox-local loopback can work without exposing host loopback. macOS uses `sandbox-exec`, which cannot distinguish sandbox-local localhost from host localhost. Host-loopback targets stay blocked unless explicitly allowlisted with `localNetworkAccess`; on Linux, allowlisted sandbox `localhost:<port>` TCP connections are forwarded to the host-loopback gateway.
+Both platforms enforce the same default protections. The mechanisms differ: Linux uses bubblewrap plus pasta network namespaces, so sandbox-local loopback can work without exposing host loopback. macOS uses `sandbox-exec`, which cannot distinguish sandbox-local localhost from host localhost. Host-local TCP ports stay blocked unless explicitly allowed with `allowedLocalPorts`; on Linux, allowed host-local TCP connections are forwarded to the host-loopback gateway.
 
 ### Is this the right tool for me?
 

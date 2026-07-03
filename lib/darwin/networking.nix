@@ -2,21 +2,15 @@
   pkgs,
   shared,
   allowedDomains,
-  localNetworkAccess,
+  allowedLocalPorts,
   _proxyRedirects ? { },
 }:
 let
   mkAllowlistFile = shared.mkAllowlistFile;
   mkProxyStartupBashStr = shared.mkProxyStartupBashStr;
-  darwinLocalNetworkRulesStr =
-    if localNetworkAccess.enable then
-      builtins.concatStringsSep "\n" (
-        map (
-          target: ''        (allow network-outbound (remote ip "${shared.normalizeLocalNetworkTarget target}"))''
-        ) localNetworkAccess.allowedTargets
-      )
-    else
-      "";
+  darwinAllowedLocalPortsRulesStr = builtins.concatStringsSep "\n" (
+    map (port: ''        (allow network-outbound (remote ip "localhost:${toString port}"))'') allowedLocalPorts
+  );
 in
 if allowedDomains != null then
   let
@@ -47,7 +41,7 @@ if allowedDomains != null then
         ;; needs UNIX-socket egress.
         (allow network-bind (local ip "localhost:*"))
         (allow system-socket)
-        ${darwinLocalNetworkRulesStr}
+        ${darwinAllowedLocalPortsRulesStr}
       '';
     proxyStartupBashStr = mkProxyStartupBashStr allowlistFileStr "127.0.0.1" _proxyRedirects;
     networkRuntimePatchBashStr =
@@ -110,7 +104,7 @@ else
         (deny network-outbound (remote unix-socket))
         (allow network-outbound
           (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
-        ${darwinLocalNetworkRulesStr}
+        ${darwinAllowedLocalPortsRulesStr}
       '';
     proxyStartupBashStr = "";
     networkRuntimePatchBashStr = "";

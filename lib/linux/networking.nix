@@ -3,7 +3,7 @@
   shared,
   restrictNetwork,
   allowedDomains,
-  localNetworkAccess,
+  allowedLocalPorts,
   _proxyRedirects ? { },
 }:
 let
@@ -11,20 +11,18 @@ let
   mkProxyStartupBashStr = shared.mkProxyStartupBashStr;
   pastaGatewayIp = "10.0.2.2";
   pastaNamespaceIp = "10.0.2.1";
-  localNetworkAccessPorts =
-    if localNetworkAccess.enable then map shared.localNetworkTargetPort localNetworkAccess.allowedTargets else [ ];
-  mkTcpPortMatch = port: if port == "*" then "tcp" else "tcp dport ${port}";
-  localNetworkAccessAcceptRulesStr = builtins.concatStringsSep "\n" (
-    map (port: ''$NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} accept'') localNetworkAccessPorts
+  mkTcpPortMatch = port: if port == "*" then "tcp" else "tcp dport ${toString port}";
+  allowedLocalPortsAcceptRulesStr = builtins.concatStringsSep "\n" (
+    map (port: ''$NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} accept'') allowedLocalPorts
   );
-  localNetworkAccessDnatRulesStr = builtins.concatStringsSep "\n" (
-    map (port: ''$NFT add rule ip sandbox_nat output ip daddr 127.0.0.1 ${mkTcpPortMatch port} dnat to ${pastaGatewayIp}'') localNetworkAccessPorts
+  allowedLocalPortsDnatRulesStr = builtins.concatStringsSep "\n" (
+    map (port: ''$NFT add rule ip sandbox_nat output ip daddr 127.0.0.1 ${mkTcpPortMatch port} dnat to ${pastaGatewayIp}'') allowedLocalPorts
   );
-  localNetworkAccessSnatRulesStr = builtins.concatStringsSep "\n" (
-    map (port: ''$NFT add rule ip sandbox_nat postrouting ip saddr 127.0.0.1 ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} masquerade'') localNetworkAccessPorts
+  allowedLocalPortsSnatRulesStr = builtins.concatStringsSep "\n" (
+    map (port: ''$NFT add rule ip sandbox_nat postrouting ip saddr 127.0.0.1 ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} masquerade'') allowedLocalPorts
   );
-  localNetworkAccessNatSetupStr =
-    if localNetworkAccessPorts == [ ] then
+  allowedLocalPortsNatSetupStr =
+    if allowedLocalPorts == [ ] then
       ""
     else
       # bash
@@ -36,12 +34,12 @@ let
         $NFT add table ip sandbox_nat
         $NFT add chain ip sandbox_nat output '{ type nat hook output priority -100 ; policy accept ; }'
         $NFT add chain ip sandbox_nat postrouting '{ type nat hook postrouting priority 100 ; policy accept ; }'
-        ${localNetworkAccessDnatRulesStr}
-        ${localNetworkAccessSnatRulesStr}
+        ${allowedLocalPortsDnatRulesStr}
+        ${allowedLocalPortsSnatRulesStr}
       '';
   # Runs inside pasta's namespace (before bwrap) in open (allowedDomains=null)
   # mode. Keeps the default route so the sandbox can reach the internet, but
-  # drops the pasta gateway IP except for explicit localNetworkAccess ports.
+  # drops the pasta gateway IP except for explicit allowedLocalPorts.
   # pasta forwards 10.0.2.2:<port> → 127.0.0.1:<port> on the host, so dropping
   # traffic to that address blocks host loopback services (databases, dev
   # servers, ssh-agent, etc.) without touching internet traffic (whose
@@ -55,8 +53,8 @@ let
         NFT="${pkgs.nftables}/bin/nft"
         $NFT add table ip sandbox_filter
         $NFT add chain ip sandbox_filter output '{ type filter hook output priority 0 ; policy accept ; }'
-        ${localNetworkAccessNatSetupStr}
-        ${localNetworkAccessAcceptRulesStr}
+        ${allowedLocalPortsNatSetupStr}
+        ${allowedLocalPortsAcceptRulesStr}
         $NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} drop
         exec "$@"
       '';
@@ -81,9 +79,9 @@ let
         $NFT add table ip sandbox_filter
         $NFT add chain ip sandbox_filter output '{ type filter hook output priority 0 ; policy drop ; }'
         $NFT add rule ip sandbox_filter output oif lo accept
-        ${localNetworkAccessNatSetupStr}
+        ${allowedLocalPortsNatSetupStr}
         $NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} tcp dport "$SANDBOX_PROXY_PORT" accept
-        ${localNetworkAccessAcceptRulesStr}
+        ${allowedLocalPortsAcceptRulesStr}
         exec "$@"
       '';
 in

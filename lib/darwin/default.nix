@@ -40,8 +40,8 @@
 
     Network:
       (allow network*) — open internet in unrestricted mode, narrowed by
-      explicit denies for loopback and AF_UNIX egress. localNetworkAccess can
-      append allowlist rules for specific host-loopback targets.
+      explicit denies for loopback and AF_UNIX egress. allowedLocalPorts can
+      append allow rules for host-local TCP ports.
 
     Device nodes & TTY:
       /dev/null, /dev/urandom, /dev/random, /dev/zero for reads.
@@ -176,10 +176,7 @@
   roFiles ? [ ],
   env ? { },
   allowedDomains ? null,
-  localNetworkAccess ? {
-    enable = false;
-    allowedTargets = [ ];
-  },
+  allowedLocalPorts ? [ ],
   # Internal: maps "host" → "addr:port" so the proxy dials the local address
   # for those hosts instead of resolving the original. Used by the test
   # harness to point fake domains at a local httpbin. Not part of the
@@ -312,13 +309,13 @@ let
     map (name: "${name}=${builtins.toJSON env.${name}}") (builtins.attrNames env)
   );
 
-  validatedLocalNetworkAccess = shared.validateLocalNetworkAccess localNetworkAccess;
+  validatedAllowedLocalPorts = shared.validateAllowedLocalPorts allowedLocalPorts;
 
   conditionalNetworkingParams = import ./networking.nix {
     pkgs = pkgs;
     shared = shared;
     allowedDomains = allowedDomains;
-    localNetworkAccess = validatedLocalNetworkAccess;
+    allowedLocalPorts = validatedAllowedLocalPorts;
     _proxyRedirects = _proxyRedirects;
   };
 
@@ -506,7 +503,7 @@ builtins.seq
     stateFiles = stateFiles;
   })
   (builtins.seq
-    validatedLocalNetworkAccess
+    validatedAllowedLocalPorts
     (pkgs.writeTextFile {
       name = outName;
       executable = true;
