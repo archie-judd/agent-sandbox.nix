@@ -11,32 +11,40 @@ let
   mkProxyStartupBashStr = shared.mkProxyStartupBashStr;
   pastaGatewayIp = "10.0.2.2";
   pastaNamespaceIp = "10.0.2.1";
-  mkTcpPortMatch = port: if port == "*" then "tcp" else "tcp dport ${toString port}";
-  allowedLocalPortsAcceptRulesStr = builtins.concatStringsSep "\n" (
-    map (port: ''$NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} accept'') allowedLocalPorts
-  );
-  allowedLocalPortsDnatRulesStr = builtins.concatStringsSep "\n" (
-    map (port: ''$NFT add rule ip sandbox_nat output ip daddr 127.0.0.1 ${mkTcpPortMatch port} dnat to ${pastaGatewayIp}'') allowedLocalPorts
-  );
-  allowedLocalPortsSnatRulesStr = builtins.concatStringsSep "\n" (
-    map (port: ''$NFT add rule ip sandbox_nat postrouting ip saddr 127.0.0.1 ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} masquerade'') allowedLocalPorts
-  );
-  allowedLocalPortsNatSetupStr =
+  localNet =
     if allowedLocalPorts == [ ] then
-      ""
+      {
+        natSetup = "";
+        acceptRules = "";
+      }
     else
-      # bash
-      ''
-        # DNAT from sandbox localhost needs route_localnet, and the translated
-        # flow needs SNAT so pasta sees it as coming from the namespace address.
-        echo 1 > /proc/sys/net/ipv4/conf/all/route_localnet
-        echo 1 > /proc/sys/net/ipv4/conf/default/route_localnet
-        $NFT add table ip sandbox_nat
-        $NFT add chain ip sandbox_nat output '{ type nat hook output priority -100 ; policy accept ; }'
-        $NFT add chain ip sandbox_nat postrouting '{ type nat hook postrouting priority 100 ; policy accept ; }'
-        ${allowedLocalPortsDnatRulesStr}
-        ${allowedLocalPortsSnatRulesStr}
-      '';
+      let
+        mkTcpPortMatch = port: if port == "*" then "tcp" else "tcp dport ${toString port}";
+        dnatRules = builtins.concatStringsSep "\n" (
+          map (port: ''$NFT add rule ip sandbox_nat output ip daddr 127.0.0.1 ${mkTcpPortMatch port} dnat to ${pastaGatewayIp}'') allowedLocalPorts
+        );
+        snatRules = builtins.concatStringsSep "\n" (
+          map (port: ''$NFT add rule ip sandbox_nat postrouting ip saddr 127.0.0.1 ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} masquerade'') allowedLocalPorts
+        );
+      in
+      {
+        natSetup =
+          # bash
+          ''
+            # DNAT from sandbox localhost needs route_localnet, and the translated
+            # flow needs SNAT so pasta sees it as coming from the namespace address.
+            echo 1 > /proc/sys/net/ipv4/conf/all/route_localnet
+            echo 1 > /proc/sys/net/ipv4/conf/default/route_localnet
+            $NFT add table ip sandbox_nat
+            $NFT add chain ip sandbox_nat output '{ type nat hook output priority -100 ; policy accept ; }'
+            $NFT add chain ip sandbox_nat postrouting '{ type nat hook postrouting priority 100 ; policy accept ; }'
+            ${dnatRules}
+            ${snatRules}
+          '';
+        acceptRules = builtins.concatStringsSep "\n" (
+          map (port: ''$NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} accept'') allowedLocalPorts
+        );
+      };
   # Runs inside pasta's namespace (before bwrap) in open (allowedDomains=null)
   # mode. Keeps the default route so the sandbox can reach the internet, but
   # drops the pasta gateway IP except for explicit allowedLocalPorts.
@@ -53,8 +61,8 @@ let
         NFT="${pkgs.nftables}/bin/nft"
         $NFT add table ip sandbox_filter
         $NFT add chain ip sandbox_filter output '{ type filter hook output priority 0 ; policy accept ; }'
-        ${allowedLocalPortsNatSetupStr}
-        ${allowedLocalPortsAcceptRulesStr}
+        ${localNet.natSetup}
+        ${localNet.acceptRules}
         $NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} drop
         exec "$@"
       '';
@@ -79,9 +87,9 @@ let
         $NFT add table ip sandbox_filter
         $NFT add chain ip sandbox_filter output '{ type filter hook output priority 0 ; policy drop ; }'
         $NFT add rule ip sandbox_filter output oif lo accept
-        ${allowedLocalPortsNatSetupStr}
+        ${localNet.natSetup}
         $NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} tcp dport "$SANDBOX_PROXY_PORT" accept
-        ${allowedLocalPortsAcceptRulesStr}
+        ${localNet.acceptRules}
         exec "$@"
       '';
 in

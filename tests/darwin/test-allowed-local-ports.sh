@@ -48,35 +48,8 @@ expect_ok "python3 is available" "command -v python3"
 expect_status "can reach service started inside same sandbox on allowed port" 0 \
 	"python3 '$SCRIPT_DIR/../helpers/inside-http-loopback.py' '$ALLOWED_PORT'"
 
-"$HOST_PYTHON3" -c '
-import signal, socket, sys, threading
-
-sockets = []
-for port in [int(p) for p in sys.argv[1:]]:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(("127.0.0.1", port))
-    s.listen(8)
-    sockets.append(s)
-
-sys.stdout.write("READY\n"); sys.stdout.flush()
-
-def serve(s):
-    while True:
-        try:
-            c, _ = s.accept()
-            try:
-                c.recv(1024)
-                c.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
-            finally:
-                c.close()
-        except Exception:
-            break
-
-for s in sockets:
-    threading.Thread(target=serve, args=(s,), daemon=True).start()
-signal.pause()
-' "$ALLOWED_PORT" "$DENIED_PORT" >"$TESTDIR/server.log" 2>&1 &
+"$HOST_PYTHON3" "$SCRIPT_DIR/../helpers/host-http-loopback.py" \
+	"$ALLOWED_PORT" "$DENIED_PORT" >"$TESTDIR/server.log" 2>&1 &
 SERVER_PID=$!
 
 _ready=0
