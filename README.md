@@ -342,7 +342,9 @@ allowedPackages = [ pkgs.nodejs pkgs.npm ];
 rwDirs = [ "$HOME/.npm" ]; # Allow npm cache
 ```
 
-## Debugging
+## Troubleshooting
+
+### Filesystem access issues
 
 If the agent fails to perform a tool call, or file read/write, the sandbox is likely blocking a path that needs to be added to `rwDirs` / `rwFiles` (or `roDirs` / `roFiles` for read-only access).
 
@@ -378,7 +380,9 @@ curl https://example.com          # blocked domain — should fail
 
 See [`debug/bash.shell.nix`](debug/bash.shell.nix) for a ready-to-use template (has `allowedDomains` set to `httpbin.org` for testing).
 
-**Network issues:** If you've set `allowedDomains` and requests are failing, check which domains are being blocked:
+### Network access issues
+
+If you've set `allowedDomains` and requests are failing, check which domains are being blocked:
 
 ```bash
 tail -f /tmp/sandbox-proxy.log
@@ -386,11 +390,19 @@ tail -f /tmp/sandbox-proxy.log
 
 You may need to add them to `allowedDomains`.
 
-**macOS:** after a failure, you can query the system log for sandbox denials:
+### macOS: unexpected sandbox denials
+
+After a failure, you can query the system log for sandbox denials:
 
 ```bash
 log show --predicate 'eventMessage CONTAINS "deny"' --last 1m
 ```
+
+If something is blocked that should have been allowed by your sandbox config, this log can show which path or operation `sandbox-exec` denied.
+
+### macOS: localhost service denials
+
+On macOS, `sandbox-exec` shares localhost with the host and cannot distinguish a service started inside the sandbox from a host-local service. If a sandboxed process needs to call another sandboxed process on `localhost:<port>`, that port must be listed in `allowedLocalPorts`. The same entry also allows access to a host-local service on that port, so keep the list narrow.
 
 If you are unable to debug, or suspect the AI can't access a file or folder it should have access to by default, please raise an issue.
 
@@ -426,7 +438,7 @@ The sandbox is an **isolation** boundary, not an **anonymity** boundary, and not
 
 ### Linux vs macOS
 
-Both platforms enforce the same default protections. The mechanisms differ: Linux uses bubblewrap plus pasta network namespaces, so sandbox-local loopback can work without exposing host loopback. macOS uses `sandbox-exec`, which cannot distinguish sandbox-local localhost from host localhost. Host-local TCP ports stay blocked unless explicitly allowed with `allowedLocalPorts`; on Linux, allowed host-local TCP connections are forwarded to the host-loopback gateway.
+Both platforms enforce the same default protections. The one practical difference is localhost: on Linux, bubblewrap gives the sandbox its own network namespace, so services started inside the sandbox can reach each other on any localhost port freely. On macOS, `sandbox-exec` shares localhost with the host, so sandbox-internal localhost communication requires the port to be listed in `allowedLocalPorts` — the same allowlist entry that also opens that port on the host.
 
 ### Is this the right tool for me?
 
