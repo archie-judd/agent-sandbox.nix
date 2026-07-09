@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# allowedLocalPorts accepts TCP port integers and "*".
+# allowedLocalPorts accepts null or TCP port integers.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -43,7 +43,7 @@ echo "=== allowedLocalPorts validation ==="
 echo
 
 expect_ok_ports "integer port is accepted" "[ 3000 ]"
-expect_ok_ports "wildcard is accepted" '[ "*" ]'
+expect_ok_ports "null allows all ports" "null"
 expect_ok_ports "duplicates are accepted" "[ 3000 3000 ]"
 expect_invalid_ports "string port is rejected" '[ "3000" ]' "allowedLocalPorts must only contain integers"
 expect_invalid_ports "colon-delimited string is rejected" '[ "localhost:3000" ]' "allowedLocalPorts must only contain integers"

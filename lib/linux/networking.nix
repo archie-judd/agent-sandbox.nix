@@ -19,12 +19,16 @@ let
       }
     else
       let
-        mkTcpPortMatch = port: if port == "*" then "tcp" else "tcp dport ${toString port}";
+        tcpPortMatches =
+          if allowedLocalPorts == null then
+            [ "tcp" ]
+          else
+            map (port: "tcp dport ${toString port}") allowedLocalPorts;
         dnatRules = builtins.concatStringsSep "\n" (
-          map (port: ''$NFT add rule ip sandbox_nat output ip daddr 127.0.0.1 ${mkTcpPortMatch port} dnat to ${pastaGatewayIp}'') allowedLocalPorts
+          map (match: ''$NFT add rule ip sandbox_nat output ip daddr 127.0.0.1 ${match} dnat to ${pastaGatewayIp}'') tcpPortMatches
         );
         snatRules = builtins.concatStringsSep "\n" (
-          map (port: ''$NFT add rule ip sandbox_nat postrouting ip saddr 127.0.0.1 ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} masquerade'') allowedLocalPorts
+          map (match: ''$NFT add rule ip sandbox_nat postrouting ip saddr 127.0.0.1 ip daddr ${pastaGatewayIp} ${match} masquerade'') tcpPortMatches
         );
       in
       {
@@ -42,7 +46,7 @@ let
             ${snatRules}
           '';
         acceptRules = builtins.concatStringsSep "\n" (
-          map (port: ''$NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} ${mkTcpPortMatch port} accept'') allowedLocalPorts
+          map (match: ''$NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} ${match} accept'') tcpPortMatches
         );
       };
   # Runs inside pasta's namespace (before bwrap) in open (allowedDomains=null)

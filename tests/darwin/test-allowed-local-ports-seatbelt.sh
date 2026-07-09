@@ -51,13 +51,13 @@ expect_rule_count "duplicate ports emit one localhost rule" \
 	'(allow network-outbound (remote ip "localhost:3000"))' \
 	1
 
-expect_rule_count "wildcard collapses specific ports" \
-	'[ "*" 3000 ]' \
+expect_rule_count "null does not emit specific port rules" \
+	"null" \
 	'(allow network-outbound (remote ip "localhost:3000"))' \
 	0
 
-expect_rule_count "wildcard emits one all-ports rule" \
-	'[ "*" 3000 ]' \
+expect_rule_count "null emits one all-ports rule" \
+	"null" \
 	'(allow network-outbound (remote ip "localhost:*"))' \
 	1
 

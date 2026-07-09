@@ -126,7 +126,7 @@ If you want to keep the original command name as the alias, change the `outName`
 | `allowNix` | no | If `true`, expose the host's `nix-daemon` socket and the full Nix store so the agent can run `nix build`, `nix run`, `nix develop`, etc. `pkgs.nix` is added to PATH automatically. Defaults to `false`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox). |
 | `env` | no | Additional environment variables as an attrset |
 | `allowedDomains` | no | Limits which domains the sandbox can reach. Leave unset for open internet. Accepts a list of domains (all methods allowed), or an attrset mapping each domain to `"*"` or a list of HTTP methods. `[ ]` blocks all internet access. |
-| `allowedLocalPorts` | no | Host-local TCP ports the sandbox may reach. Defaults to `[ ]`. Entries must be integers from `1` to `65535`, or `"*"` to allow all host-local TCP ports. |
+| `allowedLocalPorts` | no | Host-local TCP ports the sandbox may reach. Defaults to `[ ]`. Set to `null` to allow all host-local TCP ports. Otherwise, entries must be integers from `1` to `65535`. |
 
 Paths declared in `rwDirs` / `rwFiles` / `roDirs` / `roFiles` must exist on the host before launch — the sandbox exits with a clear error if any are missing.
 
@@ -186,7 +186,7 @@ Use `allowedLocalPorts` when the sandbox must reach trusted host-local TCP servi
 allowedLocalPorts = [ 3000 5432 ];
 ```
 
-Use `"*"` to allow all host-local TCP ports. Keep the list as narrow as possible; broad entries can expose host-local services.
+Set `allowedLocalPorts = null;` to allow all host-local TCP ports. Keep explicit port lists as narrow as possible; broad access can expose host-local services.
 
 Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
 
@@ -402,7 +402,7 @@ If something is blocked that should have been allowed by your sandbox config, th
 
 ### macOS: localhost service denials
 
-On macOS, `sandbox-exec` shares localhost with the host and cannot distinguish a service started inside the sandbox from a host-local service. If a sandboxed process needs to call another sandboxed process on `localhost:<port>`, that port must be listed in `allowedLocalPorts`. The same entry also allows access to a host-local service on that port, so keep the list narrow.
+On macOS, `sandbox-exec` shares localhost with the host and cannot distinguish a service started inside the sandbox from a host-local service. If a sandboxed process needs to call another sandboxed process on `localhost:<port>`, that port must be listed in `allowedLocalPorts` or all host-local ports must be allowed with `allowedLocalPorts = null;`. The same access also allows host-local services on those ports, so keep explicit lists narrow.
 
 If you are unable to debug, or suspect the AI can't access a file or folder it should have access to by default, please raise an issue.
 
@@ -438,7 +438,7 @@ The sandbox is an **isolation** boundary, not an **anonymity** boundary, and not
 
 ### Linux vs macOS
 
-Both platforms enforce the same default protections. The one practical difference is localhost: on Linux, bubblewrap gives the sandbox its own network namespace, so services started inside the sandbox can reach each other on any localhost port freely. On macOS, `sandbox-exec` shares localhost with the host, so sandbox-internal localhost communication requires the port to be listed in `allowedLocalPorts` — the same allowlist entry that also opens that port on the host.
+Both platforms enforce the same default protections. The one practical difference is localhost: on Linux, bubblewrap gives the sandbox its own network namespace, so services started inside the sandbox can reach each other on any localhost port freely. On macOS, `sandbox-exec` shares localhost with the host, so sandbox-internal localhost communication requires the port to be listed in `allowedLocalPorts` or all host-local ports to be allowed with `allowedLocalPorts = null;` — the same access also opens those host-local ports.
 
 ### Is this the right tool for me?
 
