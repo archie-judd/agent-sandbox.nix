@@ -179,7 +179,7 @@ By default, internet access is unrestricted and host-local services — database
 
 Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.com` subdomains.
 
-When `allowedDomains` is set, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted.
+When `allowedDomains` is set, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted. Blocked requests are logged to `/tmp/sandbox-proxy.log`.
 
 Use `allowedLocalPorts` when the sandbox must reach trusted host-local TCP services, which are still blocked even when `allowedDomains` is set.
 
@@ -189,7 +189,10 @@ allowedLocalPorts = [ 3000 5432 ];
 
 Set `allowedLocalPorts = null;` to allow all host-local TCP ports. Keep explicit port lists as narrow as possible; broad access can expose host-local services.
 
-Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes. On macOS, `gh` and some other tools can't connect through this proxy; see [Caveats](#caveats).
+Known limitations when a proxy is active:
+
+- SSH-based git remotes: see [Git](#git).
+- On macOS, `gh` and some other tools can't connect through the proxy: see [Caveats](#caveats).
 
 ## Authentication
 
