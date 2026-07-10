@@ -21,7 +21,8 @@ let
       let
         tcpPortMatches =
           if allowedLocalPorts == null then
-            [ "tcp" ]
+            # allowedLocalPorts is TCP-only; null means every host-local TCP port.
+            [ "meta l4proto tcp" ]
           else
             map (port: "tcp dport ${toString port}") allowedLocalPorts;
         dnatRules = builtins.concatStringsSep "\n" (
