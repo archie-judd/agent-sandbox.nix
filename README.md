@@ -23,7 +23,6 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
 ## Contents
 
 <!-- vim-markdown-toc GFM -->
-
 - [agent-sandbox.nix](#agent-sandboxnix)
   - [What the sandbox allows](#what-the-sandbox-allows)
   - [Contents](#contents)
@@ -42,7 +41,11 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
   - [Common Patterns / Recipes](#common-patterns--recipes)
     - [Python with uv](#python-with-uv)
     - [Node.js with npm](#nodejs-with-npm)
-  - [Debugging](#debugging)
+  - [Troubleshooting](#troubleshooting)
+    - [Filesystem access issues](#filesystem-access-issues)
+    - [Network access issues](#network-access-issues)
+    - [macOS: unexpected sandbox denials](#macos-unexpected-sandbox-denials)
+    - [macOS: localhost service denials](#macos-localhost-service-denials)
   - [Security](#security)
     - [What it protects against](#what-it-protects-against)
     - [What it doesn't protect against](#what-it-doesnt-protect-against)
