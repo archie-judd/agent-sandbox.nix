@@ -189,7 +189,7 @@ allowedLocalPorts = [ 3000 5432 ];
 
 Set `allowedLocalPorts = null;` to allow all host-local TCP ports. Keep explicit port lists as narrow as possible; broad access can expose host-local services.
 
-Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
+Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes. On macOS, `gh` and some other tools can't connect through this proxy; see [Caveats](#caveats).
 
 ## Authentication
 
@@ -451,6 +451,7 @@ If your threat model is *"I assume the agent is actively malicious and need it t
 
 - `sandbox-exec` is deprecated on macOS. It remains the only native unprivileged sandboxing mechanism and currently works on macOS 26 (Tahoe) and older, but may break in a future release.
 - Symlinks inside `rwDirs`, `rwFiles`, `roDirs`, and `roFiles` are only followed to already-permitted paths. A symlink is usable only if its target is the Nix store, the working directory, the Git directory, or another declared bind. Anything else is blocked — this prevents an agent from planting a symlink during a session to expand its own sandbox on the next startup (e.g. `~/.claude/evil -> /etc/shadow`). To expose a non-permitted path that's currently reached via a symlink, declare it explicitly as a `rwDir` / `rwFile` / `roDir` / `roFile`. Symlinks into the Nix store are read-only.
+- On macOS, when `allowedDomains` is set, `gh` (the GitHub CLI) fails HTTPS requests with a certificate error: the filtering proxy uses its own certificate, which `git` accepts but `gh` (and other Go tools) reject on macOS. Use `git` instead, or leave `allowedDomains` unset. Linux is unaffected.
 - Tested on x86_64-linux and aarch64-darwin. Other architectures should work but are untested.
 
 ## Similar projects
