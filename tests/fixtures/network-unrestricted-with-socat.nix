@@ -9,5 +9,5 @@ in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "sandboxed-bash-unres-socat";
-  allowedPackages = [ pkgs.coreutils pkgs.curl pkgs.socat ];
+  allowedPackages = [ pkgs.coreutils pkgs.curl pkgs.socat pkgs.python3Minimal ];
 }

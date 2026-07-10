@@ -9,6 +9,7 @@
 # and (allow system-socket) let the sandbox connect() to either.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TEST_CWD="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
@@ -20,12 +21,24 @@ SHELL="$SANDBOXED/bin/sandboxed-bash-unres-socat"
 # to depend on in CI; nix-provided python3 is reproducible.
 HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
 
-run() { "$SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$@") >/dev/null 2>&1; }
+
+host_tcp_connect() {
+	"$HOST_PYTHON3" -c '
+import socket, sys
+host, port = sys.argv[1], int(sys.argv[2])
+family = socket.AF_INET6 if ":" in host else socket.AF_INET
+s = socket.socket(family, socket.SOCK_STREAM)
+s.settimeout(0.5)
+s.connect((host, port))
+' "$1" "$2" >/dev/null 2>&1
+}
 
 # --- Setup ---
 
 TCP4_PORT=18931
 TCP6_PORT=18932
+INSIDE_PORT=18936
 
 # Place the UNIX socket under /private/tmp so its directory is in the
 # seatbelt allow set — isolates the deny to the network rule, not filesystem
@@ -33,7 +46,7 @@ TCP6_PORT=18932
 SOCK_DIR=$(mktemp -d "/private/tmp/sandbox-open-loopback.XXXXXX")
 SOCK_PATH="$SOCK_DIR/listener.sock"
 
-TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
+TESTDIR_ROOT="$TEST_CWD/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
 TESTDIR=$(mktemp -d "$TESTDIR_ROOT/localhost-denied-unrestricted.XXXXXX")
 
@@ -48,11 +61,11 @@ cleanup() {
 trap cleanup EXIT
 
 # Pre-flight: bail if ports are already in use; we'd false-pass otherwise.
-if nc -z 127.0.0.1 "$TCP4_PORT" 2>/dev/null; then
+if host_tcp_connect 127.0.0.1 "$TCP4_PORT"; then
 	echo "FAIL: test setup — 127.0.0.1:$TCP4_PORT already in use" >&2
 	exit 1
 fi
-if nc -z ::1 "$TCP6_PORT" 2>/dev/null; then
+if host_tcp_connect ::1 "$TCP6_PORT"; then
 	echo "FAIL: test setup — [::1]:$TCP6_PORT already in use" >&2
 	exit 1
 fi
@@ -83,8 +96,8 @@ LISTENER_PID=$!
 _ready=0
 for _ in $(seq 1 50); do
 	if [ -S "$SOCK_PATH" ] \
-		&& nc -z 127.0.0.1 "$TCP4_PORT" 2>/dev/null \
-		&& nc -z ::1 "$TCP6_PORT" 2>/dev/null; then
+		&& host_tcp_connect 127.0.0.1 "$TCP4_PORT" \
+		&& host_tcp_connect ::1 "$TCP6_PORT"; then
 		_ready=1
 		break
 	fi
@@ -97,13 +110,17 @@ if [ "$_ready" -ne 1 ]; then
 fi
 
 echo "=== Localhost + UNIX-socket egress denied, open mode (Darwin) ==="
-echo "SOCK_PATH=$SOCK_PATH TCP4=$TCP4_PORT TCP6=$TCP6_PORT"
+echo "SOCK_PATH=$SOCK_PATH TCP4=$TCP4_PORT TCP6=$TCP6_PORT INSIDE_PORT=$INSIDE_PORT"
 echo
 
 # Sanity: client tools resolve inside the sandbox. If these fail the deny
 # assertions below would be meaningless (a missing binary also exits non-zero).
 expect_ok "socat is available" "command -v socat"
 expect_ok "curl is available" "command -v curl"
+expect_ok "python3 is available" "command -v python3"
+
+expect_status "cannot reach service started inside same sandbox on loopback" 10 \
+	"python3 '$SCRIPT_DIR/../helpers/inside-http-loopback.py' '$INSIDE_PORT'"
 
 # Real assertions: each connect() must be denied.
 #

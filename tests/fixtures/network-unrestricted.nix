@@ -6,5 +6,5 @@ in sandbox.mkSandbox {
   pkg = pkgs.bash;
   binName = "bash";
   outName = "sandboxed-bash-unres";
-  allowedPackages = [ pkgs.coreutils pkgs.bash pkgs.curl ];
+  allowedPackages = [ pkgs.coreutils pkgs.bash pkgs.curl pkgs.python3Minimal ];
 }

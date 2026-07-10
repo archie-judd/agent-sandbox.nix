@@ -6,6 +6,7 @@
 # traffic to 10.0.2.2, blocking that path.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TEST_CWD="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
@@ -14,13 +15,14 @@ SHELL="$SANDBOXED/bin/sandboxed-bash-unres"
 
 HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
 
-run() { "$SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$@") >/dev/null 2>&1; }
 
 # --- Setup ---
 
 TCP4_PORT=18933
+INSIDE_PORT=18936
 
-TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
+TESTDIR_ROOT="$TEST_CWD/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
 TESTDIR=$(mktemp -d "$TESTDIR_ROOT/localhost-denied-unrestricted-linux.XXXXXX")
 
@@ -74,9 +76,14 @@ fi
 
 echo "=== Localhost egress denied, open mode (Linux) ==="
 echo "TCP4=$TCP4_PORT (host 127.0.0.1, probed via pasta gateway 10.0.2.2)"
+echo "INSIDE_PORT=$INSIDE_PORT"
 echo
 
 expect_ok  "curl is available" "command -v curl"
+expect_ok  "python3 is available" "command -v python3"
+
+expect_status "can reach service started inside same sandbox on loopback" 0 \
+	"python3 '$SCRIPT_DIR/../helpers/inside-http-loopback.py' '$INSIDE_PORT'"
 
 # Host loopback is reachable from inside the pasta namespace via the pasta
 # gateway (pasta forwards 10.0.2.2:<port> → 127.0.0.1:<port> on the host).

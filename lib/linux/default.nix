@@ -82,6 +82,7 @@
   roFiles ? [ ],
   env ? { },
   allowedDomains ? null,
+  allowedLocalPorts ? [ ],
   # Internal: maps "host" → "addr:port" so the proxy dials the local address
   # for those hosts instead of resolving the original. Used by the test
   # harness to point fake domains at a local httpbin. Not part of the
@@ -162,11 +163,14 @@ let
     map (name: "--setenv ${name} ${builtins.toJSON env.${name}}") (builtins.attrNames env)
   );
 
+  validatedAllowedLocalPorts = shared.validateAllowedLocalPorts allowedLocalPorts;
+
   conditionalNetworkingParams = import ./networking.nix {
     pkgs = pkgs;
     shared = shared;
     restrictNetwork = allowedDomains != null;
     allowedDomains = if allowedDomains != null then allowedDomains else [ ];
+    allowedLocalPorts = validatedAllowedLocalPorts;
     _proxyRedirects = _proxyRedirects;
   };
 
@@ -276,8 +280,9 @@ builtins.seq
     stateDirs = stateDirs;
     stateFiles = stateFiles;
   })
-  (
-    pkgs.writeTextFile {
+  (builtins.seq
+    validatedAllowedLocalPorts
+    (pkgs.writeTextFile {
       name = outName;
       executable = true;
       destination = "/bin/${outName}";
@@ -350,5 +355,5 @@ builtins.seq
             ${nixDaemonSocketBwrapStr} \
             ${preEntryScript} ${pkg}/bin/${binName} "$@"
         '';
-    }
+    })
   )

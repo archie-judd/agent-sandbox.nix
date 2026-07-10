@@ -28,6 +28,23 @@ expect_fail() {
 	fi
 }
 
+expect_status() {
+	local desc="$1" expected="$2" status
+	shift 2
+	if run "$*"; then
+		status=0
+	else
+		status=$?
+	fi
+	if [ "$status" -eq "$expected" ]; then
+		echo "PASS: $desc"
+		PASS=$((PASS + 1))
+	else
+		echo "FAIL: $desc (exit $status, expected $expected)"
+		FAIL=$((FAIL + 1))
+	fi
+}
+
 # Run a command, capturing its stdout, stderr, and exit status separately into
 # CAP_OUT / CAP_ERR / CAP_STATUS for the assert_* helpers below. Capture once,
 # then assert many — so a side-effecting command (e.g. `git commit`) runs only

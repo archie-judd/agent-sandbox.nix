@@ -39,7 +39,9 @@
       Mach service is probably missing from this list.
 
     Network:
-      (allow network*) — fully open; no port/host restrictions.
+      (allow network*) — open internet in unrestricted mode, narrowed by
+      explicit denies for loopback and AF_UNIX egress. allowedLocalPorts can
+      append allow rules for host-local TCP ports.
 
     Device nodes & TTY:
       /dev/null, /dev/urandom, /dev/random, /dev/zero for reads.
@@ -174,6 +176,7 @@
   roFiles ? [ ],
   env ? { },
   allowedDomains ? null,
+  allowedLocalPorts ? [ ],
   # Internal: maps "host" → "addr:port" so the proxy dials the local address
   # for those hosts instead of resolving the original. Used by the test
   # harness to point fake domains at a local httpbin. Not part of the
@@ -306,10 +309,13 @@ let
     map (name: "${name}=${builtins.toJSON env.${name}}") (builtins.attrNames env)
   );
 
+  validatedAllowedLocalPorts = shared.validateAllowedLocalPorts allowedLocalPorts;
+
   conditionalNetworkingParams = import ./networking.nix {
     pkgs = pkgs;
     shared = shared;
     allowedDomains = allowedDomains;
+    allowedLocalPorts = validatedAllowedLocalPorts;
     _proxyRedirects = _proxyRedirects;
   };
 
@@ -496,8 +502,9 @@ builtins.seq
     stateDirs = stateDirs;
     stateFiles = stateFiles;
   })
-  (
-    pkgs.writeTextFile {
+  (builtins.seq
+    validatedAllowedLocalPorts
+    (pkgs.writeTextFile {
       name = outName;
       executable = true;
       destination = "/bin/${outName}";
@@ -577,5 +584,5 @@ builtins.seq
             -D HOME_LOCAL_SHARE="$SANDBOX_HOME/.local/share" ${stateDirFlags} ${stateFileFlags} ${roDirFlags} ${roFileFlags} \
             ${preEntryScript} ${pkg}/bin/${binName} "$@"
         '';
-    }
+    })
   )

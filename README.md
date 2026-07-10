@@ -13,7 +13,7 @@ Tested with Claude's frontier models — see [Security](#security) for the threa
 - **Project directory** — read/write access to the directory you launch the agent from.
 - **Declared state** — read/write access to anything you list in `rwDirs` / `rwFiles`, or read-only access via `roDirs` / `roFiles`.
 - **Allowed packages** — the binaries you list in `allowedPackages` are on the agent's PATH (plus `bash` and `cacert`).
-- **Network** — unrestricted by default. Set `allowedDomains` to limit the agent to specific domains (and, optionally, specific HTTP methods).
+- **Network** — unrestricted internet by default, with host-local services blocked. Set `allowedDomains` to limit internet domains, and use `allowedLocalPorts` for explicit host-local TCP port access.
 - **Environment** — only variables you pass via `env` reach the agent; the host environment is otherwise cleared.
 - **Git** — the repo's `.git` directory is exposed, including when it sits outside the project tree (worktrees).
 - **Nix** — disabled by default. Optionally allow the agent to run nix commands.
@@ -39,7 +39,11 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
 * [Common Patterns / Recipes](#common-patterns--recipes)
     * [Python with uv](#python-with-uv)
     * [Node.js with npm](#nodejs-with-npm)
-* [Debugging](#debugging)
+* [Troubleshooting](#troubleshooting)
+    * [Filesystem access issues](#filesystem-access-issues)
+    * [Network access issues](#network-access-issues)
+    * [macOS: unexpected sandbox denials](#macos-unexpected-sandbox-denials)
+    * [macOS: localhost service denials](#macos-localhost-service-denials)
 * [Security](#security)
     * [What it protects against](#what-it-protects-against)
     * [What it doesn't protect against](#what-it-doesnt-protect-against)
@@ -72,7 +76,7 @@ A few arguments were renamed, and `restrictNetwork` was removed. If you use an o
 
 Network access is now controlled by `allowedDomains` on its own: leave it unset for open internet, list the domains you want to allow, or use `[ ]` to block everything.
 
-**If you relied on host loopback reachability:** previously, leaving `restrictNetwork` unset let the agent reach host-local services (Ollama, a local database, a local MCP server, etc.). That no longer works — host loopback is now blocked unconditionally on both platforms. The recommended workaround is to run the service inside the sandbox instead. If you have a use case that requires reaching a specific host-local service, please open an issue.
+**If you relied on host loopback reachability:** previously, leaving `restrictNetwork` unset let the agent reach host-local services (Ollama, a local database, a local MCP server, etc.). That no longer works by default — host loopback is blocked unless you explicitly opt in with `allowedLocalPorts`.
 
 </details>
 
@@ -123,6 +127,7 @@ If you want to keep the original command name as the alias, change the `outName`
 | `allowNix` | no | If `true`, expose the host's `nix-daemon` socket and the full Nix store so the agent can run `nix build`, `nix run`, `nix develop`, etc. `pkgs.nix` is added to PATH automatically. Defaults to `false`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox). |
 | `env` | no | Additional environment variables as an attrset |
 | `allowedDomains` | no | Limits which domains the sandbox can reach. Leave unset for open internet. Accepts a list of domains (all methods allowed), or an attrset mapping each domain to `"*"` or a list of HTTP methods. `[ ]` blocks all internet access. |
+| `allowedLocalPorts` | no | Host-local TCP ports the sandbox may reach. Defaults to `[ ]`. Set to `null` to allow all host-local TCP ports. Otherwise, entries must be integers from `1` to `65535`. |
 
 Paths declared in `rwDirs` / `rwFiles` / `roDirs` / `roFiles` must exist on the host before launch — the sandbox exits with a clear error if any are missing.
 
@@ -163,9 +168,9 @@ mkSandbox {
 
 ### Network restrictions
 
-Host loopback services — databases, dev servers, SSH agent, Docker socket, etc. — are never reachable from inside the sandbox, regardless of how `allowedDomains` is set. If you need the agent to reach a specific host-local service, please open an issue describing the use case.
+`allowedDomains` controls internet/domain access. It does not allow host-local TCP ports.
 
-By default, internet access is unrestricted. To restrict it, set `allowedDomains` — the sandbox can then only reach the domains you list. Leave it unset for open internet, or set it to `[ ]` to block all internet access.
+By default, internet access is unrestricted and host-local services — databases, dev servers, SSH agent, Docker socket, etc. — are blocked. To restrict internet access, set `allowedDomains` — the sandbox can then only reach the domains you list. Leave it unset for open internet, or set it to `[ ]` to block all internet access.
 
 `allowedDomains` accepts two formats:
 
@@ -175,6 +180,14 @@ By default, internet access is unrestricted. To restrict it, set `allowedDomains
 Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.com` subdomains.
 
 When `allowedDomains` is set, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted.
+
+Use `allowedLocalPorts` when the sandbox must reach trusted host-local TCP services, which are still blocked even when `allowedDomains` is set.
+
+```nix
+allowedLocalPorts = [ 3000 5432 ];
+```
+
+Set `allowedLocalPorts = null;` to allow all host-local TCP ports. Keep explicit port lists as narrow as possible; broad access can expose host-local services.
 
 Blocked requests are logged to `/tmp/sandbox-proxy.log`. See [Git](#git) for limitations on SSH-based remotes.
 
@@ -330,7 +343,9 @@ allowedPackages = [ pkgs.nodejs pkgs.npm ];
 rwDirs = [ "$HOME/.npm" ]; # Allow npm cache
 ```
 
-## Debugging
+## Troubleshooting
+
+### Filesystem access issues
 
 If the agent fails to perform a tool call, or file read/write, the sandbox is likely blocking a path that needs to be added to `rwDirs` / `rwFiles` (or `roDirs` / `roFiles` for read-only access).
 
@@ -366,7 +381,9 @@ curl https://example.com          # blocked domain — should fail
 
 See [`debug/bash.shell.nix`](debug/bash.shell.nix) for a ready-to-use template (has `allowedDomains` set to `httpbin.org` for testing).
 
-**Network issues:** If you've set `allowedDomains` and requests are failing, check which domains are being blocked:
+### Network access issues
+
+If you've set `allowedDomains` and requests are failing, check which domains are being blocked:
 
 ```bash
 tail -f /tmp/sandbox-proxy.log
@@ -374,11 +391,19 @@ tail -f /tmp/sandbox-proxy.log
 
 You may need to add them to `allowedDomains`.
 
-**macOS:** after a failure, you can query the system log for sandbox denials:
+### macOS: unexpected sandbox denials
+
+After a failure, you can query the system log for sandbox denials:
 
 ```bash
 log show --predicate 'eventMessage CONTAINS "deny"' --last 1m
 ```
+
+If something is blocked that should have been allowed by your sandbox config, this log can show which path or operation `sandbox-exec` denied.
+
+### macOS: localhost service denials
+
+On macOS, `sandbox-exec` shares localhost with the host and cannot distinguish a service started inside the sandbox from a host-local service. If a sandboxed process needs to call another sandboxed process on `localhost:<port>`, that port must be listed in `allowedLocalPorts` or all host-local ports must be allowed with `allowedLocalPorts = null;`. The same access also allows host-local services on those ports, so keep explicit lists narrow.
 
 If you are unable to debug, or suspect the AI can't access a file or folder it should have access to by default, please raise an issue.
 
@@ -393,7 +418,7 @@ If the agent does something it shouldn't — runs a bad prompt, processes a mali
 - It can't read your SSH keys, browser sessions, password manager, other projects' source code, or anything else in your home directory outside the paths you explicitly expose.
 - It can't delete or modify files outside the project directory and your declared `rwDirs` / `rwFiles`.
 - It can't reach the internet outside the domains you allow (when `allowedDomains` is set).
-- It can't talk to local services on your laptop — databases, dev servers, the SSH agent, other terminal windows, etc.
+- It can't talk to local services on your laptop — databases, dev servers, the SSH agent, other terminal windows, etc. — unless you explicitly allow host-local TCP ports with `allowedLocalPorts`.
 - It can only run the tools you list in `allowedPackages`.
 - It can't see your other running programs, read environment variables they have set, or interfere with other terminals you have open.
 
@@ -414,7 +439,7 @@ The sandbox is an **isolation** boundary, not an **anonymity** boundary, and not
 
 ### Linux vs macOS
 
-Both platforms enforce the same protections — everything in the list above holds equally on Linux and macOS. The mechanisms differ (bubblewrap and pasta on Linux, `sandbox-exec` on macOS), and the specific bits of information an agent can learn about your machine vary a little, but the practical end state is the same on both.
+Both platforms enforce the same default protections. The one practical difference is localhost: on Linux, bubblewrap gives the sandbox its own network namespace, so services started inside the sandbox can reach each other on any localhost port freely. On macOS, `sandbox-exec` shares localhost with the host, so sandbox-internal localhost communication requires the port to be listed in `allowedLocalPorts` or all host-local ports to be allowed with `allowedLocalPorts = null;` — the same access also opens those host-local ports.
 
 ### Is this the right tool for me?
 

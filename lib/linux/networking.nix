@@ -3,6 +3,7 @@
   shared,
   restrictNetwork,
   allowedDomains,
+  allowedLocalPorts,
   _proxyRedirects ? { },
 }:
 let
@@ -10,12 +11,51 @@ let
   mkProxyStartupBashStr = shared.mkProxyStartupBashStr;
   pastaGatewayIp = "10.0.2.2";
   pastaNamespaceIp = "10.0.2.1";
+  localNet =
+    if allowedLocalPorts == [ ] then
+      {
+        natSetup = "";
+        acceptRules = "";
+      }
+    else
+      let
+        tcpPortMatches =
+          if allowedLocalPorts == null then
+            # allowedLocalPorts is TCP-only; null means every host-local TCP port.
+            [ "meta l4proto tcp" ]
+          else
+            map (port: "tcp dport ${toString port}") allowedLocalPorts;
+        dnatRules = builtins.concatStringsSep "\n" (
+          map (match: ''$NFT add rule ip sandbox_nat output ip daddr 127.0.0.1 ${match} dnat to ${pastaGatewayIp}'') tcpPortMatches
+        );
+        snatRules = builtins.concatStringsSep "\n" (
+          map (match: ''$NFT add rule ip sandbox_nat postrouting ip saddr 127.0.0.1 ip daddr ${pastaGatewayIp} ${match} masquerade'') tcpPortMatches
+        );
+      in
+      {
+        natSetup =
+          # bash
+          ''
+            # DNAT from sandbox localhost needs route_localnet, and the translated
+            # flow needs SNAT so pasta sees it as coming from the namespace address.
+            echo 1 > /proc/sys/net/ipv4/conf/all/route_localnet
+            echo 1 > /proc/sys/net/ipv4/conf/default/route_localnet
+            $NFT add table ip sandbox_nat
+            $NFT add chain ip sandbox_nat output '{ type nat hook output priority -100 ; policy accept ; }'
+            $NFT add chain ip sandbox_nat postrouting '{ type nat hook postrouting priority 100 ; policy accept ; }'
+            ${dnatRules}
+            ${snatRules}
+          '';
+        acceptRules = builtins.concatStringsSep "\n" (
+          map (match: ''$NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} ${match} accept'') tcpPortMatches
+        );
+      };
   # Runs inside pasta's namespace (before bwrap) in open (allowedDomains=null)
   # mode. Keeps the default route so the sandbox can reach the internet, but
-  # installs a single nftables drop rule for the pasta gateway IP. pasta
-  # forwards 10.0.2.2:<port> → 127.0.0.1:<port> on the host, so dropping
-  # all traffic to that address blocks host loopback services (databases,
-  # dev servers, ssh-agent, etc.) without touching internet traffic (whose
+  # drops the pasta gateway IP except for explicit allowedLocalPorts.
+  # pasta forwards 10.0.2.2:<port> → 127.0.0.1:<port> on the host, so dropping
+  # traffic to that address blocks host loopback services (databases, dev
+  # servers, ssh-agent, etc.) without touching internet traffic (whose
   # destination IPs are real server addresses, not 10.0.2.2).
   openModeRouteRestrictScript =
     pkgs.writeScript "sandbox-open-route-restrict"
@@ -26,6 +66,8 @@ let
         NFT="${pkgs.nftables}/bin/nft"
         $NFT add table ip sandbox_filter
         $NFT add chain ip sandbox_filter output '{ type filter hook output priority 0 ; policy accept ; }'
+        ${localNet.natSetup}
+        ${localNet.acceptRules}
         $NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} drop
         exec "$@"
       '';
@@ -50,7 +92,9 @@ let
         $NFT add table ip sandbox_filter
         $NFT add chain ip sandbox_filter output '{ type filter hook output priority 0 ; policy drop ; }'
         $NFT add rule ip sandbox_filter output oif lo accept
+        ${localNet.natSetup}
         $NFT add rule ip sandbox_filter output ip daddr ${pastaGatewayIp} tcp dport "$SANDBOX_PROXY_PORT" accept
+        ${localNet.acceptRules}
         exec "$@"
       '';
 in

@@ -130,6 +130,21 @@ let
         exit 1
       fi
     '';
+  validateAllowedLocalPorts =
+    allowedLocalPorts:
+    if allowedLocalPorts == null then
+      null
+    else if !(builtins.isList allowedLocalPorts) then
+      builtins.throw "${errorPrefix} allowedLocalPorts must be null or a list of integers from 1 to 65535"
+    else
+      let
+        validPort = port: builtins.isInt port && port >= 1 && port <= 65535;
+        invalidPorts = builtins.filter (port: !validPort port) allowedLocalPorts;
+      in
+      if invalidPorts != [ ] then
+        builtins.throw "${errorPrefix} allowedLocalPorts must only contain integers from 1 to 65535. Use null to allow all host-local TCP ports. Invalid port(s): ${builtins.toJSON invalidPorts}"
+      else
+        pkgs.lib.unique allowedLocalPorts;
   assertNoLegacyArgs =
     {
       restrictNetwork,
@@ -174,5 +189,6 @@ in
   warnPrefix = warnPrefix;
   errorPrefix = errorPrefix;
   assertNoLegacyArgs = assertNoLegacyArgs;
+  validateAllowedLocalPorts = validateAllowedLocalPorts;
   assertBindsExistBashStr = assertBindsExistBashStr;
 }
