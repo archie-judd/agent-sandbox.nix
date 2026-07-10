@@ -24,34 +24,36 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
 
 <!-- vim-markdown-toc GFM -->
 
-* [Usage and configuration](#usage-and-configuration)
-    * [Templates](#templates)
-    * [Arguments](#arguments)
-    * [Network restrictions](#network-restrictions)
-* [Authentication](#authentication)
-    * [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
-    * [Credential files via `rwDirs`](#credential-files-via-rwdirs)
-    * [Tested agents](#tested-agents)
-* [Git](#git)
-    * [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
-    * [Git identity](#git-identity)
-* [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
-* [Common Patterns / Recipes](#common-patterns--recipes)
-    * [Python with uv](#python-with-uv)
-    * [Node.js with npm](#nodejs-with-npm)
-* [Troubleshooting](#troubleshooting)
-    * [Filesystem access issues](#filesystem-access-issues)
-    * [Network access issues](#network-access-issues)
-    * [macOS: unexpected sandbox denials](#macos-unexpected-sandbox-denials)
-    * [macOS: localhost service denials](#macos-localhost-service-denials)
-* [Security](#security)
-    * [What it protects against](#what-it-protects-against)
-    * [What it doesn't protect against](#what-it-doesnt-protect-against)
-    * [Specific things worth being aware of](#specific-things-worth-being-aware-of)
-    * [Linux vs macOS](#linux-vs-macos)
-    * [Is this the right tool for me?](#is-this-the-right-tool-for-me)
-* [Caveats](#caveats)
-* [Similar projects](#similar-projects)
+- [Usage and configuration](#usage-and-configuration)
+  - [Templates](#templates)
+  - [Arguments](#arguments)
+  - [Network restrictions](#network-restrictions)
+    - [Domain and internet access](#domain-and-internet-access)
+    - [Host-local ports](#host-local-ports)
+- [Authentication](#authentication)
+  - [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
+  - [Credential files via `rwDirs`](#credential-files-via-rwdirs)
+  - [Tested agents](#tested-agents)
+- [Git](#git)
+  - [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
+  - [Git identity](#git-identity)
+- [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
+- [Common Patterns / Recipes](#common-patterns--recipes)
+  - [Python with uv](#python-with-uv)
+  - [Node.js with npm](#nodejs-with-npm)
+- [Troubleshooting](#troubleshooting)
+  - [Filesystem access issues](#filesystem-access-issues)
+  - [Network access issues](#network-access-issues)
+  - [macOS: unexpected sandbox denials](#macos-unexpected-sandbox-denials)
+  - [macOS: localhost service denials](#macos-localhost-service-denials)
+- [Security](#security)
+  - [What it protects against](#what-it-protects-against)
+  - [What it doesn't protect against](#what-it-doesnt-protect-against)
+  - [Specific things worth being aware of](#specific-things-worth-being-aware-of)
+  - [Linux vs macOS](#linux-vs-macos)
+  - [Is this the right tool for me?](#is-this-the-right-tool-for-me)
+- [Caveats](#caveats)
+- [Similar projects](#similar-projects)
 
 <!-- vim-markdown-toc -->
 
@@ -168,9 +170,11 @@ mkSandbox {
 
 ### Network restrictions
 
-`allowedDomains` controls internet/domain access. It does not allow host-local TCP ports.
+The sandbox controls network access along two independent axes. `allowedDomains` governs outbound internet access; `allowedLocalPorts` governs access to host-local TCP services (databases, dev servers, and similar). They don't interact: allowing a domain never grants loopback access, and vice versa. By default internet access is unrestricted and all host-local services are blocked.
 
-By default, internet access is unrestricted and host-local services — databases, dev servers, SSH agent, Docker socket, etc. — are blocked. To restrict internet access, set `allowedDomains` — the sandbox can then only reach the domains you list. Leave it unset for open internet, or set it to `[ ]` to block all internet access.
+#### Domain and internet access
+
+To restrict internet access, set `allowedDomains` — the sandbox can then only reach the domains you list. Leave it unset for open internet, or set it to `[ ]` to block all internet access.
 
 `allowedDomains` accepts two formats:
 
@@ -181,18 +185,20 @@ Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.c
 
 When `allowedDomains` is set, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted. Blocked requests are logged to `/tmp/sandbox-proxy.log`.
 
-Use `allowedLocalPorts` when the sandbox must reach trusted host-local TCP services, which are still blocked even when `allowedDomains` is set.
+Known limitations when the proxy is active:
+
+- SSH-based git remotes: see [Git](#git).
+- On macOS, `gh` and some other tools can't connect through the proxy: see [Caveats](#caveats).
+
+#### Host-local ports
+
+Host-local services (databases, dev servers, SSH agent, Docker socket, etc.) are blocked by default, and remain blocked even when `allowedDomains` is set. Use `allowedLocalPorts` to grant access to specific ports:
 
 ```nix
 allowedLocalPorts = [ 3000 5432 ];
 ```
 
 Set `allowedLocalPorts = null;` to allow all host-local TCP ports. Keep explicit port lists as narrow as possible; broad access can expose host-local services.
-
-Known limitations when a proxy is active:
-
-- SSH-based git remotes: see [Git](#git).
-- On macOS, `gh` and some other tools can't connect through the proxy. Instead of `gh`, use `git` and `curl` instead, or leave allowedDomains unset. See [Caveats](#caveats). 
 
 ## Authentication
 
@@ -393,6 +399,8 @@ tail -f /tmp/sandbox-proxy.log
 ```
 
 You may need to add them to `allowedDomains`.
+
+On macOS, if `gh` (or another Go-based tool) fails with a certificate error rather than a blocked request, that's the filtering proxy's certificate being rejected rather than a domain problem; see [Caveats](#caveats).
 
 ### macOS: unexpected sandbox denials
 
