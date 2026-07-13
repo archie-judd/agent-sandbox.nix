@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.2.0...v2.2.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **Darwin:** fix whitespace string issue for allowedLocalPort seatbelt str ([637511e](https://github.com/archie-judd/agent-sandbox.nix/commit/637511e5fc7613804e6a4643eea9c73494e35c53))
+
 ## [2.2.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.1.0...v2.2.0) (2026-07-10)
 
 
