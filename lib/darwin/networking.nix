@@ -9,11 +9,9 @@ let
   mkAllowlistFile = shared.mkAllowlistFile;
   mkProxyStartupBashStr = shared.mkProxyStartupBashStr;
   darwinAllowedLocalPortsRulesStr =
-    if allowedLocalPorts == null then
-      ''        (allow network-outbound (remote ip "localhost:*"))''
-    else
       builtins.concatStringsSep "\n" (
-        map (port: ''        (allow network-outbound (remote ip "localhost:${toString port}"))'') allowedLocalPorts
+        map (port: "        (allow network-outbound (remote ip \"localhost:${port}\"))")
+          (if allowedLocalPorts == null then ["*"] else map toString allowedLocalPorts)
       );
 in
 if allowedDomains != null then
