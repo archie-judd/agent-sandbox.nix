@@ -2,11 +2,9 @@
 
 Lightweight and declarative sandboxing for AI agents on Linux and macOS.
 
-Prevent your agents in YOLO mode from deleting your $HOME, force pushing to main, or publishing your ssh keys on reddit. Works with any CLI-based AI agent.
+Prevent your agents in YOLO mode from deleting your $HOME, force pushing to main, or publishing your ssh keys on reddit. Works with any CLI-based AI agent — tested with Claude Code and GitHub Copilot CLI (see [Supported agents](#supported-agents)).
 
-The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux and sandbox-exec on macOS.
-
-Tested with Claude's frontier models — see [Security](#security) for the threat model and known limits.
+The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux and sandbox-exec on macOS. See [Security](#security) for the threat model and known limits.
 
 ## What the sandbox allows
 
@@ -24,36 +22,36 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
 
 <!-- vim-markdown-toc GFM -->
 
-- [Usage and configuration](#usage-and-configuration)
-  - [Templates](#templates)
-  - [Arguments](#arguments)
-  - [Network restrictions](#network-restrictions)
-    - [Domain and internet access](#domain-and-internet-access)
-    - [Host-local ports](#host-local-ports)
-- [Authentication](#authentication)
-  - [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
-  - [Credential files via `rwDirs`](#credential-files-via-rwdirs)
-  - [Tested agents](#tested-agents)
-- [Git](#git)
-  - [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
-  - [Git identity](#git-identity)
-- [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
-- [Common Patterns / Recipes](#common-patterns--recipes)
-  - [Python with uv](#python-with-uv)
-  - [Node.js with npm](#nodejs-with-npm)
-- [Troubleshooting](#troubleshooting)
-  - [Filesystem access issues](#filesystem-access-issues)
-  - [Network access issues](#network-access-issues)
-  - [macOS: unexpected sandbox denials](#macos-unexpected-sandbox-denials)
-  - [macOS: localhost service denials](#macos-localhost-service-denials)
-- [Security](#security)
-  - [What it protects against](#what-it-protects-against)
-  - [What it doesn't protect against](#what-it-doesnt-protect-against)
-  - [Specific things worth being aware of](#specific-things-worth-being-aware-of)
-  - [Linux vs macOS](#linux-vs-macos)
-  - [Is this the right tool for me?](#is-this-the-right-tool-for-me)
-- [Caveats](#caveats)
-- [Similar projects](#similar-projects)
+* [Usage and configuration](#usage-and-configuration)
+    * [Templates](#templates)
+    * [Arguments](#arguments)
+    * [Network restrictions](#network-restrictions)
+        * [Domain and internet access](#domain-and-internet-access)
+        * [Host-local ports](#host-local-ports)
+    * [Supported agents](#supported-agents)
+* [Authentication](#authentication)
+    * [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
+    * [Credential files via `rwDirs`](#credential-files-via-rwdirs)
+* [Git](#git)
+    * [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
+    * [Git identity](#git-identity)
+* [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
+* [Common patterns / recipes](#common-patterns--recipes)
+    * [Python with uv](#python-with-uv)
+    * [Node.js with npm](#nodejs-with-npm)
+* [Troubleshooting](#troubleshooting)
+    * [Filesystem access issues](#filesystem-access-issues)
+    * [Network access issues](#network-access-issues)
+    * [macOS: unexpected sandbox denials](#macos-unexpected-sandbox-denials)
+    * [macOS: localhost service denials](#macos-localhost-service-denials)
+* [Security](#security)
+    * [What it protects against](#what-it-protects-against)
+    * [What it doesn't protect against](#what-it-doesnt-protect-against)
+    * [Specific things worth being aware of](#specific-things-worth-being-aware-of)
+    * [Linux vs macOS](#linux-vs-macos)
+    * [Is this the right tool for me?](#is-this-the-right-tool-for-me)
+* [Caveats](#caveats)
+* [Similar projects](#similar-projects)
 
 <!-- vim-markdown-toc -->
 
@@ -84,7 +82,7 @@ Network access is now controlled by `allowedDomains` on its own: leave it unset 
 
 ### Templates
 
-Flake templates for claude-code and github copilot CLI are provided for quick project setup, but you can alter either to work with any other CLI tool.
+Flake templates for Claude Code and GitHub Copilot CLI are provided for quick project setup, but you can alter either to work with any other CLI tool.
 
 To initialize a template in your project directory:
 
@@ -121,7 +119,7 @@ If you want to keep the original command name as the alias, change the `outName`
 | `pkg` | yes | Package containing the binary to wrap |
 | `binName` | yes | Name of the binary inside `pkg/bin/` |
 | `outName` | yes | Name for the resulting wrapped binary and the command to invoke it with |
-| `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH. `bash` and `cacert` are provided by default — the sandbox needs a shell to run, and `cacert` is required for HTTPS to work. The library exports `commonTools` (a list of standard CLI tools) for convenience; see [`default.nix`](default.nix) for the full list. |
+| `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH (see the note below the table) |
 | `rwDirs` | no | Directories the agent can read/write (e.g. `~/.config/claude`) |
 | `rwFiles` | no | Individual files the agent can read/write |
 | `roDirs` | no | Directories the agent can read but not write (e.g. signed binaries, reference source trees, secret stores) |
@@ -130,6 +128,8 @@ If you want to keep the original command name as the alias, change the `outName`
 | `env` | no | Additional environment variables as an attrset |
 | `allowedDomains` | no | Limits which domains the sandbox can reach. Leave unset for open internet. Accepts a list of domains (all methods allowed), or an attrset mapping each domain to `"*"` or a list of HTTP methods. `[ ]` blocks all internet access. |
 | `allowedLocalPorts` | no | Host-local TCP ports the sandbox may reach. Defaults to `[ ]`. Set to `null` to allow all host-local TCP ports. Otherwise, entries must be integers from `1` to `65535`. |
+
+For `allowedPackages`, `bash` and `cacert` are provided by default — the sandbox needs a shell to run, and `cacert` is required for HTTPS to work. The library also exports `commonTools` (a list of standard CLI tools) for convenience; see [`default.nix`](default.nix) for the full list.
 
 Paths declared in `rwDirs` / `rwFiles` / `roDirs` / `roFiles` must exist on the host before launch — the sandbox exits with a clear error if any are missing.
 
@@ -199,6 +199,10 @@ allowedLocalPorts = [ 3000 5432 ];
 ```
 
 Set `allowedLocalPorts = null;` to allow all host-local TCP ports. Keep explicit port lists as narrow as possible; broad access can expose host-local services.
+
+### Supported agents
+
+The sandbox has been tested with `claude-code` and `copilot-cli`. Other agents should work as long as they support token-based auth via an environment variable — see [Authentication](#authentication).
 
 ## Authentication
 
@@ -280,10 +284,6 @@ Note: OAuth access tokens expire. You will need to re-run the export command per
 
 </details>
 
-### Tested agents
-
-`claude-code` and `copilot-cli`. Other agents should work as long as they support token-based auth via an environment variable.
-
 ## Git
 
 The sandbox allows access to the local git directory, including from within worktrees. Switching branches, reading history and other local operations work without any extra configuration. Committing requires a declared git identity — see [Git identity](#git-identity).
@@ -327,17 +327,17 @@ Set `allowNix = true` to let the agent invoke nix commands from inside the sandb
 
 What you need to configure:
 
-- **Flake CLI features:** Your nix config is not visibile inside the sandbox. Either bind it via `roFiles = [ "/etc/nix/nix.conf" ]` to inherit your whole config or set `env.NIX_CONFIG = "experimental-features = nix-command flakes"` to enable just the flake CLI.
+- **Flake CLI features:** Your nix config is not visible inside the sandbox. Either bind it via `roFiles = [ "/etc/nix/nix.conf" ]` to inherit your whole config or set `env.NIX_CONFIG = "experimental-features = nix-command flakes"` to enable just the flake CLI.
 
 - **Nix state directories:** The client caches the flake registry and downloaded tarballs under `$HOME/.cache/nix`, writes registry overrides to `$HOME/.config/nix`, and stores per-user profiles under `$HOME/.local/share/nix`. Add these to `rwDirs` if you want any of that to persist across invocations.
 
-- **Allowed domains:** When `allowedDomains` is set, the nix client itself needs `channels.nixos.org` , `github.com` + `raw.githubusercontent.com` , and `cache.nixos.org` to reliably fetch packages and flakes.
+- **Allowed domains:** When `allowedDomains` is set, the nix client itself needs `channels.nixos.org`, `github.com` + `raw.githubusercontent.com`, and `cache.nixos.org` to reliably fetch packages and flakes.
 
 A complete example is at [`shells/claude-nix.shell.nix`](shells/claude-nix.shell.nix).
 
 > **Security note:** `allowNix = true` weakens the security posture of the sandbox. The full Nix store is exposed and any executable in the nix store can be run by the agent — `allowedPackages` no longer restricts what the agent can *execute*, only what's on `PATH`. The `nix-daemon` runs outside the sandbox, so its own network activity — downloads of prebuilt packages from the caches it's configured to use — bypasses `allowedDomains`.
 
-## Common Patterns / Recipes
+## Common patterns / recipes
 
 ### Python with uv
 
@@ -353,6 +353,8 @@ rwDirs = [ "$HOME/.npm" ]; # Allow npm cache
 ```
 
 ## Troubleshooting
+
+If you get stuck, or suspect the agent can't access a file or folder it should have access to by default, please raise an issue.
 
 ### Filesystem access issues
 
@@ -414,9 +416,7 @@ If something is blocked that should have been allowed by your sandbox config, th
 
 ### macOS: localhost service denials
 
-On macOS, `sandbox-exec` shares localhost with the host and cannot distinguish a service started inside the sandbox from a host-local service. If a sandboxed process needs to call another sandboxed process on `localhost:<port>`, that port must be listed in `allowedLocalPorts` or all host-local ports must be allowed with `allowedLocalPorts = null;`. The same access also allows host-local services on those ports, so keep explicit lists narrow.
-
-If you are unable to debug, or suspect the AI can't access a file or folder it should have access to by default, please raise an issue.
+If a sandboxed process can't reach another sandboxed process on `localhost:<port>`, add that port to `allowedLocalPorts` (or allow all host-local TCP ports with `allowedLocalPorts = null;`). This is macOS-only: `sandbox-exec` shares localhost with the host, so it can't tell sandbox-internal services apart from host-local ones — see [Linux vs macOS](#linux-vs-macos) for the full explanation. The same access also opens those host-local ports, so keep explicit lists narrow.
 
 ## Security
 
@@ -430,7 +430,7 @@ If the agent does something it shouldn't — runs a bad prompt, processes a mali
 - It can't delete or modify files outside the project directory and your declared `rwDirs` / `rwFiles`.
 - It can't reach the internet outside the domains you allow (when `allowedDomains` is set).
 - It can't talk to local services on your laptop — databases, dev servers, the SSH agent, other terminal windows, etc. — unless you explicitly allow host-local TCP ports with `allowedLocalPorts`.
-- It can only run the tools you list in `allowedPackages`.
+- It can only run the tools you list in `allowedPackages` (unless you set `allowNix = true` — see [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)).
 - It can't see your other running programs, read environment variables they have set, or interfere with other terminals you have open.
 
 ### What it doesn't protect against
@@ -469,12 +469,12 @@ If your threat model is *"I assume the agent is actively malicious and need it t
 
 There are several other tools for sandboxing AI agents. Here are a few:
 
-[Anthropic sandbox-runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime/tree/main) — An npm package that also uses bubblewrap on Linux and sandbox-exec on Macos.
+[Anthropic sandbox-runtime (srt)](https://github.com/anthropic-experimental/sandbox-runtime/tree/main) — An npm package that also uses bubblewrap on Linux and sandbox-exec on macOS.
 
 [jail.nix](https://git.sr.ht/~alexdavid/jail.nix) — A nix library for building bubblewrap sandboxes. It's not built to be agent-specific but can be used for agent sandboxing. Linux only.
 
 [jailed-agents](https://github.com/andersonjoseph/jailed-agents) — A nix library that provides pre-configured per-agent sandboxes using bubblewrap. Linux only.
 
-[agent-box](https://github.com/fletchgqc/agentbox) — A rust CLI that uses disposable containers with Jujutsu or Git worktrees. MacOS and Linux.
+[agent-box](https://github.com/fletchgqc/agentbox) — A Rust CLI that uses disposable containers with Jujutsu or Git worktrees. macOS and Linux.
 
 [ai-jail](https://github.com/akitaonrails/ai-jail) — A Rust CLI that sandboxes agents using bubblewrap (with Landlock and seccomp) on Linux and sandbox-exec on macOS. Configured via a TOML file in the project directory.
