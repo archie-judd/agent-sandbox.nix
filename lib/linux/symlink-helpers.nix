@@ -123,7 +123,7 @@
           STATE_FILE_BINDS="$STATE_FILE_BINDS --bind $_final ${file}"
           _ensure_parent_dirs "${file}"
         fi
-      else
+      elif [[ -e "${file}" ]]; then
         STATE_FILE_BINDS="$STATE_FILE_BINDS --bind ${file} ${file}"
       fi
     '';
@@ -140,7 +140,7 @@
           RO_FILE_BINDS="$RO_FILE_BINDS --ro-bind $_final ${file}"
           _ensure_parent_dirs "${file}"
         fi
-      else
+      elif [[ -e "${file}" ]]; then
         RO_FILE_BINDS="$RO_FILE_BINDS --ro-bind ${file} ${file}"
       fi
     '';

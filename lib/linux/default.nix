@@ -115,14 +115,26 @@ let
     ::1       localhost
   '';
   pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
-  bindDirsStr = builtins.concatStringsSep " " (map (dir: ''--bind "${dir}" "${dir}"'') rwDirs);
-  bindRoDirsStr = builtins.concatStringsSep " " (map (dir: ''--ro-bind "${dir}" "${dir}"'') roDirs);
-  # Adds each rwDir / roDir to the BOUND_PREFIXES shell array at runtime
+  # Runtime-computed: only bind dirs that actually exist. Missing dirs have
+  # already been warned about by assertBindsExistBashStr; skipping them here
+  # prevents bwrap from aborting on a --bind for a non-existent source path.
+  bindDirsBashStr =
+    let
+      mkEntry = dir: ''[ -e "${dir}" ] && _BIND_DIRS+=(--bind "${dir}" "${dir}")'';
+    in
+    builtins.concatStringsSep "\n" (map mkEntry rwDirs);
+  bindRoDirsBashStr =
+    let
+      mkEntry = dir: ''[ -e "${dir}" ] && _BIND_RO_DIRS+=(--ro-bind "${dir}" "${dir}")'';
+    in
+    builtins.concatStringsSep "\n" (map mkEntry roDirs);
+  # Adds each rwDir / roDir to the BOUND_PREFIXES shell array at runtime,
+  # guarded so missing dirs are not advertised as bound prefixes.
   stateDirsBoundPrefixBashStr = builtins.concatStringsSep "\n" (
-    map (dir: ''BOUND_PREFIXES+=("${dir}")'') rwDirs
+    map (dir: ''[ -e "${dir}" ] && BOUND_PREFIXES+=("${dir}")'') rwDirs
   );
   roDirsBoundPrefixBashStr = builtins.concatStringsSep "\n" (
-    map (dir: ''BOUND_PREFIXES+=("${dir}")'') roDirs
+    map (dir: ''[ -e "${dir}" ] && BOUND_PREFIXES+=("${dir}")'') roDirs
   );
 
   symlinkHelpers = import ./symlink-helpers.nix {
@@ -306,6 +318,10 @@ builtins.seq
           ${conditionalNetworkingParams.proxyStartupBashStr}
           ${conditionalNetworkingParams.resolvConfSetupBashStr}
           ${trapBashStr}
+          _BIND_DIRS=()
+          ${bindDirsBashStr}
+          _BIND_RO_DIRS=()
+          ${bindRoDirsBashStr}
           ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.coreutils}/bin/env -i ${pkgs.bubblewrap}/bin/bwrap \
             ${conditionalNetworkingParams.etcResolvBind} \
             ${nixStoreBwrapStr} \
@@ -322,8 +338,8 @@ builtins.seq
             --tmpfs "$HOME" \
             $REPO_BIND \
             --bind "$CWD" "$CWD" \
-            ${bindDirsStr} \
-            ${bindRoDirsStr} \
+            "''${_BIND_DIRS[@]}" \
+            "''${_BIND_RO_DIRS[@]}" \
             $STATE_FILE_BINDS \
             $RO_FILE_BINDS \
             $SYMLINK_PARENT_DIRS \

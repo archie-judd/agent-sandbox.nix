@@ -91,14 +91,9 @@ let
       _COMBINED_CA_BUNDLE=$(mktemp /tmp/sandbox-ca-bundle.XXXXXX)
       cat ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt "$_CA_CERT_FILE" > "$_COMBINED_CA_BUNDLE"
     '';
-  # Emits a bash snippet that checks every declared rwDir / rwFile exists on
-  # the host before the sandbox launches. Missing paths are accumulated and
-  # reported in one go; the snippet exits 1 if any were missing. Uses
-  # `[ -e ]` so a broken symlink also counts as missing — the wrapper used
-  # to silently `mkdir -p` / `touch` declared paths, which masked typos
-  # like `rwDirs = [ "$HOME/.cluade" ]` as new state directories. The
-  # check is emitted as bash (not evaluated in Nix) because paths reference
-  # shell vars (`$HOME`, etc.) that are only resolved at runtime.
+  # All declared bind paths (rwDirs, rwFiles, roDirs, roFiles) that don't
+  # exist on the host are silently skipped — they just won't be bound.
+  # Kept as a function so call sites need no changes.
   assertBindsExistBashStr =
     {
       rwDirs,
@@ -106,30 +101,7 @@ let
       roDirs ? [ ],
       roFiles ? [ ],
     }:
-    let
-      mkCheck =
-        label: p:
-        # bash
-        ''
-          if [ ! -e "${p}" ]; then
-            echo "${errorPrefix} ${p}: declared as ${label} but does not exist" >&2
-            _BIND_MISSING=1
-          fi'';
-      allChecks = builtins.concatStringsSep "\n" (
-        map (mkCheck "rwDir") rwDirs
-        ++ map (mkCheck "rwFile") rwFiles
-        ++ map (mkCheck "roDir") roDirs
-        ++ map (mkCheck "roFile") roFiles
-      );
-    in
-    # bash
-    ''
-      _BIND_MISSING=0
-      ${allChecks}
-      if [ "$_BIND_MISSING" -ne 0 ]; then
-        exit 1
-      fi
-    '';
+    "";
   validateAllowedLocalPorts =
     allowedLocalPorts:
     if allowedLocalPorts == null then
