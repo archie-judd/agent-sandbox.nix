@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.2.1...v2.3.0) (2026-08-19)
+
+
+### Features
+
+* relicense under MIT ([1462f69](https://github.com/archie-judd/agent-sandbox.nix/commit/1462f69154f33efd6b809ed1a598dd405673128c))
+
 ## [2.2.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.2.0...v2.2.1) (2026-07-13)
 
 
