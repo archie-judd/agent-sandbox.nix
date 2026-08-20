@@ -16,9 +16,7 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 - **Git** — the repo's `.git` directory is exposed, including when it sits outside the project tree (worktrees).
 - **Nix** — disabled by default. Optionally allow the agent to run nix commands.
 
-Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappears when the sandbox exits.
-
-The one exception is launching the agent from your home directory itself, which exposes it read-write like any other launch directory. That needs confirmation at the prompt — see [Launching from your home directory](#launching-from-your-home-directory).
+Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappears when the sandbox exits. The exception is launching the agent from your home directory itself, which exposes it read-write like any other launch directory. See [Launching from your home directory](#launching-from-your-home-directory).
 
 ## Contents
 
@@ -297,7 +295,7 @@ SSH based remotes (e.g. `git@github.com:...`) won't work by default — SSH keys
 
 ### Git identity
 
-`$HOME` is masked inside the sandbox, so your global gitconfig is not visible and git's `user.name` / `user.email` are unset. (Launching from your home directory is the exception: your real gitconfig is visible there, so identity resolves without any of the below.) The sandbox never fabricates an identity if none are provided. This means `git commit` without a declared identity fails loudly (`fatal: ... auto-detection is disabled`).
+`$HOME` is masked inside the sandbox, so your global gitconfig is not visible and git's `user.name` / `user.email` are unset. The sandbox never fabricates an identity if none are provided. This means `git commit` without a declared identity fails loudly (`fatal: ... auto-detection is disabled`).
 
 To get correctly-attributed commits, declare a real identity in one of two ways:
 
@@ -320,7 +318,7 @@ To get correctly-attributed commits, declare a real identity in one of two ways:
       };
   ```
 
-> **Note:** do not run `git config --global ...` inside the sandbox — `$HOME` is an ephemeral tmpfs there, so it won't persist. Set your identity on the host and bind it, or use `env`. (In a home-directory session it does persist, because it is writing your real gitconfig.)
+> **Note:** do not run `git config --global ...` inside the sandbox — `$HOME` is an ephemeral tmpfs there, so it won't persist. Set your identity on the host and bind it, or use `env`.
 
 ## Using Nix inside the sandbox
 
@@ -393,8 +391,6 @@ curl https://example.com          # blocked domain — should fail
 
 See [`debug/bash.shell.nix`](debug/bash.shell.nix) for a ready-to-use template (has `allowedDomains` set to `httpbin.org` for testing).
 
-If the wrapper refuses to start at all with a message about your home directory, or (on older versions) dies with `bwrap: Can't create file at ...`, you are launching from `$HOME` or from a directory above it. See [Launching from your home directory](#launching-from-your-home-directory).
-
 ### Network access issues
 
 If you've set `allowedDomains` and requests are failing, check which domains are being blocked:
@@ -449,24 +445,9 @@ The sandbox is an **isolation** boundary, not an **anonymity** boundary, and not
 
 The launch directory is always read-write, so launching the agent from `$HOME` gives it your whole home directory: ssh keys, credential files, browser state, every other project. None of the masking described above applies in that session.
 
-This is allowed, because it follows from what the launch directory means, but the wrapper asks first:
-
-```
-[WARN][agent-sandbox.nix] launching from your home directory (/home/you).
-[WARN][agent-sandbox.nix] the launch directory is bound read-write, so the agent can
-read and modify everything under it — ssh keys, credentials, browser state, every
-other project. Your home is not masked in this session.
-[WARN][agent-sandbox.nix] continue? [y/N]
-```
-
-The prompt is read from `/dev/tty`, not stdin, so piping an answer in does not satisfy it. With no terminal to ask on (a script, a CI job, a headless run) the launch is refused. There is no flag or environment variable to skip the prompt: if you want an unattended session with your home exposed, declare the specific paths you need as `rwDirs` / `roDirs` and launch from somewhere else.
+This is allowed, because it follows from what the launch directory means, but sandbox will ask for your permission first.
 
 A launch directory *above* `$HOME` (`/`, `/home`, `/Users`) is refused outright. Those paths reach past your own home, and no confirmation covers that.
-
-Two related behaviours change in a home-directory session:
-
-- A git repo rooted at `$HOME` (a dotfiles repo) keeps working. Elsewhere the sandbox refuses to expose a home-rooted repo and disables git for the session; here you have already said yes to the home, so refusing would protect nothing. A repo rooted *above* `$HOME` still disables git.
-- Your real `~/.gitconfig` and `~/.config/git/config` are visible, so git identity resolves from them without being declared as `roFiles`.
 
 ### Specific things worth being aware of
 
