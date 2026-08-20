@@ -83,13 +83,10 @@
   outName,
   allowedPackages,
   allowNix ? false,
-  # If true, bind-mounts the host's /dev/dri (DRM render/card nodes) into
-  # the sandbox so GPU-dependent programs (e.g. a browser doing WebGL/GPU
-  # compositing) get hardware acceleration instead of falling back to
-  # software rendering. Requires the invoking host user to already have
-  # access to the render node (typically via membership in the "render" or
-  # "video" group) — bwrap does not grant new device permissions, it only
-  # makes an already-accessible device visible inside the sandbox.
+  # If true, bind-mounts the host's /dev/dri into the sandbox for
+  # hardware-accelerated GPU access. Requires the host user to already be
+  # in the "render" or "video" group — this only exposes the device, it
+  # doesn't grant new permissions.
   allowGpu ? false,
   rwDirs ? [ ],
   rwFiles ? [ ],
