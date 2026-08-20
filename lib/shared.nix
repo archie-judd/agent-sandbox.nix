@@ -169,7 +169,6 @@ let
         case "$_HOME_CWD_REPLY" in
           y | Y | yes | Yes | YES) ;;
           *)
-            echo "${errorPrefix} aborted — not launching from $HOME." >&2
             exit 1
             ;;
         esac
