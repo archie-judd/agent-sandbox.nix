@@ -40,6 +40,14 @@ ln -s "$STORE_GITCONFIG" "$FAKE_HOME/.config/git/config"
 echo "home-secret-content" >"$FAKE_HOME/secret.txt"
 mkdir -p "$FAKE_HOME/project"
 
+# Make the fake home its own git repo. This dir lives under .tmp-test inside
+# the checkout, so otherwise the nearest .git walking up is the project's own,
+# whose root sits above $HOME — the wrapper's git-root guard would refuse to
+# expose it and disable git, and on darwin the still-visible-but-denied
+# ancestor .git turns the in-sandbox `git var` into a fatal. As its own repo,
+# the nearest root is $HOME itself: the supported launch-from-a-home-repo case.
+git init -q "$FAKE_HOME"
+
 # Answer the confirmation prompt over a pty. The wrapper reads the reply from
 # /dev/tty, so piping it on stdin deliberately does not satisfy the prompt.
 # pty.spawn merges the child's stderr into its stdout, so assertions about
@@ -101,9 +109,9 @@ assert_output_contains "home is readable" "HOME-READ-OK"
 assert_output_contains "home is writable" "HOME-WRITE-OK"
 assert_output_contains "git identity resolves from the bound gitconfig" "IDENT-OK"
 
-# 5. A home-rooted repo keeps git, since the home is exposed by consent
-#    already. Its hooks and config stay read-only (git hook injection).
-git -C "$FAKE_HOME" init -q
+# 5. A home-rooted repo (FAKE_HOME is a repo, set up above) keeps git, since the
+#    home is exposed by consent already. Its hooks and config stay read-only
+#    (git hook injection).
 capture run_tty y "$FAKE_HOME" "$FAKE_HOME" '
 	git rev-parse --show-toplevel
 	git --no-pager config core.hooksPath /tmp/evil || echo HOOKS-PATH-DENIED'
