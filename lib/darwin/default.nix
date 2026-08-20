@@ -361,16 +361,42 @@ let
       fi
       if [[ -n "$REPO_ROOT" ]]; then
           GIT_DIR_PARAM="$GIT_DIR"
-          GIT_HOOKS_DIR_PARAM="$GIT_DIR/hooks"
-          GIT_CONFIG_FILE_PARAM="$GIT_DIR/config"
           REPO_ROOT_PARENT=$(dirname "$REPO_ROOT")
       else
           GIT_DIR_PARAM="/nonexistent-git-dir"
-          GIT_HOOKS_DIR_PARAM="/nonexistent-git-hooks-dir"
-          GIT_CONFIG_FILE_PARAM="/nonexistent-git-config-file"
           REPO_ROOT="/nonexistent-repo-root"
           REPO_ROOT_PARENT="/nonexistent-repo-root"
+          # Signals "no repo" to the protected-path enumeration below, which
+          # keys off $GIT_DIR on both backends.
+          GIT_DIR=""
       fi
+      ${shared.gitProtectedPathsBashStr}
+    '';
+
+  # Narrow the read-write grant on (param "GIT_DIR"): these are the paths a
+  # sandboxed process could use to fire arbitrary code the next time the host
+  # user runs git in this repo. Writing hooks/post-checkout, setting
+  # core.hooksPath / alias.* = !cmd / gpg.program / filter.*.smudge in config
+  # or config.worktree, or repointing commondir and .git files at a gitdir it
+  # controls would all execute on the host. Reads stay allowed (seatbelt is
+  # last-match-wins) so git can still run the hooks and read the config it
+  # already has; commits and fetches still work because they write objects/
+  # and refs/, not these.
+  #
+  # Appended at runtime rather than written into the static profile because
+  # the list is variable-length: submodule gitdirs and per-worktree files are
+  # only known once the repo has been inspected. Appending also puts them
+  # after the rwDir rules, so a declared rwDir containing the gitdir can no
+  # longer re-allow writes.
+  gitProtectionProfilePatchBashStr =
+    # bash
+    ''
+      for _protected in "''${GIT_PROTECTED_DIRS[@]}"; do
+        printf '    (deny file-write* (subpath "%s"))\n' "$_protected" >> "$SANDBOX_PROFILE"
+      done
+      for _protected in "''${GIT_PROTECTED_FILES[@]}"; do
+        printf '    (deny file-write* (literal "%s"))\n' "$_protected" >> "$SANDBOX_PROFILE"
+      done
     '';
 
   # Pin the seatbelt /dev/ttys* allow rule to the single pty slave the
@@ -560,6 +586,7 @@ builtins.seq
           # and patch the seatbelt profile at runtime with file-read-metadata rules.
           ${ancestorTraversalBashStr}
           ${ancestorProfilePatchBashStr}
+          ${gitProtectionProfilePatchBashStr}
 
           ${conditionalNetworkingParams.proxyStartupBashStr}
           ${conditionalNetworkingParams.networkRuntimePatchBashStr}
@@ -583,8 +610,6 @@ builtins.seq
             -f "$SANDBOX_PROFILE" \
             -D CWD="$CWD" \
             -D GIT_DIR="$GIT_DIR_PARAM" \
-            -D GIT_HOOKS_DIR="$GIT_HOOKS_DIR_PARAM" \
-            -D GIT_CONFIG_FILE="$GIT_CONFIG_FILE_PARAM" \
             -D REPO_ROOT="$REPO_ROOT" \
             -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
             -D MY_TTY="$MY_TTY" \

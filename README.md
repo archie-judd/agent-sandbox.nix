@@ -35,6 +35,7 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
 * [Git](#git)
     * [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
     * [Git identity](#git-identity)
+    * [Read-only paths in the git directory](#read-only-paths-in-the-git-directory)
 * [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
 * [Common patterns / recipes](#common-patterns--recipes)
     * [Python with uv](#python-with-uv)
@@ -320,6 +321,15 @@ To get correctly-attributed commits, declare a real identity in one of two ways:
 
 > **Note:** do not run `git config --global ...` inside the sandbox — `$HOME` is an ephemeral tmpfs there, so it won't persist. Set your identity on the host and bind it, or use `env`.
 
+### Read-only paths in the git directory
+
+A few paths inside the git directory are read-only inside the sandbox: `hooks/`, `config`, `config.worktree`, and the pointer files recording where a worktree's or submodule's git directory lives. This is a security measure, explained under [Security](#what-it-protects-against).
+
+Everything else stays writable, so commits, fetches, branch switching and history reads all work as normal. Two operations don't:
+
+- `git config` writing to the repo config. Set repo-level config on the host instead.
+- `git worktree remove` and `git worktree prune`, because protecting a worktree's pointer file makes its directory non-removable. Run these on the host.
+
 ## Using Nix inside the sandbox
 
 Set `allowNix = true` to let the agent invoke nix commands from inside the sandbox. The agent is given access to the host's nix daemon and the full nix store. `pkgs.nix` is added to the agent's PATH automatically — you don't need to put it in `allowedPackages`.
@@ -429,6 +439,7 @@ If the agent does something it shouldn't — runs a bad prompt, processes a mali
 - It can't delete or modify files outside the project directory and your declared `rwDirs` / `rwFiles`.
 - It can't reach the internet outside the domains you allow (when `allowedDomains` is set).
 - It can't talk to local services on your laptop — databases, dev servers, the SSH agent, other terminal windows, etc. — unless you explicitly allow host-local TCP ports with `allowedLocalPorts`.
+- It can't leave code behind that runs on your host the next time you use git. A writable git directory would allow that: a file in `hooks/`, a `core.hooksPath` or `alias.*` entry in a config file, or a pointer file aimed at a git directory the agent controls. Those paths are read-only for the repo you launch in.
 - It can only run the tools you list in `allowedPackages` (unless you set `allowNix = true` — see [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)).
 - It can't see your other running programs, read environment variables they have set, or interfere with other terminals you have open.
 
@@ -439,11 +450,14 @@ The sandbox is an **isolation** boundary, not an **anonymity** boundary, and not
 - The agent can fingerprint your machine. It can see your hostname, hardware model, CPU, RAM, OS version, and rough network details. If you need the agent to *not know which machine it's running on*, this isn't the tool — you want a VM or a separate device.
 - Anything you hand the agent, it has. If you expose your `~/.claude` directory (or any credential file) via `rwDirs`, or pass a token through `env`, the agent can read it — that's how it logs in. A compromised agent has the same access to those credentials as your shell does. Treat this the way you'd treat handing the token to any other CLI tool you didn't write yourself.
 - The agent can edit its own sandbox config. `flake.nix` lives inside the project directory and is writable from inside the sandbox. An agent could weaken its own restrictions for the *next* session. Changes don't take effect until you re-enter the dev shell, so it's worth reviewing `git diff` before you do.
+- Only the repo you launch in is protected from git hook injection. Other repos that happen to sit under your launch directory are not: a repo nested inside it is writable like anything else there, hooks included.
 - No defense against root or kernel bugs. If something on your machine has already gained administrator-level access, or there's a deeper bug in the operating system itself, this sandbox can't stop it.
 
 ### Launching from your home directory
 
 The launch directory is always read-write, so launching the agent from `$HOME` gives it your whole home directory: ssh keys, credential files, browser state, every other project. None of the masking described above applies in that session.
+
+It also means the `.git` directory of every repo under your home is writable, and only the repo you launch in is protected from hook injection. A write to any other repo's hooks or config runs code on your host the next time you use git there.
 
 This is allowed, because it follows from what the launch directory means, but sandbox will ask for your permission first.
 

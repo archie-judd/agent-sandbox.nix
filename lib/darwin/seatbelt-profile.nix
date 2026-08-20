@@ -193,18 +193,9 @@
   ;; Working directory & repository
   (allow file-read* file-write* (subpath (param "CWD")))
   (allow file-read* (subpath (param "REPO_ROOT")))
+  ;; Narrowed at runtime by deny rules appended to the end of this profile,
+  ;; where they outrank every allow above. See gitProtectionProfilePatchBashStr.
   (allow file-read* file-write* (subpath (param "GIT_DIR")))
-  ;; Narrow the common-gitdir write grant: hooks/ and config are the
-  ;; persistence vectors a sandboxed process could use to fire arbitrary
-  ;; code the next time the host user runs git here (and from any
-  ;; worktree — --git-common-dir resolves to the same path). Writing
-  ;; hooks/post-checkout, or setting core.hooksPath / alias.* = !cmd /
-  ;; gpg.program / filter.*.smudge in config, would all execute on the
-  ;; host. Reads stay allowed (seatbelt is last-match-wins) so git can
-  ;; still run the hooks and read the config it already has; commits and
-  ;; fetches still work because they write objects/ and refs/, not these.
-  (deny file-write* (subpath (param "GIT_HOOKS_DIR")))
-  (deny file-write* (literal (param "GIT_CONFIG_FILE")))
 
   ;; Timezone
   (allow file-read* (subpath "/private/var/db/timezone"))

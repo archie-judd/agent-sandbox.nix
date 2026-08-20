@@ -67,7 +67,7 @@
         If CWD is a git worktree, the real .git/common dir lives
         elsewhere. The wrapper auto-detects this with git rev-parse
         --git-common-dir, but it fails silently if git isn't available
-        outside the sandbox. Check that $GIT_BIND is non-empty.
+        outside the sandbox. Check that $GIT_PROTECT_BINDS is non-empty.
 
       DNS/TLS failures:
         Ensure /etc/resolv.conf and /etc/ssl/certs exist on the host.
@@ -195,16 +195,20 @@ let
   trapBashStr =
     let
       networkCmds = conditionalNetworkingParams.bashCleanupCommandsStr;
+      # Removes only the mount points the wrapper created for protected paths
+      # that did not exist at launch, and only while they are still empty, so
+      # anything written there in the meantime is left alone.
+      maskedCleanup = ''for _masked in "''${GIT_MASKED_FILES[@]}"; do if [ -e "$_masked" ] && [ ! -s "$_masked" ]; then rm -f "$_masked"; fi; done'';
       cmds =
         if networkCmds == "" then
           # bash
           ''
-            rm -f "$_SANDBOX_PASSWD"
+            rm -f "$_SANDBOX_PASSWD"; ${maskedCleanup}
           ''
         else
           # bash
           ''
-            rm -f "$_SANDBOX_PASSWD"; ${networkCmds}
+            rm -f "$_SANDBOX_PASSWD"; ${maskedCleanup}; ${networkCmds}
           '';
     in
     "trap '${cmds}' EXIT";
@@ -229,7 +233,8 @@ let
   gitDetectionBashStr =
     # bash
     ''
-      GIT_BIND=""
+      GIT_PROTECT_BINDS=()
+      GIT_MASKED_FILES=()
       REPO_BIND=""
       if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
         REPO_ROOT=$(dirname "$GIT_DIR")
@@ -246,17 +251,38 @@ let
         # either way, since that reaches beyond the home the user consented to.
         if [[ "$HOME" == "$REPO_ROOT"/* ]] || [[ "$HOME" == "$REPO_ROOT" && "$CWD" != "$HOME" ]]; then
           echo "${shared.warnPrefix} git root resolves to your home directory ($HOME) — refusing to expose it. git is disabled for this session." >&2
-          # Empty so GIT_BIND/REPO_BIND stay unset and the `[[ -n ... ]]`
+          # Empty so the git binds stay unset and the `[[ -n ... ]]`
           # BOUND_PREFIXES guards below skip them too.
           GIT_DIR=""
           REPO_ROOT=""
         else
-          # hooks/ and config are ro to prevent git hook injection: an agent
-          # could otherwise drop an executable hook or set core.hooksPath to
-          # redirect execution to a writable directory on the next host git op.
-          GIT_BIND="--bind $GIT_DIR $GIT_DIR --ro-bind $GIT_DIR/hooks $GIT_DIR/hooks --ro-bind $GIT_DIR/config $GIT_DIR/config"
           REPO_BIND="--ro-bind $REPO_ROOT $REPO_ROOT"
         fi
+      fi
+
+      ${shared.gitProtectedPathsBashStr}
+
+      # The gitdir is bound read-write so commits and fetches keep working,
+      # then the paths that would let a sandboxed process run code on the host
+      # are bound back read-only on top of it.
+      if [[ -n "$GIT_DIR" ]]; then
+        GIT_PROTECT_BINDS+=(--bind "$GIT_DIR" "$GIT_DIR")
+        for _protected in "''${GIT_PROTECTED_DIRS[@]}"; do
+          GIT_PROTECT_BINDS+=(--ro-bind "$_protected" "$_protected")
+        done
+        for _protected in "''${GIT_PROTECTED_FILES[@]}"; do
+          if [[ -e "$_protected" ]]; then
+            GIT_PROTECT_BINDS+=(--ro-bind "$_protected" "$_protected")
+          else
+            # A protected path that does not exist yet (config.worktree in a
+            # repo that has the extension on but no per-worktree config) would
+            # otherwise just be created. Binding an empty file over it makes
+            # it read-only instead. bwrap materialises the mount point on the
+            # host, so record it and remove it again on exit.
+            GIT_PROTECT_BINDS+=(--ro-bind "${emptyFile}" "$_protected")
+            GIT_MASKED_FILES+=("$_protected")
+          fi
+        done
       fi
     '';
 
@@ -346,7 +372,7 @@ builtins.seq
             $RO_FILE_BINDS \
             $SYMLINK_PARENT_DIRS \
             $readonlyStateFileSymlinks \
-            $GIT_BIND \
+            "''${GIT_PROTECT_BINDS[@]}" \
             --symlink ${bashWrapper}/bin/bash /bin/sh \
             --symlink ${pkgs.coreutils}/bin/env /usr/bin/env \
             --unshare-all \

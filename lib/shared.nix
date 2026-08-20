@@ -164,6 +164,7 @@ let
         fi
         echo "${warnPrefix} launching from your home directory ($HOME)." >&2
         echo "${warnPrefix} the launch directory is bound read-write, so the agent can read and modify everything under it — ssh keys, credentials, browser state, every other project. Your home is not masked in this session." >&2
+        echo "${warnPrefix} that includes the .git directory of every repo under your home. Only the repo you launch in is protected against git hook injection, so a write to any other repo's hooks or config runs code on your host the next time you use git there." >&2
         printf '%s' "${warnPrefix} continue? [y/N] " > /dev/tty
         read -r _HOME_CWD_REPLY < /dev/tty || _HOME_CWD_REPLY=""
         case "$_HOME_CWD_REPLY" in
@@ -172,6 +173,87 @@ let
             exit 1
             ;;
         esac
+      fi
+    '';
+  # Emits a bash snippet that lists the paths inside a repo's gitdir which must
+  # not be writable from inside the sandbox. Expects $GIT_DIR (the common
+  # gitdir) and $CWD to be set, and fills GIT_PROTECTED_DIRS and
+  # GIT_PROTECTED_FILES. A no-op when $GIT_DIR is empty, which is how both
+  # backends signal "no repo here" or "git refused for this session".
+  #
+  # The boundary is the repo you launched in, however you entered it: root,
+  # subdirectory or worktree. The wrapper binds the gitdir read-write itself,
+  # so it owns what that bind exposes. Other repos that happen to sit under a
+  # writable launch directory are out of scope — covering those would mean
+  # searching the working tree, and the launch directory is already documented
+  # as writable.
+  #
+  # Two kinds of vector live inside that bind. Content: hooks/, config and
+  # config.worktree all name commands git will run on the host. Pointers:
+  # worktrees/*/commondir and a worktree's or submodule's .git file send the
+  # host's git at a different gitdir entirely, so protecting the content
+  # without the pointers to it closes nothing.
+  gitProtectedPathsBashStr =
+    # bash
+    ''
+      GIT_PROTECTED_DIRS=()
+      GIT_PROTECTED_FILES=()
+      if [[ -n "$GIT_DIR" ]]; then
+        # Gitdirs this repo owns: the common dir, plus every submodule gitdir
+        # under modules/. find recurses, so a submodule of a submodule
+        # (modules/a/modules/b) falls out of the same walk. A gitdir is
+        # identified by holding both HEAD and config — logs/ holds only HEAD.
+        _GIT_OWNED_GITDIRS=("$GIT_DIR")
+        if [[ -d "$GIT_DIR/modules" ]]; then
+          while IFS= read -r -d "" _gitdir; do
+            if [[ -f "$_gitdir/HEAD" && -f "$_gitdir/config" ]]; then
+              _GIT_OWNED_GITDIRS+=("$_gitdir")
+            fi
+          done < <(${pkgs.findutils}/bin/find "$GIT_DIR/modules" -mindepth 1 -type d -print0 2>/dev/null)
+        fi
+
+        for _gitdir in "''${_GIT_OWNED_GITDIRS[@]}"; do
+          [[ -d "$_gitdir/hooks" ]] && GIT_PROTECTED_DIRS+=("$_gitdir/hooks")
+          [[ -f "$_gitdir/config" ]] && GIT_PROTECTED_FILES+=("$_gitdir/config")
+
+          # config.worktree is read only when the repo opts in via
+          # extensions.worktreeConfig, and git honours that extension from the
+          # repo config alone (ro-bound here) — not from global config. A
+          # config.worktree written while the extension is off is therefore
+          # inert, so protecting it only when the repo has it on costs nothing
+          # in the common case.
+          _worktree_config=$(${pkgs.git}/bin/git config --file "$_gitdir/config" --get extensions.worktreeConfig 2>/dev/null || true)
+          if [[ "$_worktree_config" == "true" ]]; then
+            GIT_PROTECTED_FILES+=("$_gitdir/config.worktree")
+          fi
+
+          for _wtdir in "$_gitdir"/worktrees/*/; do
+            [[ -d "$_wtdir" ]] || continue
+            GIT_PROTECTED_FILES+=("''${_wtdir}commondir")
+            if [[ "$_worktree_config" == "true" ]]; then
+              GIT_PROTECTED_FILES+=("''${_wtdir}config.worktree")
+            fi
+          done
+
+          # core.worktree is set only for submodules and is relative to the
+          # gitdir, so this skips the common dir and finds each submodule's
+          # .git file. Left writable, it would redirect the host's git past
+          # the hooks and config protected just above.
+          _sm_worktree=$(${pkgs.git}/bin/git config --file "$_gitdir/config" --get core.worktree 2>/dev/null || true)
+          if [[ -n "$_sm_worktree" && -f "$_gitdir/$_sm_worktree/.git" ]]; then
+            GIT_PROTECTED_FILES+=("$(${pkgs.coreutils}/bin/realpath -m "$_gitdir/$_sm_worktree/.git")")
+          fi
+        done
+
+        # Worktree .git files, the same pointer vector. Only worktrees under
+        # CWD are reachable from inside the sandbox; the rest are never bound.
+        while IFS= read -r _line; do
+          [[ "$_line" == worktree\ * ]] || continue
+          _wt_path="''${_line#worktree }"
+          if [[ "$_wt_path" == "$CWD" || "$_wt_path" == "$CWD"/* ]] && [[ -f "$_wt_path/.git" ]]; then
+            GIT_PROTECTED_FILES+=("$_wt_path/.git")
+          fi
+        done < <(${pkgs.git}/bin/git worktree list --porcelain 2>/dev/null || true)
       fi
     '';
   validateAllowedLocalPorts =
@@ -236,4 +318,5 @@ in
   validateAllowedLocalPorts = validateAllowedLocalPorts;
   assertBindsExistBashStr = assertBindsExistBashStr;
   assertHomeCwdAllowedBashStr = assertHomeCwdAllowedBashStr;
+  gitProtectedPathsBashStr = gitProtectedPathsBashStr;
 }
