@@ -37,6 +37,7 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
     * [Git identity](#git-identity)
     * [Read-only paths in the git directory](#read-only-paths-in-the-git-directory)
 * [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
+* [Using GPU acceleration inside the sandbox](#using-gpu-acceleration-inside-the-sandbox)
 * [Common patterns / recipes](#common-patterns--recipes)
     * [Python with uv](#python-with-uv)
     * [Node.js with npm](#nodejs-with-npm)
@@ -125,6 +126,7 @@ If you want to keep the original command name as the alias, change the `outName`
 | `roDirs` | no | Directories the agent can read but not write (e.g. signed binaries, reference source trees, secret stores) |
 | `roFiles` | no | Individual files the agent can read but not write (e.g. `~/.config/git/config` for git identity — see [Git identity](#git-identity)) |
 | `allowNix` | no | If `true`, expose the host's `nix-daemon` socket and the full Nix store so the agent can run `nix build`, `nix run`, `nix develop`, etc. `pkgs.nix` is added to PATH automatically. Defaults to `false`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox). |
+| `allowGpu` | no | Linux only. If `true`, bind-mount the host's `/dev/dri` (DRM render/card nodes) into the sandbox so GPU-dependent programs get hardware acceleration. Defaults to `false`. See [Using GPU acceleration inside the sandbox](#using-gpu-acceleration-inside-the-sandbox). |
 | `env` | no | Additional environment variables as an attrset |
 | `allowedDomains` | no | Limits which domains the sandbox can reach. Leave unset for open internet. Accepts a list of domains (all methods allowed), or an attrset mapping each domain to `"*"` or a list of HTTP methods. `[ ]` blocks all internet access. |
 | `allowedLocalPorts` | no | Host-local TCP ports the sandbox may reach. Defaults to `[ ]`. Set to `null` to allow all host-local TCP ports. Otherwise, entries must be integers from `1` to `65535`. |
@@ -345,6 +347,22 @@ What you need to configure:
 A complete example is at [`shells/claude-nix.shell.nix`](shells/claude-nix.shell.nix).
 
 > **Security note:** `allowNix = true` weakens the security posture of the sandbox. The full Nix store is exposed and any executable in the nix store can be run by the agent — `allowedPackages` no longer restricts what the agent can *execute*, only what's on `PATH`. The `nix-daemon` runs outside the sandbox, so its own network activity — downloads of prebuilt packages from the caches it's configured to use — bypasses `allowedDomains`.
+
+## Using GPU acceleration inside the sandbox
+
+Set `allowGpu = true` (Linux only) to bind-mount the host's `/dev/dri` (DRM render + card nodes) into the sandbox. Without it, GPU-dependent programs (browsers doing WebGL/GPU compositing, video encoders, ML inference, etc.) fall back to software rendering.
+
+```nix
+allowGpu = true;
+```
+
+What you need to know:
+
+- **Host permissions still apply.** The sandbox only makes an already-accessible device visible inside the sandbox — it does not grant new permissions. The invoking host user needs pre-existing access to the render node, typically via membership in the host's `render` or `video` group.
+- **Missing device is not an error.** If the host has no `/dev/dri` (no GPU, or running under a display manager without DRI), the bind is skipped silently and the sandbox launches normally, falling back to software rendering.
+- **macOS:** `sandbox-exec`'s policy model restricts syscalls by path, not by device node visibility, so GPU access on macOS is unaffected by sandboxing and `allowGpu` is a no-op there.
+
+> **Security note:** `/dev/dri` exposes the DRM render node, which on most systems is scoped to compute/rendering only (no display/mode-setting capability) and is the same node already reachable by any other unprivileged process in the host's `render` group. This is a materially smaller exposure than `allowNix = true`, but still widens the sandbox's device access beyond the default (no devices besides `/dev/null`, `/dev/zero`, `/dev/random`, etc.).
 
 ## Common patterns / recipes
 
