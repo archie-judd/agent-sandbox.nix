@@ -20,10 +20,14 @@ expect_ok "sandbox launches with allowGpu, whether or not the host has a GPU" \
 if [ -e /dev/dri ]; then
     expect_ok "/dev/dri is visible inside the sandbox with allowGpu" \
         '[ -e /dev/dri ]'
+    expect_ok "/sys/class/drm is visible inside the sandbox with allowGpu" \
+        '[ -e /sys/class/drm ]'
 
     run() { "$GPU_DENIED_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
     expect_fail "/dev/dri is not visible inside the sandbox without allowGpu" \
         '[ -e /dev/dri ]'
+    expect_fail "/sys is not visible inside the sandbox without allowGpu" \
+        '[ -e /sys ]'
 else
     echo "SKIP: host has no /dev/dri — skipping device-visibility assertions"
 fi

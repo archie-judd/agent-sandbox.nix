@@ -130,7 +130,18 @@ let
   # dev-bind (not --bind) preserves device-node semantics; a plain bind
   # would remount /dev/dri nodev and make them unopenable. -try skips it
   # silently when the host has no GPU rather than failing the launch.
-  gpuBwrapStr = if allowGpu then ''--dev-bind-try /dev/dri /dev/dri'' else "";
+  # /sys is also needed: libdrm's device enumeration (used by Mesa and by
+  # Chromium's own GPU info collector) resolves a DRM fd to its PCI vendor
+  # device IDs via /sys/dev/char/<major>:<minor> and /sys/class/drm, which
+  # both chain through symlinks into /sys/devices. Without it, GPU
+  # detection finds nothing and falls back to software rendering even
+  # though /dev/dri itself is reachable. This is read-only and exposes the
+  # full host device/driver topology (not just the GPU) to the sandbox —
+  # a real information disclosure, though not a write or execution
+  # capability, and no broader than what any other unprivileged process on
+  # the host can already read from /sys.
+  gpuBwrapStr =
+    if allowGpu then ''--dev-bind-try /dev/dri /dev/dri --ro-bind-try /sys /sys'' else "";
   # Adds each rwDir / roDir to the BOUND_PREFIXES shell array at runtime
   stateDirsBoundPrefixBashStr = builtins.concatStringsSep "\n" (
     map (dir: ''BOUND_PREFIXES+=("${dir}")'') rwDirs
