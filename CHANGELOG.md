@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.4.0...v2.4.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* protect the whole repo's gitdir from hook injection ([#79](https://github.com/archie-judd/agent-sandbox.nix/issues/79)) ([147d9af](https://github.com/archie-judd/agent-sandbox.nix/commit/147d9af8c8936c9937767f698d2774a5709ddbe7))
+
 ## [2.4.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.3.0...v2.4.0) (2026-08-20)
 
 
