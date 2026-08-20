@@ -152,5 +152,29 @@ expect_ok "sibling Nix store symlinks: second target readable (not shadowed by -
 
 rm -f "$HOME/.test-state-dir/nix-sib-a" "$HOME/.test-state-dir/nix-sib-b"
 
+# --- Test J: a declared dir that is *itself* a store symlink, launched from
+# $HOME. The enclosing CWD bind exposes the real symlink, so bwrap cannot
+# create a mountpoint on top of it (it resolves mount destinations against its
+# own intermediate root, where the store target does not exist). The bind at
+# the declared path is skipped and the dir stays reachable through the real
+# symlink, whose target _follow_symlink_chain binds. Everywhere else the dir is
+# bound at its declared path as usual (Tests A-I above).
+#
+# The confirmation for launching from $HOME is read from /dev/tty, so this runs
+# under a pty. See tests/shared/test-home-cwd-confirm.sh for the guard itself.
+HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
+STORE_DIR=$(dirname "$NONCLOSURE_STORE_FILE")
+FAKE_HOME=$(mktemp -d "$TESTDIR_ROOT/symlink-dir-home.XXXXXX")
+ln -s "$STORE_DIR" "$FAKE_HOME/.test-state-dir"
+touch "$FAKE_HOME/.test-state-file" "$FAKE_HOME/.test-ro-file"
+
+capture bash -c "printf 'y\n' | (cd '$FAKE_HOME' && HOME='$FAKE_HOME' '$HOST_PYTHON3' -c \
+	'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))' \
+	'$SHELL' --norc --noprofile -c 'ls \"\$HOME/.test-state-dir\" >/dev/null && echo SYMLINK-DIR-OK')"
+assert_exit_code "store-symlink rwDir: sandbox starts from a home CWD" 0
+assert_output_contains "store-symlink rwDir: contents readable through the symlink" "SYMLINK-DIR-OK"
+
+rm -rf "$FAKE_HOME"
+
 print_results
 exit_status

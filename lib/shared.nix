@@ -130,6 +130,51 @@ let
         exit 1
       fi
     '';
+  # Emits a bash snippet that decides whether the wrapper may launch from the
+  # current directory, given where that directory sits relative to $HOME. It
+  # expects $CWD to be set, and to run while $HOME is still the real home (on
+  # macOS, before the ephemeral SANDBOX_HOME is created).
+  #
+  # The launch directory is always bound read-write, so launching from $HOME
+  # hands the agent the whole home directory: ssh keys, credentials, every
+  # other project. That is permitted — it follows from "the directory you
+  # launch from is writable" — but only after the user says so out loud, since
+  # nothing else in the session hints that the usual masking is gone.
+  #
+  # A CWD above $HOME is refused outright: it grants paths that aren't the
+  # user's to hand over (other users' homes, system state), and on Linux
+  # binding it over the sandbox root cannot work anyway.
+  #
+  # The prompt reads from /dev/tty rather than stdin, so it neither consumes
+  # input meant for the agent nor auto-answers itself when stdin is a pipe.
+  # With no controlling terminal there is nobody to ask, so it refuses: the
+  # confirmation is the only thing standing between an unattended run and a
+  # writable home, and there is deliberately no flag or env var to skip it.
+  assertHomeCwdAllowedBashStr =
+    # bash
+    ''
+      if [[ "$CWD" == "/" || "$HOME" == "$CWD"/* ]]; then
+        echo "${errorPrefix} refusing to launch from '$CWD': it sits above your home directory ($HOME), and the launch directory is always writable inside the sandbox." >&2
+        exit 1
+      fi
+      if [[ "$CWD" == "$HOME" ]]; then
+        if ! (exec < /dev/tty) 2>/dev/null; then
+          echo "${errorPrefix} refusing to launch from your home directory ($HOME) with no terminal to confirm on. The launch directory is always writable inside the sandbox, so this would expose your whole home to the agent unattended." >&2
+          exit 1
+        fi
+        echo "${warnPrefix} launching from your home directory ($HOME)." >&2
+        echo "${warnPrefix} the launch directory is bound read-write, so the agent can read and modify everything under it — ssh keys, credentials, browser state, every other project. Your home is not masked in this session." >&2
+        printf '%s' "${warnPrefix} continue? [y/N] " > /dev/tty
+        read -r _HOME_CWD_REPLY < /dev/tty || _HOME_CWD_REPLY=""
+        case "$_HOME_CWD_REPLY" in
+          y | Y | yes | Yes | YES) ;;
+          *)
+            echo "${errorPrefix} aborted — not launching from $HOME." >&2
+            exit 1
+            ;;
+        esac
+      fi
+    '';
   validateAllowedLocalPorts =
     allowedLocalPorts:
     if allowedLocalPorts == null then
@@ -191,4 +236,5 @@ in
   assertNoLegacyArgs = assertNoLegacyArgs;
   validateAllowedLocalPorts = validateAllowedLocalPorts;
   assertBindsExistBashStr = assertBindsExistBashStr;
+  assertHomeCwdAllowedBashStr = assertHomeCwdAllowedBashStr;
 }

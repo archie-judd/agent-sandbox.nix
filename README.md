@@ -18,6 +18,8 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 
 Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappears when the sandbox exits.
 
+The one exception is launching the agent from your home directory itself, which exposes it read-write like any other launch directory. That needs confirmation at the prompt — see [Launching from your home directory](#launching-from-your-home-directory).
+
 ## Contents
 
 <!-- vim-markdown-toc GFM -->
@@ -47,6 +49,7 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
 * [Security](#security)
     * [What it protects against](#what-it-protects-against)
     * [What it doesn't protect against](#what-it-doesnt-protect-against)
+    * [Launching from your home directory](#launching-from-your-home-directory)
     * [Specific things worth being aware of](#specific-things-worth-being-aware-of)
     * [Linux vs macOS](#linux-vs-macos)
     * [Is this the right tool for me?](#is-this-the-right-tool-for-me)
@@ -204,7 +207,7 @@ The sandbox has been tested with `claude-code` and `copilot-cli`. Other agents s
 
 ## Authentication
 
-Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys. The recommended approach is to authenticate via environment variable. Interactive login flows (e.g. `claude /login`, `gh auth login`) may not work inside the sandbox.
+Because `$HOME` is masked, agents cannot reach your system keychain, browser sessions, or SSH keys. Launching from your home directory is the exception, and exposes all of it (see [Launching from your home directory](#launching-from-your-home-directory)). The recommended approach is to authenticate via environment variable. Interactive login flows (e.g. `claude /login`, `gh auth login`) may not work inside the sandbox.
 
 ### Environment variable tokens (recommended)
 
@@ -294,7 +297,7 @@ SSH based remotes (e.g. `git@github.com:...`) won't work by default — SSH keys
 
 ### Git identity
 
-`$HOME` is masked inside the sandbox, so your global gitconfig is not visible and git's `user.name` / `user.email` are unset. The sandbox never fabricates an identity if none are provided. This means `git commit` without a declared identity fails loudly (`fatal: ... auto-detection is disabled`).
+`$HOME` is masked inside the sandbox, so your global gitconfig is not visible and git's `user.name` / `user.email` are unset. (Launching from your home directory is the exception: your real gitconfig is visible there, so identity resolves without any of the below.) The sandbox never fabricates an identity if none are provided. This means `git commit` without a declared identity fails loudly (`fatal: ... auto-detection is disabled`).
 
 To get correctly-attributed commits, declare a real identity in one of two ways:
 
@@ -317,7 +320,7 @@ To get correctly-attributed commits, declare a real identity in one of two ways:
       };
   ```
 
-> **Note:** do not run `git config --global ...` inside the sandbox — `$HOME` is an ephemeral tmpfs there, so it won't persist. Set your identity on the host and bind it, or use `env`.
+> **Note:** do not run `git config --global ...` inside the sandbox — `$HOME` is an ephemeral tmpfs there, so it won't persist. Set your identity on the host and bind it, or use `env`. (In a home-directory session it does persist, because it is writing your real gitconfig.)
 
 ## Using Nix inside the sandbox
 
@@ -390,6 +393,8 @@ curl https://example.com          # blocked domain — should fail
 
 See [`debug/bash.shell.nix`](debug/bash.shell.nix) for a ready-to-use template (has `allowedDomains` set to `httpbin.org` for testing).
 
+If the wrapper refuses to start at all with a message about your home directory, or (on older versions) dies with `bwrap: Can't create file at ...`, you are launching from `$HOME` or from a directory above it. See [Launching from your home directory](#launching-from-your-home-directory).
+
 ### Network access issues
 
 If you've set `allowedDomains` and requests are failing, check which domains are being blocked:
@@ -424,7 +429,7 @@ This section explains what the sandbox is and isn't designed to protect against,
 
 If the agent does something it shouldn't — runs a bad prompt, processes a malicious file, picks up a compromised dependency, or hallucinates a destructive command — the sandbox stops the damage from spreading outside the project directory. Concretely:
 
-- It can't read your SSH keys, browser sessions, password manager, other projects' source code, or anything else in your home directory outside the paths you explicitly expose.
+- It can't read your SSH keys, browser sessions, password manager, other projects' source code, or anything else in your home directory outside the paths you explicitly expose. This assumes you launch the agent from a project directory; launching from your home directory exposes all of it, and says so before it starts.
 - It can't delete or modify files outside the project directory and your declared `rwDirs` / `rwFiles`.
 - It can't reach the internet outside the domains you allow (when `allowedDomains` is set).
 - It can't talk to local services on your laptop — databases, dev servers, the SSH agent, other terminal windows, etc. — unless you explicitly allow host-local TCP ports with `allowedLocalPorts`.
@@ -440,8 +445,32 @@ The sandbox is an **isolation** boundary, not an **anonymity** boundary, and not
 - The agent can edit its own sandbox config. `flake.nix` lives inside the project directory and is writable from inside the sandbox. An agent could weaken its own restrictions for the *next* session. Changes don't take effect until you re-enter the dev shell, so it's worth reviewing `git diff` before you do.
 - No defense against root or kernel bugs. If something on your machine has already gained administrator-level access, or there's a deeper bug in the operating system itself, this sandbox can't stop it.
 
+### Launching from your home directory
+
+The launch directory is always read-write, so launching the agent from `$HOME` gives it your whole home directory: ssh keys, credential files, browser state, every other project. None of the masking described above applies in that session.
+
+This is allowed, because it follows from what the launch directory means, but the wrapper asks first:
+
+```
+[WARN][agent-sandbox.nix] launching from your home directory (/home/you).
+[WARN][agent-sandbox.nix] the launch directory is bound read-write, so the agent can
+read and modify everything under it — ssh keys, credentials, browser state, every
+other project. Your home is not masked in this session.
+[WARN][agent-sandbox.nix] continue? [y/N]
+```
+
+The prompt is read from `/dev/tty`, not stdin, so piping an answer in does not satisfy it. With no terminal to ask on (a script, a CI job, a headless run) the launch is refused. There is no flag or environment variable to skip the prompt: if you want an unattended session with your home exposed, declare the specific paths you need as `rwDirs` / `roDirs` and launch from somewhere else.
+
+A launch directory *above* `$HOME` (`/`, `/home`, `/Users`) is refused outright. Those paths reach past your own home, and no confirmation covers that.
+
+Two related behaviours change in a home-directory session:
+
+- A git repo rooted at `$HOME` (a dotfiles repo) keeps working. Elsewhere the sandbox refuses to expose a home-rooted repo and disables git for the session; here you have already said yes to the home, so refusing would protect nothing. A repo rooted *above* `$HOME` still disables git.
+- Your real `~/.gitconfig` and `~/.config/git/config` are visible, so git identity resolves from them without being declared as `roFiles`.
+
 ### Specific things worth being aware of
 
+- Launching from `$HOME` turns off home masking entirely — see [Launching from your home directory](#launching-from-your-home-directory). Everything below assumes you launch from a project directory.
 - Your username and home directory path are visible to the agent. This is unavoidable — the agent needs to know where `$HOME/.claude` resolves to. If your username is itself sensitive, this isn't the right tool.
 - All of `/nix/store` is readable, not just your allowed packages. Only execution is restricted to your allowlist. The Nix store is normally world-readable on any system, so this matches existing behavior, but it does mean the agent can list every package you've built.
 - `/tmp` is shared with the host. The agent can see (but not connect to) sockets and files other programs leave there. Don't put secrets in `/tmp` while the sandbox is running.

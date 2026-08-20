@@ -21,7 +21,12 @@
       Ephemeral tmpfs (empty, writable, lost on exit):
         /tmp    — scratch space
         $HOME   — prevents accidental reads of dotfiles; agent state
-                   dirs are bind-mounted back on top of this
+                   dirs are bind-mounted back on top of this.
+                   Launching from $HOME is the one case where this
+                   masking does not apply: $CWD is bound read-write
+                   over the tmpfs, so the real home is exposed. That
+                   needs an interactive confirmation — see
+                   assertHomeCwdAllowedBashStr in lib/shared.nix.
       Read-only bind mounts:
         $REPO_ROOT  — the git repo root, so git commands and reads of
                       files outside CWD work. CWD and GIT_DIR are
@@ -115,8 +120,6 @@ let
     ::1       localhost
   '';
   pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
-  bindDirsStr = builtins.concatStringsSep " " (map (dir: ''--bind "${dir}" "${dir}"'') rwDirs);
-  bindRoDirsStr = builtins.concatStringsSep " " (map (dir: ''--ro-bind "${dir}" "${dir}"'') roDirs);
   # Adds each rwDir / roDir to the BOUND_PREFIXES shell array at runtime
   stateDirsBoundPrefixBashStr = builtins.concatStringsSep "\n" (
     map (dir: ''BOUND_PREFIXES+=("${dir}")'') rwDirs
@@ -152,6 +155,14 @@ let
       RO_FILE_BINDS=""
       ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveFileBashStr rwFiles)}
       ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveRoFileBashStr roFiles)}
+
+      # rwDir / roDir binds, built at runtime for the same reason as the files
+      # above: a declared dir that is itself a symlink cannot be a mount
+      # destination once an enclosing bind has exposed it.
+      STATE_DIR_BINDS=""
+      RO_DIR_BINDS=""
+      ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveDirBashStr rwDirs)}
+      ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveRoDirBashStr roDirs)}
 
       # Scan rwDirs / roDirs for internal symlinks and bind their resolved
       # targets. Resolved targets are always bound read-only regardless of
@@ -227,7 +238,13 @@ let
         # GIT_DIR (=~/.git) read-write — and a home-rooted repo's object store holds
         # the history of tracked dotfiles (~/.ssh/config, tokens, etc.). There is no
         # safe partial exposure, so disable git for the session and warn instead.
-        if [[ "$HOME" == "$REPO_ROOT" || "$HOME" == "$REPO_ROOT"/* ]]; then
+        #
+        # The exception is launching from $HOME itself, where the user has already
+        # confirmed that the whole home is exposed read-write. Refusing git there
+        # would hide nothing and would break the case that motivates it: working on
+        # a home-rooted dotfiles repo. A root strictly above $HOME stays refused
+        # either way, since that reaches beyond the home the user consented to.
+        if [[ "$HOME" == "$REPO_ROOT"/* ]] || [[ "$HOME" == "$REPO_ROOT" && "$CWD" != "$HOME" ]]; then
           echo "${shared.warnPrefix} git root resolves to your home directory ($HOME) — refusing to expose it. git is disabled for this session." >&2
           # Empty so GIT_BIND/REPO_BIND stay unset and the `[[ -n ... ]]`
           # BOUND_PREFIXES guards below skip them too.
@@ -299,6 +316,7 @@ builtins.seq
               roFiles
               ;
           }}
+          ${shared.assertHomeCwdAllowedBashStr}
           ${gitDetectionBashStr}
           ${nixStoreBashStr}
           ${symlinkResolutionBashStr}
@@ -322,8 +340,8 @@ builtins.seq
             --tmpfs "$HOME" \
             $REPO_BIND \
             --bind "$CWD" "$CWD" \
-            ${bindDirsStr} \
-            ${bindRoDirsStr} \
+            $STATE_DIR_BINDS \
+            $RO_DIR_BINDS \
             $STATE_FILE_BINDS \
             $RO_FILE_BINDS \
             $SYMLINK_PARENT_DIRS \

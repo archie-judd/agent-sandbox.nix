@@ -19,14 +19,15 @@ SHELL_BIN="$SANDBOXED/bin/sandboxed-bash-bind-must-exist"
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
 TESTDIR=$(mktemp -d "$TESTDIR_ROOT/bind-must-exist.XXXXXX")
-trap 'rm -rf "$TESTDIR"' EXIT
-cd "$TESTDIR"
 
 # HOME is overridden per-invocation so the existence of the declared
 # rwDir/rwFile is entirely controlled by this test, independent of the
-# host's real $HOME contents.
-FAKE_HOME="$TESTDIR/home"
-mkdir -p "$FAKE_HOME"
+# host's real $HOME contents. It is a sibling of the launch directory, not a
+# child of it: launching from above $HOME is refused outright (see
+# test-home-cwd-confirm.sh), which would mask what these cases are testing.
+FAKE_HOME=$(mktemp -d "$TESTDIR_ROOT/bind-must-exist-home.XXXXXX")
+trap 'rm -rf "$TESTDIR" "$FAKE_HOME"' EXIT
+cd "$TESTDIR"
 
 DIR_PATH="$FAKE_HOME/.agent-sandbox-bind-must-exist/dir"
 FILE_PATH="$FAKE_HOME/.agent-sandbox-bind-must-exist/file"

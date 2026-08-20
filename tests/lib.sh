@@ -82,6 +82,30 @@ assert_output_equals() {
 	fi
 }
 
+assert_output_contains() {
+	local desc="$1" needle="$2"
+	if printf '%s' "$CAP_OUT" | grep -qF "$needle"; then
+		echo "PASS: $desc"
+		PASS=$((PASS + 1))
+	else
+		echo "FAIL: $desc (stdout missing: $needle)"
+		printf '%s\n' "$CAP_OUT" | sed 's/^/    /'
+		FAIL=$((FAIL + 1))
+	fi
+}
+
+assert_output_not_contains() {
+	local desc="$1" needle="$2"
+	if printf '%s' "$CAP_OUT" | grep -qF "$needle"; then
+		echo "FAIL: $desc (stdout unexpectedly contains: $needle)"
+		printf '%s\n' "$CAP_OUT" | sed 's/^/    /'
+		FAIL=$((FAIL + 1))
+	else
+		echo "PASS: $desc"
+		PASS=$((PASS + 1))
+	fi
+}
+
 assert_stderr_contains() {
 	local desc="$1" needle="$2"
 	if printf '%s' "$CAP_ERR" | grep -qF "$needle"; then

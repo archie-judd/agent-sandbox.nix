@@ -101,6 +101,12 @@
       up on exit via a trap. rwDirs and rwFiles are resolved
       to absolute paths before HOME is reassigned.
 
+      Launching from the real home is the one case where this
+      masking does not help: $CWD is granted read-write below, so
+      the real home is exposed whatever HOME points at. That needs
+      an interactive confirmation — see assertHomeCwdAllowedBashStr
+      in lib/shared.nix.
+
     Timezone:
       /private/var/db/timezone — so date/time formatting works.
 
@@ -342,7 +348,14 @@ let
       # and GIT_DIR (=~/.git) file-read*/write* — and a home-rooted repo's object
       # store holds the history of tracked dotfiles (~/.ssh/config, tokens, etc.).
       # No safe partial exposure exists, so disable git for the session and warn.
-      if [[ -n "$REPO_ROOT" ]] && [[ "$HOME" == "$REPO_ROOT" || "$HOME" == "$REPO_ROOT"/* ]]; then
+      #
+      # The exception is launching from $HOME itself, where the user has already
+      # confirmed that the whole home is exposed read-write. Refusing git there
+      # would hide nothing and would break the case that motivates it: working on
+      # a home-rooted dotfiles repo. A root strictly above $HOME stays refused
+      # either way, since that reaches beyond the home the user consented to.
+      if [[ -n "$REPO_ROOT" ]] &&
+        { [[ "$HOME" == "$REPO_ROOT"/* ]] || [[ "$HOME" == "$REPO_ROOT" && "$CWD" != "$HOME" ]]; }; then
           echo "${shared.warnPrefix} git root resolves to your home directory ($HOME) — refusing to expose it. git is disabled for this session." >&2
           REPO_ROOT=""
       fi
@@ -515,6 +528,8 @@ builtins.seq
           CWD=$(pwd)
 
           ${shared.assertBindsExistBashStr { inherit rwDirs rwFiles roDirs roFiles; }}
+
+          ${shared.assertHomeCwdAllowedBashStr}
 
           ${gitDetectionBashStr}
           ${ttyDetectionBashStr}

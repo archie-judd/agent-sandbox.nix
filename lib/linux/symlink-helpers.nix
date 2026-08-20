@@ -112,16 +112,30 @@
   # and then bind the final nix store target at the declared path so the file
   # is accessible where callers expect it. Otherwise bind directly.
   # Appends to STATE_FILE_BINDS at runtime.
+  #
+  # The bind at the declared path is skipped when an enclosing bind (typically
+  # CWD, when the agent is launched from $HOME) already exposes the real
+  # symlink. bwrap resolves mount destinations against its own intermediate
+  # root, where an absolute symlink target does not exist, so it cannot create
+  # a mountpoint on top of one and dies with "Can't create file at ...". No
+  # ordering of the binds avoids this. Nothing is lost by skipping: the
+  # covering bind exposes the symlink, and _follow_symlink_chain has bound its
+  # targets, so the file resolves inside the sandbox anyway.
+  #
+  # The test is on the parent, not the path itself: declared dirs are their own
+  # entries in BOUND_PREFIXES, so asking about the path would always say yes.
   mkResolveFileBashStr =
     file:
     # bash
     ''
       if [[ -L "${file}" ]]; then
         _follow_symlink_chain "${file}"
-        _final=$(${pkgs.coreutils}/bin/readlink -f "${file}" 2>/dev/null)
-        if [[ "$_final" == /nix/store/* ]]; then
-          STATE_FILE_BINDS="$STATE_FILE_BINDS --bind $_final ${file}"
-          _ensure_parent_dirs "${file}"
+        if ! _is_already_bound "$(dirname "${file}")"; then
+          _final=$(${pkgs.coreutils}/bin/readlink -f "${file}" 2>/dev/null)
+          if [[ "$_final" == /nix/store/* ]]; then
+            STATE_FILE_BINDS="$STATE_FILE_BINDS --bind $_final ${file}"
+            _ensure_parent_dirs "${file}"
+          fi
         fi
       else
         STATE_FILE_BINDS="$STATE_FILE_BINDS --bind ${file} ${file}"
@@ -135,13 +149,49 @@
     ''
       if [[ -L "${file}" ]]; then
         _follow_symlink_chain "${file}"
-        _final=$(${pkgs.coreutils}/bin/readlink -f "${file}" 2>/dev/null)
-        if [[ "$_final" == /nix/store/* ]]; then
-          RO_FILE_BINDS="$RO_FILE_BINDS --ro-bind $_final ${file}"
-          _ensure_parent_dirs "${file}"
+        if ! _is_already_bound "$(dirname "${file}")"; then
+          _final=$(${pkgs.coreutils}/bin/readlink -f "${file}" 2>/dev/null)
+          if [[ "$_final" == /nix/store/* ]]; then
+            RO_FILE_BINDS="$RO_FILE_BINDS --ro-bind $_final ${file}"
+            _ensure_parent_dirs "${file}"
+          fi
         fi
       else
         RO_FILE_BINDS="$RO_FILE_BINDS --ro-bind ${file} ${file}"
+      fi
+    '';
+
+  # Per-rwDir: bind the declared path, except when the dir is itself a symlink
+  # whose parent is already bound — the same unmountable-destination case the
+  # file generators above avoid. A non-symlink dir is always bound, so a roDir
+  # keeps its read-only mode even inside a read-write CWD.
+  # Appends to STATE_DIR_BINDS at runtime.
+  mkResolveDirBashStr =
+    dir:
+    # bash
+    ''
+      if [[ -L "${dir}" ]]; then
+        _follow_symlink_chain "${dir}"
+        if ! _is_already_bound "$(dirname "${dir}")"; then
+          STATE_DIR_BINDS="$STATE_DIR_BINDS --bind ${dir} ${dir}"
+        fi
+      else
+        STATE_DIR_BINDS="$STATE_DIR_BINDS --bind ${dir} ${dir}"
+      fi
+    '';
+
+  # Per-roDir: same shape as mkResolveDirBashStr but binds read-only.
+  mkResolveRoDirBashStr =
+    dir:
+    # bash
+    ''
+      if [[ -L "${dir}" ]]; then
+        _follow_symlink_chain "${dir}"
+        if ! _is_already_bound "$(dirname "${dir}")"; then
+          RO_DIR_BINDS="$RO_DIR_BINDS --ro-bind ${dir} ${dir}"
+        fi
+      else
+        RO_DIR_BINDS="$RO_DIR_BINDS --ro-bind ${dir} ${dir}"
       fi
     '';
 

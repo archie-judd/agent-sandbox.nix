@@ -72,5 +72,29 @@ expect_fail "git does not see the home repo from inside the sandbox" "git rev-pa
 expect_ok "CWD remains readable" "cat ./project.txt"
 expect_ok "CWD remains writable" "touch ./test-write && rm ./test-write"
 
+# 5. A git root strictly *above* $HOME is refused the same way. This branch
+#    stays unconditional: launching from $HOME itself grants the home by
+#    consent (see test-home-cwd-confirm.sh), but a repo rooted above it would
+#    reach further — other users' homes, system state — which no confirmation
+#    covers. Layout: repo root / home / project, with HOME in the middle.
+OUTER_REPO=$(mktemp -d "$TESTDIR_ROOT/git-root-above-home.XXXXXX")
+trap 'rm -rf "$FAKE_HOME" "$OUTER_REPO"' EXIT
+git -C "$OUTER_REPO" init -q
+echo "outer-secret-content" >"$OUTER_REPO/outer-secret.txt"
+mkdir -p "$OUTER_REPO/home/project"
+
+run() { (cd "$OUTER_REPO/home/project" && HOME="$OUTER_REPO/home" "$SHELL" --norc --noprofile -c "$@") >/dev/null 2>&1; }
+
+WARN_OUT=$( (cd "$OUTER_REPO/home/project" && HOME="$OUTER_REPO/home" "$SHELL" --norc --noprofile -c 'true') 2>&1 >/dev/null || true)
+if echo "$WARN_OUT" | grep -q "git is disabled for this session"; then
+	echo "PASS: warns that git is disabled when the root is above \$HOME"
+	PASS=$((PASS + 1))
+else
+	echo "FAIL: expected above-home-git-root warning on stderr, got: $WARN_OUT"
+	FAIL=$((FAIL + 1))
+fi
+expect_fail "cannot read the repo root above home" "cat ../../outer-secret.txt"
+expect_fail "git does not see the repo rooted above home" "git rev-parse --git-dir"
+
 print_results
 exit_status
