@@ -17,7 +17,9 @@
         /etc/ssl/certs   — TLS certificate verification
       Kernel filesystems:
         /proc   — mounted as a new procfs (only shows sandbox PIDs)
-        /dev    — minimal devtmpfs (null, zero, urandom, etc.)
+        /dev    — minimal devtmpfs (null, zero, urandom, etc.). When
+                  allowGpu is set, /dev/dri (DRM render + card nodes) is
+                  additionally dev-bound in from the host.
       Ephemeral tmpfs (empty, writable, lost on exit):
         /tmp    — scratch space
         $HOME   — prevents accidental reads of dotfiles; agent state
@@ -81,6 +83,11 @@
   outName,
   allowedPackages,
   allowNix ? false,
+  # If true, bind-mounts the host's /dev/dri into the sandbox for
+  # hardware-accelerated GPU access. Requires the host user to already be
+  # in the "render" or "video" group — this only exposes the device, it
+  # doesn't grant new permissions.
+  allowGpu ? false,
   rwDirs ? [ ],
   rwFiles ? [ ],
   roDirs ? [ ],
@@ -120,6 +127,12 @@ let
     ::1       localhost
   '';
   pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
+  # dev-bind (not --bind) preserves device-node semantics so /dev/dri stays
+  # usable; -try skips it silently when the host has no GPU. /sys is also
+  # bound so GPU detection can resolve the device, at the cost of exposing
+  # the full host device topology read-only.
+  gpuBwrapStr =
+    if allowGpu then ''--dev-bind-try /dev/dri /dev/dri --ro-bind-try /sys /sys'' else "";
   # Adds each rwDir / roDir to the BOUND_PREFIXES shell array at runtime
   stateDirsBoundPrefixBashStr = builtins.concatStringsSep "\n" (
     map (dir: ''BOUND_PREFIXES+=("${dir}")'') rwDirs
@@ -362,6 +375,7 @@ builtins.seq
             --ro-bind ${emptyFile} /proc/cmdline \
             --ro-bind ${emptyFile} /proc/sys/kernel/random/boot_id \
             --dev /dev \
+            ${gpuBwrapStr} \
             --tmpfs /tmp \
             --tmpfs "$HOME" \
             $REPO_BIND \
