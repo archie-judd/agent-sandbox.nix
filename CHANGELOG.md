@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.4.1...v2.5.0) (2026-08-23)
+
+
+### Features
+
+* TODO.md ([8543e1e](https://github.com/archie-judd/agent-sandbox.nix/commit/8543e1eb37e446259cecc473f4f4ea9d8d0d4062))
+
+
+### Bug Fixes
+
+* **proxy:** disallow addresses resolving to loopback ([#86](https://github.com/archie-judd/agent-sandbox.nix/issues/86)) ([8265aa5](https://github.com/archie-judd/agent-sandbox.nix/commit/8265aa50592d5c3aa3559e7115702bcb8ac399a0))
+
 ## [2.4.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.4.0...v2.4.1) (2026-08-20)
 
 
