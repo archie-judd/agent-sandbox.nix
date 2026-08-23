@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -315,22 +316,102 @@ func requestURLLength(req *http.Request) int {
 	return len(req.URL.String())
 }
 
-// applyFilters checks method, URL length, and WebSocket restrictions.
-// Returns an HTTP status code and reason if blocked, or 0 if allowed.
-// Callers must check isDomainAllowed first; this only applies per-request filters.
+// hasRequestBody reports whether req carries a body, in either the
+// Content-Length or the chunked transfer-encoding framing.
+func hasRequestBody(req *http.Request) bool {
+	if req.ContentLength > 0 {
+		return true
+	}
+	for _, encoding := range req.TransferEncoding {
+		if strings.EqualFold(encoding, "chunked") {
+			return true
+		}
+	}
+	return false
+}
+
+// applyFilters checks method, URL length, request body and WebSocket
+// restrictions. Returns an HTTP status code and reason if blocked, or 0 if
+// allowed. Callers must check isDomainAllowed first; this only applies
+// per-request filters.
 func applyFilters(req *http.Request, host string, cfg Config) (int, string) {
-	if !isMethodAllowed(host, req.Method, cfg) {
+	// Normalise once and use the same value for every check below. Comparing
+	// the uppercased method against the policy but the raw one against the
+	// GET/HEAD checks let "-X get" satisfy a GET policy and then skip the
+	// restrictions that policy is supposed to carry.
+	normalizedMethod := strings.ToUpper(req.Method)
+	if !isMethodAllowed(host, normalizedMethod, cfg) {
 		return http.StatusForbidden, "method not allowed"
 	}
-	// URL length is only enforced for GET/HEAD where the URL carries the
-	// full query; POST/PUT etc. use the request body for payload data.
-	if (req.Method == "GET" || req.Method == "HEAD") && requestURLLength(req) > maxURLBytes {
+	if requestURLLength(req) > maxURLBytes {
 		return http.StatusRequestURITooLong, "URL too long"
+	}
+	// A body on GET or HEAD is forwarded verbatim, so a read-only method
+	// policy would not be read-only: the origin may act on what it carries.
+	if (normalizedMethod == "GET" || normalizedMethod == "HEAD") && hasRequestBody(req) {
+		return http.StatusForbidden, "body not allowed on this method"
 	}
 	if isWebSocketUpgrade(req) {
 		return http.StatusForbidden, "WebSocket not allowed"
 	}
 	return 0, ""
+}
+
+// errBlockedAddress marks a refusal to dial an address the policy forbids, as
+// distinct from a dial that was attempted and failed. Callers use it to answer
+// 403 rather than 502 so a refusal is distinguishable from an unreachable host.
+var errBlockedAddress = errors.New("host resolves to a blocked address")
+
+// isBlockedAddr reports whether ip is an address the proxy must never dial.
+//
+// The allowlist matches names, and the address behind a name is chosen by
+// whoever controls its DNS. Without this check, an allowlisted name pointed at
+// 127.0.0.1 would reach exactly the host services allowedLocalPorts exists to
+// gate, since the proxy runs on the host and none of the sandbox's network
+// confinement applies to it.
+//
+// Private ranges (10/8, 172.16/12, 192.168/16) are deliberately not blocked.
+// They are the network around the host rather than the host itself, and
+// allowlisting an internal company server is a legitimate configuration that
+// allowedLocalPorts cannot express.
+func isBlockedAddr(ip net.IP) bool {
+	// Judge an IPv4-mapped address such as ::ffff:127.0.0.1 by its v4 value.
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	return ip.IsLoopback() ||
+		ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast()
+}
+
+// resolveVetted resolves host once and returns an "ip:port" literal safe to
+// dial. It refuses if any returned address is blocked. The caller dials the
+// returned literal rather than the name, so a second lookup answering with a
+// blocked address after the check has nothing to win.
+func resolveVetted(host, port string) (string, error) {
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return "", err
+	}
+	if len(ips) == 0 {
+		return "", fmt.Errorf("no addresses for %q", host)
+	}
+	for _, ip := range ips {
+		if isBlockedAddr(ip) {
+			return "", fmt.Errorf("%q resolves to %s: %w", host, ip, errBlockedAddress)
+		}
+	}
+	return net.JoinHostPort(ips[0].String(), port), nil
+}
+
+// dialFailureStatus maps an upstream dial failure to the status the client
+// sees: a policy refusal is 403, an unreachable host is 502.
+func dialFailureStatus(err error) int {
+	if errors.Is(err, errBlockedAddress) {
+		return http.StatusForbidden
+	}
+	return http.StatusBadGateway
 }
 
 func main() {
@@ -437,6 +518,22 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 			}
 			req.URL.Host = addr
 			req.URL.Scheme = "http"
+		} else {
+			// Same substitution as the redirect above, but with a vetted
+			// literal, so the transport dials the address that was checked
+			// instead of resolving the name a second time.
+			vetted, err := resolveVetted(host, "80")
+			if err != nil {
+				code := dialFailureStatus(err)
+				fmt.Fprintf(os.Stderr, "%s blocked %s %s (%v)\n",
+					time.Now().Format(time.RFC3339), req.Method, req.URL, err)
+				fmt.Fprintf(conn, "HTTP/1.1 %d %s\r\n\r\n", code, http.StatusText(code))
+				return
+			}
+			if req.Host == "" {
+				req.Host = req.URL.Host
+			}
+			req.URL.Host = vetted
 		}
 		req.RequestURI = "" // Must be empty for RoundTrip
 		resp, err := directTransport.RoundTrip(req)
@@ -480,9 +577,23 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		var conn net.Conn
 		var err error
 		if addr, ok := lookupRedirect(host, redirects); ok {
+			// Redirects are the test harness's escape hatch and deliberately
+			// point at a local address, so they skip vetting. The env var that
+			// sets them is not part of the public API.
 			conn, err = net.Dial("tcp", addr)
 		} else {
-			conn, err = tls.Dial("tcp", hostPort, &tls.Config{ServerName: host})
+			port := portOf(hostPort)
+			if port == "" {
+				port = "443"
+			}
+			var vetted string
+			vetted, err = resolveVetted(host, port)
+			if err != nil {
+				return err
+			}
+			// ServerName stays the requested name so the upstream certificate
+			// is still validated against it and not against the literal.
+			conn, err = tls.Dial("tcp", vetted, &tls.Config{ServerName: host})
 		}
 		if err != nil {
 			return err
@@ -524,8 +635,10 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		// Dial upstream on first allowed request
 		if err := dialUpstream(); err != nil {
 			fmt.Fprintf(os.Stderr, "%s upstream dial error for %s: %v\n", time.Now().Format(time.RFC3339), hostPort, err)
+			code := dialFailureStatus(err)
 			resp := &http.Response{
-				StatusCode: http.StatusBadGateway,
+				StatusCode: code,
+				Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
 				ProtoMajor: 1,
 				ProtoMinor: 1,
 				Header:     make(http.Header),

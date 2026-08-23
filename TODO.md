@@ -179,18 +179,31 @@ protection fixes are wholly or partly superseded by 147d9af and are not listed.
 
 ### S1. Proxy fixes
 
-Not started. 2 files. 1.5 days.
+Done. 4 files.
 
-`proxy/main.go` only, plus the README's statement of what method filtering
+`proxy/main.go` and `proxy/main_test.go`, plus `tests/shared/test-proxy-unit.sh`
+to run the new tests and the README's statement of what method filtering
 guarantees. No interaction with any unit below, since the plan never touches the
 proxy.
 
 Three defects. `net.Dial("tcp", addr)` dials the resolved name with no address
-vetting, so an allowlisted domain resolving to a loopback or RFC1918 address
+vetting, so an allowlisted domain resolving to a loopback ~~or RFC1918~~ address
 reaches exactly the host services `allowedLocalPorts` exists to gate. Resolve
-once, reject the answer if any address is loopback, link-local, private or an
+once, reject the answer if any address is loopback, link-local, ~~private~~ or an
 IPv4-mapped form of one, then dial a vetted literal so a rebind between check and
 connect has nothing to win.
+
+Scope narrowed on implementation: private ranges (10/8, 172.16/12, 192.168/16,
+fc00::/7) are deliberately left dialable. They are the network around the host
+rather than the host itself, allowlisting an internal company server by name is
+a legitimate configuration, and `allowedLocalPorts` cannot express it. Blocking
+them would have needed an opt-out argument, which is wider than S1. The
+loopback, link-local and unspecified cases are refused, which is what the
+README's promise that `allowedDomains` never grants host-local access requires.
+
+The `SANDBOX_PROXY_REDIRECT` path skips vetting. It is the test harness's escape
+hatch and points at a local httpbin on purpose, so vetting it would break every
+network test.
 
 Request bodies are never inspected and are forwarded verbatim, so a `[ GET ]`
 policy is not read-only. Refuse GET and HEAD carrying a body, detecting both
@@ -201,8 +214,12 @@ URL cap, so `curl -X get` passes the policy and skips the cap. Normalise once at
 the top and use it for both. `maxURLBytes` should apply to every method, not
 only GET and HEAD. The CONNECT dispatch stays exact-case deliberately.
 
+The tests are Go unit tests, the first in the repo. `tests/run-all.sh` picks
+them up through its existing `shared/test-*.sh` glob, so CI runs them with no
+workflow change.
+
 Acceptance: the suite passes, plus new tests that an allowlisted domain
-resolving to a loopback or private address is refused, that a GET carrying a
+resolving to a loopback ~~or private~~ address is refused, that a GET carrying a
 body is refused under a GET-only policy in both the `Content-Length` and chunked
 framings, that `-X get` with a body is refused by the same guard, and that the
 URL cap applies to POST.
