@@ -226,9 +226,10 @@ URL cap applies to POST.
 
 ### S2. Refuse nested binds on macOS
 
-Not started. 1 file. 0.5 days.
+Done. 3 files.
 
-`lib/darwin/default.nix` only. Small, and deliberately not the full fix.
+`lib/darwin/default.nix`, plus `tests/darwin/test-nested-binds-refused.sh` and
+`tests/fixtures/nested-binds.nix`. Small, and deliberately not the full fix.
 
 `mkSymlinkHomeMappingStr` plants each declared bind into the sandbox HOME in
 declaration order. `mkdir -p` follows a symlink planted earlier in the same
@@ -247,6 +248,20 @@ and leaves almost nothing for unit 6 to unpick.
 Resolving nesting properly (register every bind first, plant shallowest-first,
 refuse only where two declarations genuinely disagree about the host path) is
 unit 9. It is far cheaper written against the restructured code.
+
+Scope on implementation: the walk also refuses when the bind's own destination
+in the sandbox HOME is already occupied. Without that, the reverse declaration
+order (the inner path declared first, its ancestor second) still plants the
+ancestor one level too deep and the bind silently does not exist inside the
+sandbox. Declaring the same path twice is refused by the same check.
+
+The `ln` on the host happens to survive one shape of this: where the declared
+file is a plain file, source and destination resolve to the same inode and GNU
+`ln` refuses. The destructive shape is a declared file that is itself a host
+symlink (a dotfiles setup), which is replaced by a link pointing at itself.
+
+The README gains one sentence, since the refusal is user-facing. The behaviour
+change is recorded in the commit message for the release notes.
 
 Acceptance: the suite passes, plus a new test that a `roFiles` entry declared
 under an `rwDirs` ancestor refuses at launch and leaves the real host file

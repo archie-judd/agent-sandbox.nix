@@ -289,11 +289,57 @@ let
     map (p: ''_RESOLVED_${p.name}="${p.path}"'') roFileParams
   );
 
+  # Guard the symlink planting below. Each declared path is planted into the
+  # sandbox HOME in declaration order, so a path declared under a path already
+  # planted resolves through that earlier symlink and back out into the real
+  # home: `mkdir -p` creates directories there and `ln -sfn` unlinks whatever
+  # the destination resolves to, destroying the very file the bind was meant to
+  # expose. Refuse before planting anything.
+  #
+  # This only stops the damage. Supporting nested declarations (register every
+  # bind first, plant shallowest-first, refuse only where two declarations
+  # genuinely disagree about the host path) is a separate change.
+  nestedBindGuardBashStr =
+    # bash
+    ''
+      _assert_not_nested() {
+        local _label="$1" _declared="$2" _rel="''${3%/}"
+        local _path="$SANDBOX_HOME" _component _problem=""
+        local -a _components
+        IFS=/ read -ra _components <<< "$_rel"
+        local _last=$(( ''${#_components[@]} - 1 )) _i=0
+        for _component in "''${_components[@]}"; do
+          if [ -n "$_component" ]; then
+            _path="$_path/$_component"
+            if [ "$_i" -eq "$_last" ]; then
+              # The bind's own destination. Anything already here was put there
+              # by an earlier declaration, either of this same path or of one
+              # nested under it.
+              if [ -e "$_path" ] || [ -L "$_path" ]; then
+                _problem="another declaration already occupies this path inside the sandbox home. Overlapping binds are not supported: only one of the two would be planted where you expect it. Declare this path once, and not alongside a path nested under it."
+              fi
+            elif [ -L "$_path" ] || { [ -e "$_path" ] && [ ! -d "$_path" ]; }; then
+              # An ancestor planted by an earlier declaration. Both `mkdir -p`
+              # and `ln -sfn` would follow it out of the sandbox home.
+              _problem="it is nested inside $REAL_HOME/''${_path#"$SANDBOX_HOME"/}, which is also declared. Nested binds are not supported: planting this one would follow the outer bind out into your real home and overwrite the file there. Remove this declaration (the outer bind already exposes the path), or narrow the outer one."
+            fi
+            if [ -n "$_problem" ]; then
+              echo "${shared.errorPrefix} $_declared: declared as $_label but $_problem" >&2
+              rm -rf "$SANDBOX_HOME"
+              rm -f "$_SANDBOX_PASSWD"
+              exit 1
+            fi
+          fi
+          _i=$(( _i + 1 ))
+        done
+      }
+    '';
+
   # Symlink resolved state paths into the sandbox HOME so that
   # $HOME-relative lookups land on the real paths. Only creates
   # symlinks for paths that actually live under the real HOME.
   mkSymlinkHomeMappingStr =
-    params:
+    label: params:
     builtins.concatStringsSep "\n" (
       map (
         p:
@@ -301,15 +347,16 @@ let
         ''
           if [[ "$_RESOLVED_${p.name}" == "$REAL_HOME"/* ]]; then
             _REL="''${_RESOLVED_${p.name}#$REAL_HOME/}"
+            _assert_not_nested "${label}" "$_RESOLVED_${p.name}" "$_REL"
             mkdir -p "$SANDBOX_HOME/$(dirname "$_REL")"
             ln -sfn "$_RESOLVED_${p.name}" "$SANDBOX_HOME/$_REL"
           fi'') params
     );
 
-  symlinkStateDirsStr = mkSymlinkHomeMappingStr stateDirParams;
-  symlinkStateFilesStr = mkSymlinkHomeMappingStr stateFileParams;
-  symlinkRoDirsStr = mkSymlinkHomeMappingStr roDirParams;
-  symlinkRoFilesStr = mkSymlinkHomeMappingStr roFileParams;
+  symlinkStateDirsStr = mkSymlinkHomeMappingStr "rwDir" stateDirParams;
+  symlinkStateFilesStr = mkSymlinkHomeMappingStr "rwFile" stateFileParams;
+  symlinkRoDirsStr = mkSymlinkHomeMappingStr "roDir" roDirParams;
+  symlinkRoFilesStr = mkSymlinkHomeMappingStr "roFile" roFileParams;
 
   extraEnvInlineStr = builtins.concatStringsSep " \\\n        " (
     map (name: "${name}=${builtins.toJSON env.${name}}") (builtins.attrNames env)
@@ -577,6 +624,7 @@ builtins.seq
 
           # Symlink state / ro dirs/files into sandbox HOME so $HOME-relative
           # lookups reach the real paths through the Seatbelt-allowed targets.
+          ${nestedBindGuardBashStr}
           ${symlinkStateDirsStr}
           ${symlinkStateFilesStr}
           ${symlinkRoDirsStr}
