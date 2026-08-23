@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.5.0...v2.5.1) (2026-08-23)
+
+
+### Bug Fixes
+
+* **darwin:** refuse binds nested inside another declared bind ([#87](https://github.com/archie-judd/agent-sandbox.nix/issues/87)) ([bd51a8b](https://github.com/archie-judd/agent-sandbox.nix/commit/bd51a8b030c796cbbdbab89c76fab79fe7c26e57))
+
 ## [2.5.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.4.1...v2.5.0) (2026-08-23)
 
 
