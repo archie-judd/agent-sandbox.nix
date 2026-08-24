@@ -130,7 +130,8 @@ launcher/
   session_state.py         SessionState, ProxyState
   launch_checks.py         get_launch_refusals, and the only prompt in the program
   launch_config/
-    shared.py              SandboxLaunchConfig, write_launch_config
+    shared.py              SandboxLaunchConfig, get_usable_git_state
+    write.py               write_launch_config, the only file-format knowledge
     linux.py               SandboxLaunchConfigLinux, compute_launch_config
     darwin.py              SandboxLaunchConfigDarwin, compute_launch_config
     seatbelt.py            static profile sections, data only
@@ -149,6 +150,12 @@ seatbelt ordering between them.
 `launch_checks.py` stays separate from `host_state.py` because folding it in
 would put policy inside the observation module, which is the boundary the whole
 design rests on.
+
+`write_launch_config` ended up in its own module rather than in `shared.py`,
+because it has to see both platform configurations and both of those import the
+base from `shared`, so putting the writer there makes the imports circular.
+`shared.py` holds the base dataclass and `get_usable_git_state`, the one
+decision both platforms make identically.
 
 ### Python constraints
 
@@ -171,7 +178,9 @@ Frozen dataclasses only, with `__post_init__` for validation. Everything else is
 a function or a primitive. No mutable module-level state. Module-level constants
 are fine.
 
-mypy strict, fully annotated.
+mypy strict, fully annotated. pyright is in the devshell as well and is the
+faster loop while writing; mypy is what `pyproject.toml` configures and what
+CI should gate on.
 
 No nested functions. A function defined inside another closes over its enclosing
 locals, which is the same invisible-scope problem the whole port exists to
@@ -324,12 +333,20 @@ Loopback and link-local resolutions are refused by the proxy. Shipped in S1.
 ## Secrets
 
 `env` values never touch disk. Both platforms pass them as `K=V` arguments to
-`env -i`, so the args file and the profile stay free of them and the session
-directory copy is verbatim and publishable. Linux drops bubblewrap's
-`--clearenv` and `--setenv` to get there, which has the side benefit of moving
-the values off `/proc/<pid>/cmdline`, readable by any user on the host, and into
+`env -i`, so no artifact and no part of the profile holds them, and the session
+directory is verbatim and publishable. Linux drops bubblewrap's `--clearenv` and
+`--setenv` to get there, which also moves the values off the sandboxed process's
+`/proc/<pid>/cmdline`, readable by any user on the host, and into
 `/proc/<pid>/environ`, readable only by its owner. Nothing needs redacting,
 which is better than redacting correctly.
+
+One qualification, since the sentence above used to claim more than the code
+does. The values are arguments to `env`, so they are on `env`'s own cmdline for
+as long as that process lives, which is the microseconds before it execs. They
+are off the cmdline of everything that runs afterwards, which is the whole
+session. That is strictly better than the `--setenv` it replaced, where they sat
+on bubblewrap's cmdline for the entire run, but it is not absolute and a local
+attacker polling `/proc` could win the race.
 
 `startup.log`, once unit 3 adds it, records env keys without values, from the
 keys-only list the spec already carries. Building that list in Nix from the same
@@ -359,8 +376,8 @@ manifest that would otherwise pass between Python and bash.
 <root>/<timestamp>-<pid>-<outName>/
   argv-before-env   NUL-separated
   argv-after-env    NUL-separated
-  bwrap.args        Linux, NUL-separated
-  nft.rules         Linux
+  bwrap.args        Linux, NUL-separated, for reading only. See unit 2.
+  network.json      Linux: the nft ruleset, the sysctls, the route decision
   seatbelt.sb       macOS
   passwd
   ca-bundle.pem     restricted mode only
@@ -368,7 +385,16 @@ manifest that would otherwise pass between Python and bash.
   proxy.pid         restricted mode only
   proxy.log         restricted mode only
   cleanup           NUL-separated paths to remove on exit
+  cleanup-if-empty  NUL-separated, removed only if still empty
 ```
+
+`nft.rules` became `network.json` because the in-namespace entry point applies
+three kinds of thing, not one: the ruleset, the `/proc/sys` writes a ruleset
+cannot express, and whether to drop the default route. JSON because a boolean
+does not belong in a file of nft syntax. `cleanup-if-empty` is separate from
+`cleanup` because bubblewrap materialises a mount point on the host for a git
+protected file that did not exist at launch, and that has to go, but not if
+something has written real content there in the meantime.
 
 Everything except the sandbox home sits here at a fixed name. That is what lets
 the stub read what it needs without being told, and what keeps `SessionState`
@@ -524,7 +550,7 @@ Acceptance: the suite passes, plus a new test that no
 
 ### 1. Test housekeeping
 
-Not started. Around 25 files, almost all mechanical. 1 day.
+Done in 65167a3. Around 25 files, almost all mechanical.
 
 Three unrelated fixes, batched because they all touch the suite and none is
 worth its own PR.
@@ -551,7 +577,9 @@ Acceptance: the suite passes, and passes identically on a machine whose ambient
 
 ### 2. The port
 
-Not started. Most of `lib/`, plus new `build/` and `launch/`. 5 to 8 days.
+Done. macOS cut over in 0a198da, Linux in 2963454, with four fixes between them.
+The `build/` and `launch/` directories were dropped on the way, for the reason
+under Directory layout above.
 
 Both backends in one pass. `lib/shared.nix` feeds both, so splitting Linux and
 macOS into separate PRs means porting the git protected-path enumeration twice
@@ -706,16 +734,28 @@ today and never varies, so it is a Python constant, as is the proxy startup
 deadline.
 
 ```python
+class Symlink:                        # a symlink on the host
+    path: Path
+    points_to: Path                   # what it says, not where it ends up
+
+class SymlinkHop:                     # one link, followed once
+    points_to: Path                   # physical
+    parent_symlinks: tuple[Symlink, ...]
+
+class SymlinkChain:
+    hops: tuple[SymlinkHop, ...]      # empty when the path is not a symlink
+
 class DeclaredPath:
     unexpanded_path: str              # "$HOME/.claude", for diagnostics
     expanded_path: Path
     mode: Literal["rw", "ro"]
     exists: bool
-    symlink_chain: tuple[Path, ...]   # empty when the path is not a symlink
+    symlink_chain: SymlinkChain
+    parent_symlinks: tuple[Symlink, ...]
 
 class DeclaredFile(DeclaredPath): ...
 class DeclaredDir(DeclaredPath):
-    inner_symlinks: tuple[tuple[Path, ...], ...]
+    inner_symlinks: tuple[SymlinkChain, ...]
 
 class GitState:
     common_dir: Path
@@ -796,7 +836,7 @@ argv_before_env   Linux  pasta ... -- <nft entry> nft.rules
 
 <declared K=V>           from the Nix env fragment, sourced by the stub
 
-argv_after_env    Linux  bwrap --args 3  pre-entry  sandboxed-binary
+argv_after_env    Linux  bwrap <computed args>  pre-entry  sandboxed-binary
                   macOS  sandbox-exec -f seatbelt.sb  pre-entry  sandboxed-binary
 
 "$@"                     the stub's own arguments
@@ -811,25 +851,22 @@ Linux drops `--clearenv` and `--setenv` so both platforms use the `K=V` form and
 the Nix env fragment has one shape. Bubblewrap without `--clearenv` passes its
 own environment through, so `env -i K=V ... bwrap` reaches the same end state.
 
-The stub, in full, byte-identical for every build:
+The stub, in full, byte-identical for every build and with no conditional left
+in it:
 
 ```bash
 SESSION_DIR=$("@python@" -P -s -S -m launcher.prepare "@spec@") || exit 1
 trap '"@python@" -P -s -S -m launcher.cleanup "$SESSION_DIR"' EXIT
-source "$SESSION_DIR/../env-fragment"          # sets DECLARED_ENV=( K=V ... )
+source "@envFragment@"                         # sets DECLARED_ENV=( K=V ... )
 mapfile -d "" ARGV_BEFORE_ENV < "$SESSION_DIR/argv-before-env"
 mapfile -d "" ARGV_AFTER_ENV  < "$SESSION_DIR/argv-after-env"
-[ -e "$SESSION_DIR/bwrap.args" ] && exec 3< "$SESSION_DIR/bwrap.args"
 "${ARGV_BEFORE_ENV[@]}" "${DECLARED_ENV[@]}" "${ARGV_AFTER_ENV[@]}" "$@"
 ```
 
-The env fragment is a store path interpolated by Nix, not a session file; the
-line above is shorthand. `--args 3` reads NUL-separated arguments from an
-already-open descriptor, which is why the redirect happens in the stub and not
-in Python: descriptors opened by a shell redirection are not close-on-exec, so
-fd 3 survives pasta, the nft entry point and `env -i`, all of which clear the
-environment rather than the descriptor table. The one conditional is on runtime
-state, not on the build, so the file stays the same for every wrapper.
+It had a sixth line, `exec 3< "$SESSION_DIR/bwrap.args"`, so that bubblewrap
+could read its arguments from a descriptor with `--args 3`. That does not work,
+and the reasoning that put it there was wrong twice over. See the fd 3 note
+below.
 
 What collapses. The five `mkResolve*BashStr` generators and `mkScanDirBashStr`
 in `lib/linux/symlink-helpers.nix` become loops. The four
@@ -862,10 +899,11 @@ Correctness fixes that come free. `lib/linux/symlink-helpers.nix` builds
 `STATE_DIR_BINDS="$STATE_DIR_BINDS --bind ${dir} ${dir}"` and
 `lib/linux/default.nix` expands it unquoted, so a declared path containing
 whitespace splits into several bubblewrap arguments, and a path whose second
-field begins with `--` becomes a flag. A Python list written NUL-separated to
-`bwrap --args` cannot do either. Keep it NUL-separated end to end; converting
-from newlines with `tr` would reintroduce the vector for paths containing
-newlines.
+field begins with `--` becomes a flag. A Python list cannot do either, whether
+bubblewrap reads it from a descriptor or from its own argv: what fixes it is the
+values being separate list entries rather than one string something re-splits.
+Keep it NUL-separated end to end; converting from newlines with `tr` would
+reintroduce the vector for paths containing newlines.
 
 The route-restrict layer moves to Python. The two `writeScript` scripts in
 `lib/linux/networking.nix` become one entry point that runs inside pasta's
@@ -878,43 +916,66 @@ The `SANDBOX_PROXY_PORT="$_PROXY_PORT"` assignment prefixed to the pasta
 invocation disappears: a shell assignment prefix cannot be an argv element, and
 once the port is baked into `nft.rules` nothing reads the variable.
 
-Three things to verify rather than assume, one of which is currently assumed
-rather than verified. `bwrap --args` is taken on trust, because it is Linux-only
-and cannot be checked from a macOS worktree: run `bwrap --help | grep -- '--args'`
-against the pin before believing this. If it is absent, the fallback is passing
-bubblewrap's arguments inline, which gives up the whitespace-safety fix that is
-half the reason for the artifact. That fd 3 survives pasta into
-bubblewrap, since the whole args-file design rests on it. And whether the macOS
-passwd file has any reader at all: it is created at `lib/darwin/default.nix:635`,
-passed as `-D SANDBOX_PASSWD` at `:680` and granted `file-read*` at
-`seatbelt-profile.nix:142`, but there is no bind on macOS and nothing points a
-library at that path, while macOS resolves users through opendirectoryd over
-Mach IPC. If it has no reader, Darwin loses a file, a param, a profile rule and a
-cleanup entry. The header comment at `lib/darwin/default.nix:76` already claims
-the profile allows `/etc/passwd` and `/private/etc/passwd`, and it allows
-neither.
+The fd 3 note, which is the one thing in this plan that was wrong rather than
+merely incomplete. `bwrap --args` does exist on the pin, `--args FD  Parse
+NUL-separated args from FD`, so that half was fine. But pasta does not pass an
+inherited descriptor to its child: inside pasta, `cat <&3` gives EBADF, and
+bubblewrap dies with `Can't read --args data: Bad file descriptor`. Every launch
+failed, and it failed in the way that hides the cause, because the negative
+assertions in the suite pass for free when nothing runs.
 
-Known Linux gap, deferred until the Linux suite can run. `HostState` records
-symlink chain hops in physical form, so a symlinked directory in the middle of a
-hop is resolved away. Given `x/a -> ../y/b`, `y -> z` and a real `z/b`, the
-recorded chain is `x/a -> z/b`, where the bash recorded `x/a -> y/b`, because
-its walk used `cd` plus `pwd` and bash reports the logical path.
+The claim that inline arguments give up whitespace safety was also wrong.
+`argv-after-env` is already NUL-separated and expanded as `"${ARGV_AFTER_ENV[@]}"`,
+so every entry survives spaces and newlines. The safety was never in the args
+file; it was in the values being argv entries rather than a re-split string. So
+the arguments go inline, and `bwrap.args` is still written because the bind list
+on its own is the thing worth reading when a path is missing inside the sandbox.
 
-That matters on Linux only. Seatbelt sees paths after the kernel has resolved
-them, so `z/b` is exactly what a macOS rule needs and `y` never appears in a
-check. Bubblewrap builds a mount tree, so a path exists inside only if something
-was mounted at it: binding `y/b` made bwrap materialise `y`, and binding `z/b`
-does not, while the link text still says `../y/b`. The text inside someone's
-symlink is not ours to rewrite, so the traversal walks `y` regardless.
+The alternative was opening the descriptor after pasta, in the network entry
+point, which is the only process we control between the two. It works, and it
+was rejected: it puts bubblewrap's argument passing inside the module that
+configures the namespace, and the property it buys, keeping bind paths off
+`/proc/<pid>/cmdline`, is not available anyway. The spec lists every declared
+path and sits world-readable in the store, and the session directory path is on
+the cmdline regardless, since `argv-before-env` passes it to that entry point.
 
-The fix is to record the intermediate form as an ordinary hop, `x/a -> y/b ->
-z/b`, since the kernel really does walk it. That means resolving the parent one
-symlinked component at a time rather than in a single `realpath`, and it lands
-squarely in the mount-destination ordering problem described immediately below,
-which is why it waits for the Linux tests rather than being guessed at now.
-Nothing consumes the chain until `compute_launch_config` exists, so nothing is
-broken in the meantime. `tests/linux/test-symlinks.sh` and
-`test-rodirs-symlink-hardening.sh` are what would catch it.
+Still unverified: whether the macOS passwd file has any reader at all. It is
+written to the session directory and granted by name in the profile, but there is
+no bind on macOS and nothing points a library at that path, while macOS resolves
+users through opendirectoryd over Mach IPC. If it has no reader, Darwin loses a
+file, a profile rule and a cleanup entry.
+
+The Linux symlink gap, fixed in 4a54d6d and 286da10, and worth recording
+because the fix this plan proposed would not have worked. `HostState` recorded
+chain hops in physical form, so a symlinked directory in the middle of a hop was
+resolved away: given `x/a -> y/b`, `y -> z` and a real `z/b`, the chain said
+`x/a -> z/b` where the bash said `x/a -> y/b`, because its walk used `cd` plus
+`pwd` and bash reports the logical path.
+
+It matters on Linux only. Seatbelt sees paths after the kernel has resolved
+them, so `z/b` is what a macOS rule needs and `y` never appears in a check.
+Bubblewrap builds a mount tree, so a name exists inside only if something was
+mounted at it: binding `y/b` made bwrap materialise `y`, and binding `z/b` does
+not, while the link text still says `y/b`. Demonstrated rather than reasoned
+about this time: with only the physical target bound, opening the declared path
+inside a real sandbox gives ENOENT.
+
+The proposal here was to record the intermediate as an ordinary hop. That does
+not work. The intermediate is not under `/nix/store`, and chain targets outside
+the store are refused so an agent cannot plant a symlink that expands the
+sandbox on the next launch, so the extra hop would have been warned about and
+ignored, exactly as the bash did. What works is `--symlink`, reproducing the
+host's symlink inside the sandbox instead of binding a path through it: a name
+grants no access on its own, so the store restriction still decides what is
+readable, and the sandbox ends up agreeing with the host about what that name
+is. `SymlinkHop.parent_symlinks` carries them, and `DeclaredPath` carries its
+own, since a declared path's parents were being flattened the same way.
+
+The bash was not working either, which is the part worth remembering: it warned
+and bound nothing, so the file was unreadable. The port turned a loud failure
+into a silent one, and no test covered the shape. `tests/linux/test-symlinks.sh`
+says so in a comment: every case it has is a direct store symlink, where the
+logical and physical forms are identical.
 
 Highest risk. Bubblewrap is order-sensitive about mount destinations, and
 `mkResolveFileBashStr` documents a case where no ordering of the binds works at
