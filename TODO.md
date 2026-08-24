@@ -285,7 +285,7 @@ then write what compute returned.
 
 ## Behaviour changes
 
-Five, all needing release notes. Two have already shipped as security fixes.
+Six, all needing release notes. Two have already shipped as security fixes.
 
 `env` values keep shell semantics. `templates/claude/flake.nix:36-42` and the
 README document `env` values as runtime shell expressions, both the
@@ -309,6 +309,13 @@ empty, so `rwDirs = [ "$TYPO/.claude" ]` currently builds, launches, and fails
 the existence check with a message naming `/.claude`. Python refuses at launch
 and names the variable. This is a consequence of the change above rather than a
 separate decision, but it is separately visible.
+
+A declared path that expands to a relative path is fatal. The shell passed the
+raw string to bubblewrap, which resolved it against its own working directory,
+so `rwDirs = [ "somedir" ]` bound a different folder depending on where the
+wrapper was run from. It is refused at launch instead, which also catches
+`rwDirs = [ "$(...)" ]`: with no command substitution the text survives
+literally, and literal text is not an absolute path.
 
 Nested binds refuse at launch. Shipped in S2.
 
@@ -573,6 +580,21 @@ to be confirmed by a human, and `prepare_launch` owns the exit.
 `create_session_dir` is separate from `create_session_state` so the directory
 exists before anything can refuse the launch, without a proxy having been
 started for a run that is about to be refused.
+
+Every path in `HostState` is physical: parent directories resolved to their
+fully-followed form, with the final component left alone. Two names for the same
+directory never compare equal as strings, and `/tmp` being a symlink to
+`/private/tmp` on macOS is enough to break a comparison silently. Three separate
+defects came from this before the rule was written down: the launch-from-home
+confirmation never fired, the macOS nested-bind guard skipped every check, and
+symlink chain hops would have become seatbelt rules that match nothing, since
+the kernel resolves before the seatbelt hook. The final component keeps its own
+name because whether a declared path is itself a symlink decides how it is
+bound.
+
+The rule is not free, and unit 2 ships with one known cost: applied to symlink
+chain hops it resolves away symlinked directories that bubblewrap still needs.
+See the Linux gap noted under unit 2 below.
 
 `read_host_state` may read files, run git and resolve symlinks. It may not
 create, delete, prompt or decide. `get_launch_refusals` holds the
@@ -864,6 +886,28 @@ Mach IPC. If it has no reader, Darwin loses a file, a param, a profile rule and 
 cleanup entry. The header comment at `lib/darwin/default.nix:76` already claims
 the profile allows `/etc/passwd` and `/private/etc/passwd`, and it allows
 neither.
+
+Known Linux gap, deferred until the Linux suite can run. `HostState` records
+symlink chain hops in physical form, so a symlinked directory in the middle of a
+hop is resolved away. Given `x/a -> ../y/b`, `y -> z` and a real `z/b`, the
+recorded chain is `x/a -> z/b`, where the bash recorded `x/a -> y/b`, because
+its walk used `cd` plus `pwd` and bash reports the logical path.
+
+That matters on Linux only. Seatbelt sees paths after the kernel has resolved
+them, so `z/b` is exactly what a macOS rule needs and `y` never appears in a
+check. Bubblewrap builds a mount tree, so a path exists inside only if something
+was mounted at it: binding `y/b` made bwrap materialise `y`, and binding `z/b`
+does not, while the link text still says `../y/b`. The text inside someone's
+symlink is not ours to rewrite, so the traversal walks `y` regardless.
+
+The fix is to record the intermediate form as an ordinary hop, `x/a -> y/b ->
+z/b`, since the kernel really does walk it. That means resolving the parent one
+symlinked component at a time rather than in a single `realpath`, and it lands
+squarely in the mount-destination ordering problem described immediately below,
+which is why it waits for the Linux tests rather than being guessed at now.
+Nothing consumes the chain until `compute_launch_config` exists, so nothing is
+broken in the meantime. `tests/linux/test-symlinks.sh` and
+`test-rodirs-symlink-hardening.sh` are what would catch it.
 
 Highest risk. Bubblewrap is order-sensitive about mount destinations, and
 `mkResolveFileBashStr` documents a case where no ordering of the binds works at

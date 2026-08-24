@@ -11,13 +11,11 @@ a path yet and `Path` would be a lie about the value; they become `Path` in
 `host_state`, after expansion.
 """
 
-from __future__ import annotations
-
 import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Mapping, TypedDict
+from typing import Any, Literal, Mapping, Self, TypedDict
 
 from launcher.constants import ERROR_PREFIX
 
@@ -31,7 +29,7 @@ class ProxySpec:
     redirects: Mapping[str, str]
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> ProxySpec:
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
         binary = Path(data["binary"])
         allowlist_file = Path(data["allowlist_file"])
         redirects = dict(data["redirects"])
@@ -52,7 +50,7 @@ class DependenciesLinux:
     env: Path
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> DependenciesLinux:
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
         git = Path(data["git"])
         bwrap = Path(data["bwrap"])
         pasta = Path(data["pasta"])
@@ -67,7 +65,7 @@ class DependenciesDarwin:
     git: Path
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> DependenciesDarwin:
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
         git = Path(data["git"])
         return cls(git=git)
 

@@ -12,8 +12,6 @@ about what to bind rather than a refusal, so it belongs in launch_config with
 the other bind decisions and its warning.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

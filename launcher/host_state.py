@@ -1,5 +1,13 @@
 """What reading the host returns.
 
+Every path in HostState is physical: parent directories resolved to their
+fully-followed form, final component left alone. Two names for one directory
+never compare equal as strings, and everything downstream compares these paths
+against each other and turns them into bubblewrap and seatbelt rules, where the
+kernel resolves before the rule is matched so a shortcut name matches nothing.
+The final component keeps its own name because whether it is a symlink is a
+distinction the bind decisions depend on.
+
 This module observes and decides nothing. It may read files, resolve symlinks
 and run git; it may not create, delete, prompt, or work out what to bind. The
 rule that keeps the boundary checkable: a fact belongs here if it can be stated
@@ -14,15 +22,13 @@ one directory walk and two git calls in a rare case, and it is the price of the
 boundary being verifiable by reading signatures.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Sequence, TypedDict
+from typing import Literal, Sequence, TypedDict, assert_never
 
 from launcher.build_spec import (
     SandboxBuildSpecDarwin,
@@ -43,6 +49,9 @@ DEFAULT_NIX_DAEMON_SOCKET = Path("/nix/var/nix/daemon-socket/socket")
 @dataclass(frozen=True, kw_only=True)
 class DeclaredPath:
     unexpanded_path: str
+    # Expanded, with parent directories resolved to their fully-followed form.
+    # The final component is not resolved, so a declared path that is itself a
+    # symlink stays one.
     expanded_path: Path
     mode: Literal["rw", "ro"]
     exists: bool
@@ -182,20 +191,43 @@ def _expand_path(unexpanded: str, environ: dict[str, str]) -> Path:
 def _get_symlink_chain_for_file(path: Path) -> tuple[Path, ...]:
     """Every hop of a symlink chain, not just the final target.
 
-    readlink -f would give only the end. Each intermediate has to be reachable
-    inside the sandbox too, so each one is recorded.
+    I find this very confusing, here's what happens for each hop in a file's symlink
+    chain:
+        1. Fetch an absolute path and normalise it.
+        2. If the parent is a symlink it is resolved to its real path.
+        3. Add the resolved parent + the original filename to the chain.
+        4. Next hop.
+
+    Why we don't follow parent directory symlinks?
+    Because we only declare the resolved targets of all files and directories we bind in
+    the sandbox.
+
+    We do we need to follow the symlink hops of the file itself?
+    When a Kernel opens a file, it follows all the symlink hops to the final target. If
+    the seatbelt sandbox only declares the final target, it will not be able to open
+    the file
+
+
+
+
     """
     chain: list[Path] = []
-    current = path
+    current = Path(os.path.abspath(path))
     for _ in range(MAX_SYMLINK_HOPS):
         if not current.is_symlink():
             break
+        # follows one hop of the symlink chain
         link = os.readlink(current)
         target = Path(link)
+        # If relative, make an absolute path relative using the symlink's parent
         if not target.is_absolute():
             target = current.parent / target
-        normalised = os.path.normpath(target)
-        target = Path(normalised)
+        # Clean up `..` and `.`, so e.g. `/tmp/../tmp/foo` compares equal to `/tmp/foo`
+        normalised = Path(os.path.normpath(target))
+        # Resolve the real path of the parent directory
+        resolved_parent = Path(os.path.realpath(normalised.parent))
+        # Put the filename back on
+        target = resolved_parent / normalised.name
         if str(target) == "/":
             break
         chain.append(target)
@@ -229,27 +261,43 @@ def _get_declared_paths(
     paths: list[DeclaredPath] = []
     for unexpanded in declared:
         expanded = _expand_path(unexpanded, environ)
+        # Follow any symlinks in the directories ABOVE this path, then put the
+        # final name back on unchanged. realpath does the whole ancestor chain
+        # at any depth in one call, and is a no-op when there are none.
+        #
+        # Only the ancestors, because two names for one directory never compare
+        # equal as strings and everything downstream compares these paths.
+        # Whether this path is ITSELF a symlink is a different question, asked
+        # two lines below by _get_symlink_chain_for_file, and realpath on the
+        # whole path would answer it destructively: a declared ~/.claude
+        # pointing into the store would become the store path, losing the name
+        # the sandboxed process is going to look for.
+        resolved_parent = Path(os.path.realpath(expanded.parent))
+        expanded = resolved_parent / expanded.name
         exists = _path_exists(expanded)
         symlink_chain = _get_symlink_chain_for_file(expanded)
         path: DeclaredPath
-        if kind == "dir":
-            inner_symlinks = _get_all_symlink_chains_in_dir(expanded)
-            path = DeclaredDir(
-                unexpanded_path=unexpanded,
-                expanded_path=expanded,
-                mode=mode,
-                exists=exists,
-                symlink_chain=symlink_chain,
-                inner_symlinks=inner_symlinks,
-            )
-        else:
-            path = DeclaredFile(
-                unexpanded_path=unexpanded,
-                expanded_path=expanded,
-                mode=mode,
-                exists=exists,
-                symlink_chain=symlink_chain,
-            )
+        match kind:
+            case "dir":
+                inner_symlinks = _get_all_symlink_chains_in_dir(expanded)
+                path = DeclaredDir(
+                    unexpanded_path=unexpanded,
+                    expanded_path=expanded,
+                    mode=mode,
+                    exists=exists,
+                    symlink_chain=symlink_chain,
+                    inner_symlinks=inner_symlinks,
+                )
+            case "file":
+                path = DeclaredFile(
+                    unexpanded_path=unexpanded,
+                    expanded_path=expanded,
+                    mode=mode,
+                    exists=exists,
+                    symlink_chain=symlink_chain,
+                )
+            case _:
+                assert_never(kind)
         paths.append(path)
     return paths
 
@@ -498,10 +546,9 @@ def _common_host_state(
 
     return _CommonHostState(
         cwd=cwd,
-        # Physical, matching Path.cwd(). $HOME may traverse a symlink, and a
-        # logical-versus-physical comparison would silently report that the
-        # launch directory is not the home directory when it is, skipping the
-        # confirmation that stops the whole home being exposed unattended.
+        # Resolved in full, unlike declared paths: the home directory is only
+        # compared, never bound, and it has to match what os.getcwd() reports
+        # even when $HOME is itself a symlink.
         real_home=Path(os.path.realpath(home)),
         uid=os.getuid(),
         gid=os.getgid(),
@@ -533,4 +580,4 @@ def host_state_from_spec(
         case "darwin":
             return HostStateDarwin(**common, tty=_get_stdin_tty())
         case _:
-            raise SystemExit(f"{ERROR_PREFIX} unknown platform {spec.platform!r}")
+            assert_never(spec.platform)
