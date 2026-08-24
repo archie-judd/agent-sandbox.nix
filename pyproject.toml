@@ -1,0 +1,10 @@
+# Tool configuration only. The launcher is not a distributable package: Nix
+# copies the source tree into the store and the stub points PYTHONPATH at it,
+# so there is no build backend and nothing to install.
+
+[tool.mypy]
+strict = true
+# 3.11 for the -P interpreter flag, which the stub relies on to keep cwd and
+# the script directory off sys.path while still honouring PYTHONPATH.
+python_version = "3.11"
+files = ["launcher"]

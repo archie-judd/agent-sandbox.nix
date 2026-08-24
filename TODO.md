@@ -94,26 +94,35 @@ the one component where Go is unambiguously the right choice.
 ### Directory layout
 
 ```
-build/                nix only: mkSandbox, validation, writeClosure, spec.json
-launch/
-  proxy/              go, moved unchanged
-  stub/stub.sh        the static bash stub
-  launcher/
-    pyproject.toml
-    agent_sandbox/    python
+default.nix
+flake.nix
+pyproject.toml            tool config only: mypy, later pytest
+lib/
+  default.nix             mkSandbox, validation, writeClosure
+  spec.nix                emits spec.json
+  stub.sh                 what $out/bin/<outName> is
+  pre-entry-script.sh     first process inside the sandbox
+launcher/                 the python, imported as `launcher`
+proxy/                    go, unchanged
 tests/
 ```
 
-`proxy/` sits under `launch/` because it is a runtime component, even though
-like everything else it is built at build time. The Python gets a directory of
-its own under `launch/` rather than sitting directly in it, so that the
-`buildPythonPackage` source root does not also contain the Go proxy and the
-stub, which would rebuild the launcher whenever either changed.
+Four directories, each holding one artifact. The build-time and launch-time
+distinction is the spine of this design, but it is not in the tree: a `build/`
+directory would have held the Nix and a `launch/` directory everything else, and
+a directory whose job is to hold one sibling groups nothing. `build/` is also
+the setuptools output directory and conventionally gitignored, which is a poor
+name to track next to a `pyproject.toml`.
+
+The two shell scripts sit in `lib/` because they are build inputs rather than
+free-standing programs: one is read with `builtins.readFile`, the other has
+`substituteAll` applied to it, and both are consumed by derivations defined
+beside them.
 
 Inside the package, one module per type family, named for the type it owns:
 
 ```
-agent_sandbox/
+launcher/
   __init__.py              empty, deliberately
   constants.py             artifact filenames, retention, deadlines, listen address
   build_spec.py            SandboxBuildSpec, Dependencies, ProxySpec
@@ -164,25 +173,27 @@ are fine.
 
 mypy strict, fully annotated.
 
-Packaged with `buildPythonPackage`, not `buildPythonApplication`. The latter
-emits a bash wrapper per console script that sets `PYTHONPATH` and execs the
-interpreter, and that wrapper runs on every launch, in front of every entry
-point. `buildPythonPackage` generates no wrappers, and gives the mypy and pytest
-runs a `checkPhase` to live in, which is where a Nix reader will look for them.
+Not packaged at all. Nix copies the source tree into the store and the stub
+points `PYTHONPATH` at it. `buildPythonApplication` was rejected because it
+emits a bash wrapper per console script that runs on every launch in front of
+every entry point; `buildPythonPackage` was rejected because it wants a
+`pyproject.toml` and a build backend for a stdlib-only tree with no
+dependencies, and forces the package into a source root of its own. mypy and
+pytest get a check derivation in unit 4, configured from the repo-root
+`pyproject.toml`.
 
 The stub sets `PYTHONPATH` inline and invokes `python3 -P -s -S -m
-agent_sandbox.<entry>`. Not `-I`: isolated mode implies `-E`, which makes the
+launcher.<entry>`. Not `-I`: isolated mode implies `-E`, which makes the
 interpreter ignore `PYTHONPATH`, so the package would not be importable. `-P`
 keeps cwd and the script directory off `sys.path`, `-s` drops the user site
 directory, and `-S` skips `site` entirely, which is also where a chunk of the
 startup cost lives. The residual exposure is a user with `PYTHONHOME` set, which
 breaks loudly rather than silently.
 
-`agent_sandbox/__init__.py` stays empty, with a comment saying why. The
-in-namespace network entry point runs on the Linux hot path and needs only `os`
-and `sys`, so it pays a bare interpreter start of around 16 ms rather than the
-33 ms the full import set costs. Any re-export added to `__init__.py` would
-silently hand it the whole package.
+`launcher/__init__.py` stays empty. The in-namespace network entry point runs on
+the Linux hot path and needs only `os` and `sys`, so it pays a bare interpreter
+start of around 16 ms rather than the 33 ms the full import set costs. Any
+re-export added to `__init__.py` would silently hand it the whole package.
 
 ### Naming
 
@@ -505,8 +516,7 @@ Both backends in one pass. `lib/shared.nix` feeds both, so splitting Linux and
 macOS into separate PRs means porting the git protected-path enumeration twice
 or shipping a half-Nix half-Python seam.
 
-Move `proxy/` to `launch/proxy/` as its own commit first, so the Go diff is
-empty.
+`proxy/` stays where it is and the Go is untouched.
 
 The steps.
 
@@ -735,8 +745,8 @@ own environment through, so `env -i K=V ... bwrap` reaches the same end state.
 The stub, in full, byte-identical for every build:
 
 ```bash
-SESSION_DIR=$("@python@" -P -s -S -m agent_sandbox.prepare "@spec@") || exit 1
-trap '"@python@" -P -s -S -m agent_sandbox.cleanup "$SESSION_DIR"' EXIT
+SESSION_DIR=$("@python@" -P -s -S -m launcher.prepare "@spec@") || exit 1
+trap '"@python@" -P -s -S -m launcher.cleanup "$SESSION_DIR"' EXIT
 source "$SESSION_DIR/../env-fragment"          # sets DECLARED_ENV=( K=V ... )
 mapfile -d "" ARGV_BEFORE_ENV < "$SESSION_DIR/argv-before-env"
 mapfile -d "" ARGV_AFTER_ENV  < "$SESSION_DIR/argv-after-env"
@@ -938,7 +948,7 @@ as well.
 Nothing further on names. Modules follow one rule, one module per type family
 named for the type it owns, with `launch_checks`, `seatbelt` and `constants` as
 the exceptions that own no type. Types carry the `Sandbox` prefix and modules do
-not, since a module path is already `agent_sandbox.something`.
+not, since a module path is already `launcher.something`.
 
 ## Deferred
 

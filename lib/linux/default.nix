@@ -286,6 +286,35 @@ let
       fi
     '';
 
+  # The launcher's input. Nothing reads it yet; the wrapper below is still the
+  # generated bash. Exposed on the derivation so it can be built and inspected.
+  sandboxBuildSpec =
+    import ../spec.nix
+      {
+        pkgs = pkgs;
+        shared = shared;
+      }
+      {
+        platform = "linux";
+        outName = outName;
+        pkg = pkg;
+        binName = binName;
+        sandboxPath = pathStr;
+        allowNix = allowNix;
+        rwDirs = rwDirs;
+        rwFiles = rwFiles;
+        roDirs = roDirs;
+        roFiles = roFiles;
+        env = env;
+        allowedLocalPorts = validatedAllowedLocalPorts;
+        closurePathsFile = closurePathsFile;
+        preEntryScript = preEntryScript;
+        allowedDomains = allowedDomains;
+        _proxyRedirects = _proxyRedirects;
+        hostsFile = hostsFile;
+        emptyFile = emptyFile;
+      };
+
   nixStoreBashStr =
     if allowNix then
       # bash
@@ -323,81 +352,85 @@ builtins.seq
     stateDirs = stateDirs;
     stateFiles = stateFiles;
   })
-  (builtins.seq
-    validatedAllowedLocalPorts
-    (pkgs.writeTextFile {
-      name = outName;
-      executable = true;
-      destination = "/bin/${outName}";
-      text =
-        # bash
-        ''
-          #!${pkgs.bashInteractive}/bin/bash
-          CWD=$(pwd)
-          ${shared.assertBindsExistBashStr {
-            inherit
-              rwDirs
-              rwFiles
-              roDirs
-              roFiles
-              ;
-          }}
-          ${shared.assertHomeCwdAllowedBashStr}
-          ${gitDetectionBashStr}
-          ${nixStoreBashStr}
-          ${symlinkResolutionBashStr}
-          ${sandboxPasswdBashStr}
-          ${conditionalNetworkingParams.proxyStartupBashStr}
-          ${conditionalNetworkingParams.resolvConfSetupBashStr}
-          ${trapBashStr}
-          ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.coreutils}/bin/env -i ${pkgs.bubblewrap}/bin/bwrap \
-            ${conditionalNetworkingParams.etcResolvBind} \
-            ${nixStoreBwrapStr} \
-            --ro-bind "$_SANDBOX_PASSWD" /etc/passwd \
-            --ro-bind ${hostsFile} /etc/hosts \
-            --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
-            --ro-bind-try /etc/static /etc/static \
-            --ro-bind-try /etc/pki /etc/pki \
-            --proc /proc \
-            --ro-bind ${emptyFile} /proc/cmdline \
-            --ro-bind ${emptyFile} /proc/sys/kernel/random/boot_id \
-            --dev /dev \
-            --tmpfs /tmp \
-            --tmpfs "$HOME" \
-            $REPO_BIND \
-            --bind "$CWD" "$CWD" \
-            $STATE_DIR_BINDS \
-            $RO_DIR_BINDS \
-            $STATE_FILE_BINDS \
-            $RO_FILE_BINDS \
-            $SYMLINK_PARENT_DIRS \
-            $readonlyStateFileSymlinks \
-            "''${GIT_PROTECT_BINDS[@]}" \
-            --symlink ${bashWrapper}/bin/bash /bin/sh \
-            --symlink ${pkgs.coreutils}/bin/env /usr/bin/env \
-            --unshare-all \
-            --hostname sandbox \
-            --uid "$(id -u)" \
-            --gid "$(id -g)" \
-            --share-net \
-            --die-with-parent \
-            --chdir "$CWD" \
-            --clearenv \
-            --setenv HOME "$HOME" \
-            --setenv TERM "$TERM" \
-            --setenv SHELL "${bashWrapper}/bin/bash" \
-            --setenv PATH "${pathStr}" \
-            --setenv SSL_CERT_DIR "${pkgs.cacert}/etc/ssl/certs" \
-            --setenv TMPDIR /tmp \
-            --setenv GIT_CONFIG_COUNT 1 \
-            --setenv GIT_CONFIG_KEY_0 user.useConfigOnly \
-            --setenv GIT_CONFIG_VALUE_0 true \
-            ${conditionalNetworkingParams.sslCertEnvBubblewrapStr} \
-            ${conditionalNetworkingParams.caCertBubblewrapStr} \
-            ${conditionalNetworkingParams.proxyEnvBubblewrapStr} \
-            ${extraEnvStr} \
-            ${nixDaemonSocketBwrapStr} \
-            ${preEntryScript} ${pkg}/bin/${binName} "$@"
-        '';
-    })
+  (
+    builtins.seq validatedAllowedLocalPorts (
+      pkgs.writeTextFile {
+        name = outName;
+        executable = true;
+        destination = "/bin/${outName}";
+        text =
+          # bash
+          ''
+            #!${pkgs.bashInteractive}/bin/bash
+            CWD=$(pwd)
+            ${shared.assertBindsExistBashStr {
+              inherit
+                rwDirs
+                rwFiles
+                roDirs
+                roFiles
+                ;
+            }}
+            ${shared.assertHomeCwdAllowedBashStr}
+            ${gitDetectionBashStr}
+            ${nixStoreBashStr}
+            ${symlinkResolutionBashStr}
+            ${sandboxPasswdBashStr}
+            ${conditionalNetworkingParams.proxyStartupBashStr}
+            ${conditionalNetworkingParams.resolvConfSetupBashStr}
+            ${trapBashStr}
+            ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.coreutils}/bin/env -i ${pkgs.bubblewrap}/bin/bwrap \
+              ${conditionalNetworkingParams.etcResolvBind} \
+              ${nixStoreBwrapStr} \
+              --ro-bind "$_SANDBOX_PASSWD" /etc/passwd \
+              --ro-bind ${hostsFile} /etc/hosts \
+              --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
+              --ro-bind-try /etc/static /etc/static \
+              --ro-bind-try /etc/pki /etc/pki \
+              --proc /proc \
+              --ro-bind ${emptyFile} /proc/cmdline \
+              --ro-bind ${emptyFile} /proc/sys/kernel/random/boot_id \
+              --dev /dev \
+              --tmpfs /tmp \
+              --tmpfs "$HOME" \
+              $REPO_BIND \
+              --bind "$CWD" "$CWD" \
+              $STATE_DIR_BINDS \
+              $RO_DIR_BINDS \
+              $STATE_FILE_BINDS \
+              $RO_FILE_BINDS \
+              $SYMLINK_PARENT_DIRS \
+              $readonlyStateFileSymlinks \
+              "''${GIT_PROTECT_BINDS[@]}" \
+              --symlink ${bashWrapper}/bin/bash /bin/sh \
+              --symlink ${pkgs.coreutils}/bin/env /usr/bin/env \
+              --unshare-all \
+              --hostname sandbox \
+              --uid "$(id -u)" \
+              --gid "$(id -g)" \
+              --share-net \
+              --die-with-parent \
+              --chdir "$CWD" \
+              --clearenv \
+              --setenv HOME "$HOME" \
+              --setenv TERM "$TERM" \
+              --setenv SHELL "${bashWrapper}/bin/bash" \
+              --setenv PATH "${pathStr}" \
+              --setenv SSL_CERT_DIR "${pkgs.cacert}/etc/ssl/certs" \
+              --setenv TMPDIR /tmp \
+              --setenv GIT_CONFIG_COUNT 1 \
+              --setenv GIT_CONFIG_KEY_0 user.useConfigOnly \
+              --setenv GIT_CONFIG_VALUE_0 true \
+              ${conditionalNetworkingParams.sslCertEnvBubblewrapStr} \
+              ${conditionalNetworkingParams.caCertBubblewrapStr} \
+              ${conditionalNetworkingParams.proxyEnvBubblewrapStr} \
+              ${extraEnvStr} \
+              ${nixDaemonSocketBwrapStr} \
+              ${preEntryScript} ${pkg}/bin/${binName} "$@"
+          '';
+      }
+      // {
+        buildSpec = sandboxBuildSpec;
+      }
+    )
   )

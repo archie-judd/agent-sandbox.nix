@@ -19,22 +19,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
-from agent_sandbox.constants import ERROR_PREFIX
+from launcher.constants import ERROR_PREFIX
 
 
 @dataclass(frozen=True, kw_only=True)
 class ProxySpec:
     binary: Path
     allowlist_file: Path
-    redirects: Mapping[str, str] | None = None # Testing only: maps host to "addr:port" so the proxy dials a local address instead of resolving the original.     
+    # Testing only: maps host to "addr:port" so the proxy dials a local address
+    # instead of resolving the original. Empty in every production build.
+    redirects: Mapping[str, str]
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ProxySpec:
-        redirects = data.get("redirects")
         return cls(
             binary=Path(data["binary"]),
             allowlist_file=Path(data["allowlist_file"]),
-            redirects=dict(redirects) if redirects is not None else None,
+            redirects=dict(data["redirects"]),
         )
 
 

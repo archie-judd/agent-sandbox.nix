@@ -556,6 +556,33 @@ let
   nixDaemonSocketFlag =
     if allowNix then ''-D NIX_DAEMON_SOCKET_PATH="$NIX_DAEMON_SOCKET_PATH"'' else "";
 
+  # The launcher's input. Nothing reads it yet; the wrapper below is still the
+  # generated bash. Exposed on the derivation so it can be built and inspected.
+  sandboxBuildSpec =
+    import ../spec.nix
+      {
+        pkgs = pkgs;
+        shared = shared;
+      }
+      {
+        platform = "darwin";
+        outName = outName;
+        pkg = pkg;
+        binName = binName;
+        sandboxPath = pathStr;
+        allowNix = allowNix;
+        rwDirs = rwDirs;
+        rwFiles = rwFiles;
+        roDirs = roDirs;
+        roFiles = roFiles;
+        env = env;
+        allowedLocalPorts = validatedAllowedLocalPorts;
+        closurePathsFile = closurePathsFile;
+        preEntryScript = preEntryScript;
+        allowedDomains = allowedDomains;
+        _proxyRedirects = _proxyRedirects;
+      };
+
   seatbeltStaticRules = import ./seatbelt-profile.nix {
     networkRulesStr = conditionalNetworkingParams.networkSeatbeltRulesStr;
     nixSupportRulesStr = nixSupportRulesStr;
@@ -685,6 +712,9 @@ builtins.seq
               -D HOME_LOCAL_SHARE="$SANDBOX_HOME/.local/share" ${stateDirFlags} ${stateFileFlags} ${roDirFlags} ${roFileFlags} \
               ${preEntryScript} ${pkg}/bin/${binName} "$@"
           '';
+      }
+      // {
+        buildSpec = sandboxBuildSpec;
       }
     )
   )
