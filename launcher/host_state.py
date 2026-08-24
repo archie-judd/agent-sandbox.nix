@@ -47,6 +47,55 @@ DEFAULT_NIX_DAEMON_SOCKET = Path("/nix/var/nix/daemon-socket/socket")
 
 
 @dataclass(frozen=True, kw_only=True)
+class Symlink:
+    """A symlink on the host: where it lives, and where it points.
+
+    points_to is absolute with . and .. removed, but keeps any symlink its own
+    text runs through. It is what the link says, not where it ends up.
+    """
+
+    path: Path
+    points_to: Path
+
+
+@dataclass(frozen=True, kw_only=True)
+class SymlinkHop:
+    """One step of a symlink chain: one link, followed once.
+
+    points_to is where this link lands, with every symlink flattened away.
+
+    parent_symlinks are the symlinked directories walked on the way there, and
+    the sandbox needs each of them recreated. Bubblewrap builds its filesystem
+    from nothing, so a name exists inside only if something put it there; when a
+    program opens the original link the kernel walks the name the link literally
+    holds, and a missing directory along that name fails the open even though
+    the file at the end was bound. After the first, each is a parent of the path
+    as flattened so far rather than of the original text.
+
+    For ~/.claude/settings.json under home-manager:
+
+        points_to        /nix/store/xxx-hm-files/home-files/.claude/settings.json
+        parent_symlinks  [ ~/.local/state/.../gcroots/current-home
+                             -> /nix/store/xxx-hm-files ]
+    """
+
+    points_to: Path
+    parent_symlinks: tuple[Symlink, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class SymlinkChain:
+    """Every link followed from a path to the file it finally names.
+
+    hops is empty exactly when the path is not a symlink, so there is no
+    is_symlink field beside it: two ways to state one fact is two ways for it to
+    disagree with itself.
+    """
+
+    hops: tuple[SymlinkHop, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
 class DeclaredPath:
     unexpanded_path: str
     # Expanded, with parent directories resolved to their fully-followed form.
@@ -55,7 +104,7 @@ class DeclaredPath:
     expanded_path: Path
     mode: Literal["rw", "ro"]
     exists: bool
-    symlink_chain: tuple[Path, ...]
+    symlink_chain: SymlinkChain
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -68,7 +117,7 @@ class DeclaredDir(DeclaredPath):
     # Chains for the symlinks directly inside the directory. A declared file
     # cannot have these, which is why the split is by kind rather than by
     # whether the path is itself a symlink.
-    inner_symlinks: tuple[tuple[Path, ...], ...]
+    inner_symlinks: tuple[SymlinkChain, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -192,63 +241,100 @@ def _expand_path(unexpanded: str, environ: dict[str, str]) -> Path:
     return Path(expanded)
 
 
-def _get_symlink_chain_for_file(path: Path) -> tuple[Path, ...]:
-    """Every hop of a symlink chain, not just the final target.
+def _get_parent_symlinks(path: Path) -> tuple[Symlink, ...]:
+    """The symlinked directories above `path`, in the order they are walked.
 
-    I find this very confusing, here's what happens for each hop in a file's symlink
-    chain:
-        1. Fetch an absolute path and normalise it.
-        2. If the parent is a symlink it is resolved to its real path.
-        3. Add the resolved parent + the original filename to the chain.
-        4. Next hop.
+    The sandbox needs every one of them reproduced. Bubblewrap builds its
+    filesystem from nothing, so a name exists inside only if something put it
+    there; when a program opens a path the kernel walks the names as written,
+    and a missing directory partway along fails the open even though the file at
+    the end was bound.
 
-    Why we don't follow parent directory symlinks?
-    Because we only declare the resolved targets of all files and directories we bind in
-    the sandbox.
+    realpath says where a path ends up but not what it went through, which is
+    the only reason this walk exists. It computes no path of its own: callers
+    resolve with realpath, and this answers the other half of the question.
 
-    We do we need to follow the symlink hops of the file itself?
-    When a Kernel opens a file, it follows all the symlink hops to the final target. If
-    the seatbelt sandbox only declares the final target, it will not be able to open
-    the file
-
-
-
-
+    The walk goes component by component from the root. On reaching a symlink it
+    records it and restarts from the target, because the target's own components
+    may be symlinks too and each of those needs reproducing as well. It follows
+    the path as written, so a `..` sitting after a symlink is walked textually
+    rather than the way the kernel would; callers normalise before asking.
     """
-    chain: list[Path] = []
+    parent_symlinks: list[Symlink] = []
+    resolved = Path(path.anchor)
+    remaining = list(path.parent.parts[1:])
+    follows = 0
+
+    while remaining:
+        current = resolved / remaining.pop(0)
+        if not current.is_symlink():
+            resolved = current
+            continue
+        if follows >= MAX_SYMLINK_HOPS:
+            # A loop among the parent directories. Stop collecting; the path
+            # itself is the caller's realpath, which leaves a looping link
+            # unresolved and so still names what the user wrote.
+            break
+        follows += 1
+        link = Path(os.readlink(current))
+        if not link.is_absolute():
+            link = current.parent / link
+        target = Path(os.path.normpath(link))
+        parent_symlinks.append(Symlink(path=current, points_to=target))
+        remaining = list(target.parts[1:]) + remaining
+        resolved = Path(target.anchor)
+
+    return tuple(parent_symlinks)
+
+
+def _get_symlink_chain_for_file(path: Path) -> SymlinkChain:
+    """Every link followed from `path` to the file it finally names.
+
+    One hop per link, in order, rather than only the final target. Opening the
+    path makes the kernel follow every link in the chain, so a sandbox that
+    knows only where the chain ends cannot open it: the intermediate names have
+    to be reachable too.
+
+    Each hop's target is physical, parents resolved and final component left as
+    the link wrote it, and the symlinked directories resolved out of it are
+    recorded on the hop. See SymlinkHop.
+    """
+    hops: list[SymlinkHop] = []
     current = Path(os.path.abspath(path))
+
     for _ in range(MAX_SYMLINK_HOPS):
         if not current.is_symlink():
             break
-        # follows one hop of the symlink chain
-        link = os.readlink(current)
-        target = Path(link)
-        # If relative, make an absolute path relative using the symlink's parent
-        if not target.is_absolute():
-            target = current.parent / target
-        # Clean up `..` and `.`, so e.g. `/tmp/../tmp/foo` compares equal to `/tmp/foo`
-        normalised = Path(os.path.normpath(target))
-        # Resolve the real path of the parent directory
-        resolved_parent = Path(os.path.realpath(normalised.parent))
-        # Put the filename back on
-        target = resolved_parent / normalised.name
-        if str(target) == "/":
+        link = Path(os.readlink(current))
+        # A relative link is relative to the directory the link itself sits in.
+        if not link.is_absolute():
+            link = current.parent / link
+        # Clean up `.` and `..`, so /tmp/../tmp/foo compares equal to /tmp/foo.
+        normalised = Path(os.path.normpath(link))
+        points_to = Path(os.path.realpath(normalised.parent)) / normalised.name
+        if str(points_to) == "/":
             break
-        chain.append(target)
-        current = target
-    return tuple(chain)
+        hops.append(
+            SymlinkHop(
+                points_to=points_to,
+                parent_symlinks=_get_parent_symlinks(normalised),
+            )
+        )
+        current = points_to
+
+    return SymlinkChain(hops=tuple(hops))
 
 
-def _get_all_symlink_chains_in_dir(directory: Path) -> tuple[tuple[Path, ...], ...]:
+def _get_all_symlink_chains_in_dir(directory: Path) -> tuple[SymlinkChain, ...]:
     try:
         entries = list(directory.iterdir())
     except OSError:
         # An unreadable or missing declared directory is not this step's
-        # problem; check_launch_allowed reports it.
+        # problem; get_launch_refusals reports it.
         return ()
 
     entries.sort()
-    inner_symlinks: list[tuple[Path, ...]] = []
+    inner_symlinks: list[SymlinkChain] = []
 
     for entry in entries:
         if entry.is_symlink():

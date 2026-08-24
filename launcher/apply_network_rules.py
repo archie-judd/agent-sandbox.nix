@@ -4,9 +4,9 @@ Runs as the first process inside the namespace, before bubblewrap. Holds no
 policy and no paths of its own: it reads network.json, does what it says, and
 replaces itself with the rest of the chain.
 
-On the Linux hot path, so it imports json, os and sys and nothing else. Anything
-added to launcher/__init__.py is imported here too, which is why that file is
-empty.
+On the Linux hot path, so it imports only what it uses: json to read the file,
+subprocess to run nft and ip, os to exec onwards. Anything added to
+launcher/__init__.py is imported here too, which is why that file is empty.
 """
 
 import json

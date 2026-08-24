@@ -23,7 +23,14 @@ from launcher.constants import (
     PASSWD,
     WARN_PREFIX,
 )
-from launcher.host_state import DeclaredDir, DeclaredPath, GitState, HostStateLinux
+from launcher.host_state import (
+    DeclaredDir,
+    DeclaredPath,
+    GitState,
+    HostStateLinux,
+    SymlinkChain,
+    SymlinkHop,
+)
 from launcher.launch_config.shared import SandboxLaunchConfig
 from launcher.session_state import SessionStateLinux
 
@@ -79,8 +86,9 @@ ETC_PREFIXES = (
 
 @dataclass(frozen=True, kw_only=True)
 class _DeclaredBinds:
-    """The six accumulators the bash built, kept apart because their emission
-    order in the argument list differs from the order they are computed in."""
+    """The argument groups the declared paths contribute, kept apart because
+    their emission order in the argument list differs from the order they are
+    computed in."""
 
     dir_binds: tuple[str, ...]
     ro_dir_binds: tuple[str, ...]
@@ -88,6 +96,7 @@ class _DeclaredBinds:
     ro_file_binds: tuple[str, ...]
     parent_dirs: tuple[str, ...]
     symlink_targets: tuple[str, ...]
+    parent_symlinks: tuple[str, ...]
     warnings: tuple[str, ...]
 
 
@@ -142,15 +151,153 @@ def _get_bound_prefixes(
     return prefixes
 
 
+def _get_parent_dirs(
+    path: Path, prefixes: Sequence[Path], seen: set[Path]
+) -> list[Path]:
+    """Ancestors of `path` that bubblewrap has not been told about.
+
+    Needed whenever something is bound at a path whose parents do not exist in
+    the sandbox yet, such as under the ephemeral HOME tmpfs. These are not added
+    to the bound prefixes: --dir creates an empty directory, it does not expose
+    its contents, so a sibling still needs its own bind.
+
+    `seen` is updated in place. The dedup runs across every call, and the set of
+    directories it ends up creating does not depend on the order callers ask in:
+    walking upwards stops at the first one already seen, so an ancestor asked
+    for twice contributes its remaining parents once.
+    """
+    needed: list[Path] = []
+    current = path.parent
+    while current != Path("/"):
+        if _is_already_bound(current, prefixes) or current in seen:
+            break
+        needed.append(current)
+        seen.add(current)
+        current = current.parent
+    return needed
+
+
+def _get_symlink_target_args(
+    hop: SymlinkHop, prefixes: Sequence[Path], resolved: set[Path]
+) -> tuple[list[str], list[str]]:
+    """The bind exposing one hop's target, and any warning about refusing it.
+
+    Targets are bound read-only whatever the declared mode, and only when they
+    are in the nix store: a target anywhere else would let an agent plant a
+    symlink that expands the sandbox on the next launch. Store paths are exempt
+    because they are immutable and agent-unwritable.
+
+    Returns (args, warnings), both empty when the target is already exposed.
+    `resolved` is updated in place, because two declared paths can lead to the
+    same target and it is bound once.
+    """
+    target = hop.points_to
+    if target in resolved:
+        return [], []
+    resolved.add(target)
+    if _is_already_bound(target, prefixes):
+        return [], []
+    if NIX_STORE not in target.parents:
+        return [], [
+            f"{WARN_PREFIX} ignoring symlink to '{target}' — target is outside "
+            f"permitted paths; declare it as a rwDir, rwFile, roDir or roFile "
+            f"to allow access"
+        ]
+    return ["--ro-bind", str(target), str(target)], []
+
+
+def _get_parent_symlink_args(hop: SymlinkHop, planted: set[Path]) -> list[str]:
+    """--symlink for each symlinked directory this hop is reached through.
+
+    Emitted whatever becomes of the target, including when the target is already
+    exposed. The name the link holds still has to exist inside the sandbox: the
+    kernel walks that name, and a missing directory partway along it fails the
+    open with ENOENT while the file sits bound at its flattened path, reachable
+    only under a name nothing asks for.
+
+    This is not a way around the nix-store check above. A symlink is a name, not
+    an access grant, and following it reaches a file only if something else bound
+    that file.
+
+    `planted` is updated in place, because two hops can share a parent.
+    """
+    args: list[str] = []
+    for link in hop.parent_symlinks:
+        if link.path in planted:
+            continue
+        planted.add(link.path)
+        args.extend(["--symlink", str(link.points_to), str(link.path)])
+    return args
+
+
+def _get_chain_args(
+    chain: SymlinkChain,
+    prefixes: Sequence[Path],
+    resolved: set[Path],
+    planted: set[Path],
+    seen_parents: set[Path],
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Everything one symlink chain contributes, in the order the fields of
+    _DeclaredBinds carry it: (symlink_targets, parent_dirs, parent_symlinks,
+    warnings)."""
+    targets: list[str] = []
+    parent_dirs: list[str] = []
+    links: list[str] = []
+    warnings: list[str] = []
+
+    for hop in chain.hops:
+        links += _get_parent_symlink_args(hop, planted)
+        target_args, target_warnings = _get_symlink_target_args(
+            hop, prefixes, resolved
+        )
+        targets += target_args
+        warnings += target_warnings
+        if target_args:
+            for parent in _get_parent_dirs(hop.points_to, prefixes, seen_parents):
+                parent_dirs += ["--dir", str(parent)]
+
+    return targets, parent_dirs, links, warnings
+
+
+def _get_declared_bind_args(
+    declared: DeclaredPath, prefixes: Sequence[Path]
+) -> list[str]:
+    """The bind exposing one declared path at the name it was declared under.
+
+    A path that is not a symlink is bound at itself.
+
+    A symlink is skipped when an enclosing bind already exposes it: bubblewrap
+    resolves mount destinations against its own intermediate root, where an
+    absolute symlink target does not exist, so it cannot create a mountpoint on
+    top of one and dies. Nothing is lost, since the covering bind exposes the
+    link and the chain's targets are bound separately.
+
+    Otherwise a symlinked file is bound from its final target, so the declared
+    name holds the content, while a symlinked directory is bound from itself, so
+    a roDir keeps its read-only mode inside a read-write parent.
+    """
+    path = declared.expanded_path
+    flag = "--bind" if declared.mode == "rw" else "--ro-bind"
+    if not declared.symlink_chain.hops:
+        return [flag, str(path), str(path)]
+    if _is_already_bound(path.parent, prefixes):
+        return []
+    if isinstance(declared, DeclaredDir):
+        return [flag, str(path), str(path)]
+    final = declared.symlink_chain.hops[-1].points_to
+    if NIX_STORE not in final.parents:
+        return []
+    return [flag, str(final), str(path)]
+
+
 def _get_declared_binds(
     host: HostStateLinux, prefixes: Sequence[Path]
 ) -> _DeclaredBinds:
     """Bind each declared path, and everything its symlinks lead to.
 
-    Resolved targets are always bound read-only regardless of the declared
-    mode, and only when they are in the nix store: a target anywhere else would
-    let an agent plant a symlink that expands the sandbox on the next launch.
-    Store paths are exempt because they are immutable and agent-unwritable.
+    Declared files first, then declared directories, then the symlinks sitting
+    inside those directories. That order decides which of two paths leading to
+    one target carries the bind, so it is preserved from the bash this replaces.
     """
     dir_binds: list[str] = []
     ro_dir_binds: list[str] = []
@@ -158,87 +305,54 @@ def _get_declared_binds(
     ro_file_binds: list[str] = []
     parent_dirs: list[str] = []
     symlink_targets: list[str] = []
+    parent_symlinks: list[str] = []
     warnings: list[str] = []
     resolved: set[Path] = set()
+    planted: set[Path] = set()
     seen_parents: set[Path] = set()
-
-    def ensure_parent_dirs(path: Path) -> None:
-        """--dir entries for ancestors bubblewrap has not been told about.
-
-        Needed whenever something is bound at a path whose parents do not exist
-        in the sandbox yet, such as under the ephemeral HOME tmpfs. These are
-        not added to the bound prefixes: --dir creates an empty directory, it
-        does not expose its contents, so a sibling still needs its own bind.
-        """
-        current = path.parent
-        while current != Path("/"):
-            if _is_already_bound(current, prefixes) or current in seen_parents:
-                break
-            parent_dirs.extend(["--dir", str(current)])
-            seen_parents.add(current)
-            current = current.parent
-
-    def add_symlink_target(target: Path) -> None:
-        if target in resolved:
-            return
-        resolved.add(target)
-        if _is_already_bound(target, prefixes):
-            return
-        if NIX_STORE not in target.parents:
-            warnings.append(
-                f"{WARN_PREFIX} ignoring symlink to '{target}' — target is outside "
-                f"permitted paths; declare it as a rwDir, rwFile, roDir or roFile "
-                f"to allow access"
-            )
-            return
-        symlink_targets.extend(["--ro-bind", str(target), str(target)])
-        ensure_parent_dirs(target)
-
-    def bind_file(declared: DeclaredPath) -> None:
-        path = declared.expanded_path
-        flag = "--bind" if declared.mode == "rw" else "--ro-bind"
-        target = file_binds if declared.mode == "rw" else ro_file_binds
-        if not declared.symlink_chain:
-            target.extend([flag, str(path), str(path)])
-            return
-        for hop in declared.symlink_chain:
-            add_symlink_target(hop)
-        # Skipped when an enclosing bind already exposes the symlink itself:
-        # bubblewrap resolves mount destinations against its own intermediate
-        # root, where an absolute symlink target does not exist, so it cannot
-        # create a mountpoint on top of one and dies. Nothing is lost, since the
-        # covering bind exposes the link and its targets are bound above.
-        if _is_already_bound(path.parent, prefixes):
-            return
-        final = declared.symlink_chain[-1]
-        if NIX_STORE in final.parents:
-            target.extend([flag, str(final), str(path)])
-            ensure_parent_dirs(path)
-
-    def bind_dir(declared: DeclaredPath) -> None:
-        path = declared.expanded_path
-        flag = "--bind" if declared.mode == "rw" else "--ro-bind"
-        target = dir_binds if declared.mode == "rw" else ro_dir_binds
-        if not declared.symlink_chain:
-            target.extend([flag, str(path), str(path)])
-            return
-        for hop in declared.symlink_chain:
-            add_symlink_target(hop)
-        # Same unmountable-destination case as above. A non-symlink directory is
-        # always bound, so a roDir keeps its read-only mode inside a rw parent.
-        if not _is_already_bound(path.parent, prefixes):
-            target.extend([flag, str(path), str(path)])
 
     files = [d for d in host.declared if not isinstance(d, DeclaredDir)]
     dirs = [d for d in host.declared if isinstance(d, DeclaredDir)]
-    for declared in files:
-        bind_file(declared)
-    for declared in dirs:
-        bind_dir(declared)
-    for declared in dirs:
-        for chain in declared.inner_symlinks:
-            for hop in chain:
-                add_symlink_target(hop)
+
+    for declared in [*files, *dirs]:
+        targets, chain_dirs, links, chain_warnings = _get_chain_args(
+            declared.symlink_chain, prefixes, resolved, planted, seen_parents
+        )
+        symlink_targets += targets
+        parent_dirs += chain_dirs
+        parent_symlinks += links
+        warnings += chain_warnings
+
+        bind_args = _get_declared_bind_args(declared, prefixes)
+        is_dir = isinstance(declared, DeclaredDir)
+        if is_dir and declared.mode == "rw":
+            dir_binds += bind_args
+        elif is_dir:
+            ro_dir_binds += bind_args
+        elif declared.mode == "rw":
+            file_binds += bind_args
+        else:
+            ro_file_binds += bind_args
+
+        # A symlinked file bound at its declared name needs that name's parents
+        # to exist first. A directory needs nothing: its own bind creates the
+        # destination, and a path that is not a symlink is bound where it
+        # already is.
+        if bind_args and not is_dir and declared.symlink_chain.hops:
+            for parent in _get_parent_dirs(
+                declared.expanded_path, prefixes, seen_parents
+            ):
+                parent_dirs += ["--dir", str(parent)]
+
+    for declared_dir in dirs:
+        for chain in declared_dir.inner_symlinks:
+            targets, chain_dirs, links, chain_warnings = _get_chain_args(
+                chain, prefixes, resolved, planted, seen_parents
+            )
+            symlink_targets += targets
+            parent_dirs += chain_dirs
+            parent_symlinks += links
+            warnings += chain_warnings
 
     return _DeclaredBinds(
         dir_binds=tuple(dir_binds),
@@ -247,6 +361,7 @@ def _get_declared_binds(
         ro_file_binds=tuple(ro_file_binds),
         parent_dirs=tuple(parent_dirs),
         symlink_targets=tuple(symlink_targets),
+        parent_symlinks=tuple(parent_symlinks),
         warnings=tuple(warnings),
     )
 
@@ -442,6 +557,10 @@ def _get_bwrap_args(
     args += list(binds.ro_file_binds)
     args += list(binds.parent_dirs)
     args += list(binds.symlink_targets)
+    # Last of the declared-path arguments. Bubblewrap cannot mount onto a
+    # symlink it has already planted, and it works through this list in order,
+    # so anything wanting a destination under one of these has to come first.
+    args += list(binds.parent_symlinks)
     args += list(git_args)
 
     if session.proxy is not None:
