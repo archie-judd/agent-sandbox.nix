@@ -28,15 +28,20 @@ echo
 expect_ok run "/etc is writable tmpfs (ephemeral)" "touch /etc/test && rm /etc/test"
 expect_fail run "cannot read host /etc/shadow" "cat /etc/shadow"
 
-# --- PID 1 (bwrap) environ is empty (no host env leak via /proc/1/environ) ---
-pid1_environ_size=$("$SHELL" --norc --noprofile -c 'wc -c < /proc/1/environ' 2>/dev/null || echo "error")
-if [ "$pid1_environ_size" = "0" ]; then
-	echo "PASS: /proc/1/environ is empty (bwrap launched with env -i)"
-	PASS=$((PASS + 1))
-else
-	echo "FAIL: /proc/1/environ leaks host env (size=$pid1_environ_size)"
-	FAIL=$((FAIL + 1))
-fi
+# --- No host env leak via /proc/1/environ ---
+# PID 1 in the sandbox is bubblewrap's own init process, which it keeps so it
+# can reap; the sandboxed program is PID 2. Its environ is not empty: the
+# launcher passes the computed environment as `env -i K=V ... bwrap ...` and
+# relies on bubblewrap passing its own environment through, rather than setting
+# it with --setenv. So what matters is not the size but what is absent, which is
+# anything the host had and the sandbox was not given. PID 2 holds the same
+# variables anyway, so this asserts the leak, not the duplication.
+export SANDBOX_TEST_HOST_ONLY=canary-must-not-leak
+capture "$SHELL" --norc --noprofile -c 'tr "\0" "\n" < /proc/1/environ'
+# Guarded, because an unreadable environ would leave the output empty and make
+# the absence check below pass for the wrong reason.
+assert_exit_code "/proc/1/environ is readable" 0
+assert_output_not_contains "no host env leak via /proc/1/environ" "SANDBOX_TEST_HOST_ONLY"
 
 # --- Hostname is neutralised (no UTS namespace leak) ---
 host_hostname=$(uname -n)
