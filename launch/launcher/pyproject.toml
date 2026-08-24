@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-sandbox"
+version = "0.0.0"
+description = "Launcher for agent-sandbox.nix wrappers"
+requires-python = ">=3.11"  # 3.11 for the -P interpreter flag, which the stub relies on to keep cwd and the script directory off sys.path while still honouring PYTHONPATH.
+
+[tool.setuptools.packages.find]
+include = ["agent_sandbox*"]
+
+[tool.mypy]
+strict = true

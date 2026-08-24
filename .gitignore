@@ -2,3 +2,5 @@
 .envrc
 .direnv/
 shell.nix
+__pycache__/
+.mypy_cache/

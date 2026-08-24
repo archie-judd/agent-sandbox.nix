@@ -46,7 +46,7 @@ and why any move to real source files needs a hand-maintained data prelude. A
 spec built with `builtins.toJSON` carries its context, so store paths are just
 values.
 
-The decision layer is pure. `compute_sandbox_config(spec, host_state,
+The decision layer is pure. `compute_launch_config(spec, host_state,
 session_state)` returns the argv segments, the artifact bodies and the
 warnings. It reads no files, runs no subprocesses and prints nothing.
 
@@ -94,16 +94,52 @@ the one component where Go is unambiguously the right choice.
 ### Directory layout
 
 ```
-build/          nix only: mkSandbox, validation, writeClosure, spec.json
+build/                nix only: mkSandbox, validation, writeClosure, spec.json
 launch/
-  stub/         stub.sh
-  agent_sandbox/  python
-  proxy/        go, moved unchanged
+  proxy/              go, moved unchanged
+  stub/stub.sh        the static bash stub
+  launcher/
+    pyproject.toml
+    agent_sandbox/    python
 tests/
 ```
 
 `proxy/` sits under `launch/` because it is a runtime component, even though
-like everything else it is built at build time.
+like everything else it is built at build time. The Python gets a directory of
+its own under `launch/` rather than sitting directly in it, so that the
+`buildPythonPackage` source root does not also contain the Go proxy and the
+stub, which would rebuild the launcher whenever either changed.
+
+Inside the package, one module per type family, named for the type it owns:
+
+```
+agent_sandbox/
+  __init__.py              empty, deliberately
+  constants.py             artifact filenames, retention, deadlines, listen address
+  build_spec.py            SandboxBuildSpec, Dependencies, ProxySpec
+  host_state.py            HostState, DeclaredPath / File / Dir, GitState
+  session_state.py         SessionState, ProxyState
+  launch_checks.py         check_launch_allowed, and the only prompt in the program
+  launch_config/
+    shared.py              SandboxLaunchConfig, write_launch_config
+    linux.py               SandboxLaunchConfigLinux, compute_launch_config
+    darwin.py              SandboxLaunchConfigDarwin, compute_launch_config
+    seatbelt.py            static profile sections, data only
+  prepare.py               entry point
+  cleanup.py               entry point
+  apply_network_rules.py   entry point, Linux, runs inside pasta's namespace
+```
+
+`launch_config/` is a package while `host_state.py` and `session_state.py` are
+single files because the split follows the size of the divergence rather than
+its presence. All three have platform variants, but `SessionStateLinux` adds no
+fields and `HostStateLinux` adds two, whereas the two `compute_launch_config`
+implementations share almost nothing and carry the entire bubblewrap and
+seatbelt ordering between them.
+
+`launch_checks.py` stays separate from `host_state.py` because folding it in
+would put policy inside the observation module, which is the boundary the whole
+design rests on.
 
 ### Python constraints
 
@@ -157,19 +193,20 @@ Settled:
 | `SandboxBuildSpec` | the JSON Nix emits at build time |
 | `HostState` | what reading the host returns |
 | `SessionState` | what the launcher creates for this launch |
-| `SandboxConfig` | the pure result: argv segments, artifact bodies, warnings |
+| `SandboxLaunchConfig` | the pure result: argv segments, artifact bodies, warnings |
 | `read_host_state` | observes, decides nothing |
 | `check_launch_allowed` | refuses or continues |
-| `create_session_state` | the only step with side effects |
-| `compute_sandbox_config` | the pure decision layer |
-| `write_sandbox_config` | the only step that knows a file format |
+| `create_session_dir` | the directory, before anything can refuse |
+| `create_session_state` | the proxy and the sandbox home |
+| `compute_launch_config` | the pure decision layer |
+| `write_launch_config` | the only step that knows a file format |
 | `prepare_launch`, `cleanup_launch` | the two entry points |
 
 The CLI verbs are `prepare` and `cleanup`, short, with the long names kept for
 the Python functions.
 
 Platform variants take a suffix: `SandboxBuildSpecLinux`, `DependenciesDarwin`,
-`HostStateLinux`, `SessionStateDarwin`, `SandboxConfigLinux`. Suffix rather than
+`HostStateLinux`, `SessionStateDarwin`, `SandboxLaunchConfigLinux`. Suffix rather than
 prefix so each variant sorts next to its base in an import list and in an
 editor's symbol outline.
 
@@ -475,13 +512,18 @@ The steps.
 
 ```
 prepare_launch(spec_path) -> session dir
-  spec    = load_spec(spec_path)
-  host    = read_host_state(spec)
-            check_launch_allowed(spec, host)
-  session = create_session_state(spec, host)
-  config  = compute_sandbox_config(spec, host, session)
-            write_sandbox_config(config, session)
+  spec        = load_build_spec(spec_path)
+  session_dir = create_session_dir(spec)
+  host        = read_host_state(spec)
+                check_launch_allowed(spec, host)
+  session     = create_session_state(spec, host, session_dir)
+  config      = compute_launch_config(spec, host, session)
+                write_launch_config(config, session)
 ```
+
+`create_session_dir` is separate from `create_session_state` so the directory
+exists before anything can refuse the launch, without a proxy having been
+started for a run that is about to be refused.
 
 `read_host_state` may read files, run git and resolve symlinks. It may not
 create, delete, prompt or decide. `check_launch_allowed` holds the
@@ -489,12 +531,12 @@ bind-existence check, the home-directory confirmation, the git-root-is-home
 refusal and the nested-bind refusal; all four are pure predicates over
 `HostState` except the confirmation, which needs `/dev/tty`.
 `create_session_state` is the only step that creates anything.
-`compute_sandbox_config` is pure. `write_sandbox_config` is the only step that
+`compute_launch_config` is pure. `write_launch_config` is the only step that
 knows a file format.
 
 The rule that decides which side a fact belongs on: if it can be stated without
 naming bubblewrap, seatbelt, binds or rules, it is an observation and belongs in
-`HostState`; otherwise it is a decision and belongs in `compute_sandbox_config`.
+`HostState`; otherwise it is a decision and belongs in `compute_launch_config`.
 So "`/etc/resolv.conf` names a loopback nameserver" is observed, and "use
 `/run/systemd/resolve/resolv.conf` instead" is decided. The rule is checkable
 field by field, which is the point of having one.
@@ -507,7 +549,7 @@ policy would remove the only thing that makes the split verifiable by reading
 signatures.
 
 Two consequences. The warnings `_add_symlink_target` prints to stderr today
-become `SandboxConfig.warnings`, printed by `write_sandbox_config`, which makes
+become `SandboxLaunchConfig.warnings`, printed by `write_launch_config`, which makes
 them assertable. And the passwd file's path is session state while its content
 is a pure function of uid, gid and the real home, so it is computed like every
 other artifact rather than written by the step that creates the directory.
@@ -641,23 +683,23 @@ class SessionStateLinux(SessionState): ...
 class SessionStateDarwin(SessionState):
     sandbox_home: Path
 
-class SandboxConfig:
+class SandboxLaunchConfig:
     argv_before_env: tuple[str, ...]
     argv_after_env: tuple[str, ...]
     passwd: str
     cleanup: tuple[Path, ...]
     warnings: tuple[str, ...]
 
-class SandboxConfigLinux(SandboxConfig):
+class SandboxLaunchConfigLinux(SandboxLaunchConfig):
     bwrap_args: tuple[str, ...]
     nft_rules: tuple[str, ...]
 
-class SandboxConfigDarwin(SandboxConfig):
+class SandboxLaunchConfigDarwin(SandboxLaunchConfig):
     seatbelt_profile_lines: tuple[str, ...]
 ```
 
-The artifacts stay sequences through `compute_sandbox_config` and only meet a
-separator in `write_sandbox_config`. Flattening them earlier would throw away
+The artifacts stay sequences through `compute_launch_config` and only meet a
+separator in `write_launch_config`. Flattening them earlier would throw away
 the structure the `--args` change exists to protect, and would reduce the unit
 tier to string matching. What the tests need to be able to write is that
 `("--bind", "/tmp/a b", "/tmp/a b")` appears in `bwrap_args`, and that a deny
@@ -749,7 +791,7 @@ newlines.
 The route-restrict layer moves to Python. The two `writeScript` scripts in
 `lib/linux/networking.nix` become one entry point that runs inside pasta's
 namespace, applies `nft.rules` and execs onwards. The rules are computed by
-`compute_sandbox_config` and written as an artifact, so the entry point holds no
+`compute_launch_config` and written as an artifact, so the entry point holds no
 policy and the nftables rules stop being a third generated artifact.
 `allowedLocalPorts` also needs two `/proc/sys/net/ipv4/conf/*/route_localnet`
 writes, which an nft ruleset cannot express, so those stay in the entry point.
@@ -821,7 +863,7 @@ warns.
 
 Not started. 6 files. 2 days.
 
-A pytest tier against `compute_sandbox_config`, which needs no `nix-build` and
+A pytest tier against `compute_launch_config`, which needs no `nix-build` and
 no sandbox launch. Cover the symlink chain walk, the bound-prefix check,
 parent-dir emission and the git protected-path enumeration.
 
@@ -893,8 +935,10 @@ What the root override variable is called. `AGENT_SANDBOX_LOG_DIR` was named
 when the directory held only logs, and it now holds the computed configuration
 as well.
 
-Module names inside `launch/agent_sandbox/`, decided as the files are created.
-The five steps imply the split, so nothing is locked in early.
+Nothing further on names. Modules follow one rule, one module per type family
+named for the type it owns, with `launch_checks`, `seatbelt` and `constants` as
+the exceptions that own no type. Types carry the `Sandbox` prefix and modules do
+not, since a module path is already `agent_sandbox.something`.
 
 ## Deferred
 
