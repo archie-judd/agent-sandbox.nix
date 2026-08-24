@@ -8,11 +8,11 @@
 let
   mkAllowlistFile = shared.mkAllowlistFile;
   mkProxyStartupBashStr = shared.mkProxyStartupBashStr;
-  darwinAllowedLocalPortsRulesStr =
-      builtins.concatStringsSep "\n" (
-        map (port: "        (allow network-outbound (remote ip \"localhost:${port}\"))")
-          (if allowedLocalPorts == null then ["*"] else map toString allowedLocalPorts)
-      );
+  darwinAllowedLocalPortsRulesStr = builtins.concatStringsSep "\n" (
+    map (port: "        (allow network-outbound (remote ip \"localhost:${port}\"))") (
+      if allowedLocalPorts == null then [ "*" ] else map toString allowedLocalPorts
+    )
+  );
 in
 if allowedDomains != null then
   let
@@ -56,7 +56,6 @@ if allowedDomains != null then
       ''
         trap 'kill $_PROXY_PID 2>/dev/null; rm -f "$_CA_CERT_FILE" "$_COMBINED_CA_BUNDLE"; rm -f "$_SANDBOX_PASSWD"; rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT
       '';
-    sandboxExecBashStr = "";
   }
 else
   {
@@ -115,5 +114,4 @@ else
       ''
         trap 'rm -f "$_SANDBOX_PASSWD"; rm -rf "$SANDBOX_HOME" "$SANDBOX_PROFILE"' EXIT
       '';
-    sandboxExecBashStr = "exec ";
   }

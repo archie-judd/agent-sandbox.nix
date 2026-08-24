@@ -201,7 +201,9 @@ let
   # Runs inside the sandbox ahead of the agent binary: probes for a declared
   # git identity and warns the user at launch if none is found, then exec's
   # the real command. See lib/pre-entry-script.sh.
-  preEntryScript = pkgs.writeShellScript "pre-entry-script" (builtins.readFile ../pre-entry-script.sh);
+  preEntryScript = pkgs.writeShellScript "pre-entry-script" (
+    builtins.readFile ../pre-entry-script.sh
+  );
   implicitPackages = [
     pkgs.cacert
     bashWrapper
@@ -377,10 +379,14 @@ let
   # is always reachable in the store closure. bashWrapper forces
   # --norc --noprofile on every bash invocation so that the sandboxed
   # process cannot source /etc/bashrc or /etc/profile.
-  closurePathsFile = pkgs.writeClosure (allowedPackages ++ implicitPackages ++ [
-    pkg
-    preEntryScript
-  ]);
+  closurePathsFile = pkgs.writeClosure (
+    allowedPackages
+    ++ implicitPackages
+    ++ [
+      pkg
+      preEntryScript
+    ]
+  );
 
   gitDetectionBashStr =
     # bash
@@ -588,89 +594,97 @@ builtins.seq
     stateDirs = stateDirs;
     stateFiles = stateFiles;
   })
-  (builtins.seq
-    validatedAllowedLocalPorts
-    (pkgs.writeTextFile {
-      name = outName;
-      executable = true;
-      destination = "/bin/${outName}";
-      text =
-        # bash
-        ''
-          #!${pkgs.bashInteractive}/bin/bash
-          CWD=$(pwd)
+  (
+    builtins.seq validatedAllowedLocalPorts (
+      pkgs.writeTextFile {
+        name = outName;
+        executable = true;
+        destination = "/bin/${outName}";
+        text =
+          # bash
+          ''
+            #!${pkgs.bashInteractive}/bin/bash
+            CWD=$(pwd)
 
-          ${shared.assertBindsExistBashStr { inherit rwDirs rwFiles roDirs roFiles; }}
+            ${shared.assertBindsExistBashStr {
+              inherit
+                rwDirs
+                rwFiles
+                roDirs
+                roFiles
+                ;
+            }}
 
-          ${shared.assertHomeCwdAllowedBashStr}
+            ${shared.assertHomeCwdAllowedBashStr}
 
-          ${gitDetectionBashStr}
-          ${ttyDetectionBashStr}
-          ${nixDaemonSocketBashStr}
+            ${gitDetectionBashStr}
+            ${ttyDetectionBashStr}
+            ${nixDaemonSocketBashStr}
 
-          # Resolve rwDirs/rwFiles/roDirs/roFiles paths while $HOME still points
-          # at real home.
-          ${resolveStateDirsStr}
-          ${resolveStateFilesStr}
-          ${resolveRoDirsStr}
-          ${resolveRoFilesStr}
+            # Resolve rwDirs/rwFiles/roDirs/roFiles paths while $HOME still points
+            # at real home.
+            ${resolveStateDirsStr}
+            ${resolveStateFilesStr}
+            ${resolveRoDirsStr}
+            ${resolveRoFilesStr}
 
-          # Create an ephemeral HOME so subprocesses don't touch the real home.
-          # Lives under /tmp which is already allowed read-write in the profile.
-          REAL_HOME="$HOME"
-          SANDBOX_HOME=$(mktemp -d /private/tmp/sandbox-home.XXXXXX)
-          _SANDBOX_PASSWD=$(mktemp /tmp/sandbox-passwd.XXXXXX)
-          printf 'user:x:%s:%s:sandbox user:%s:/bin/sh\n' "$(id -u)" "$(id -g)" "$REAL_HOME" > "$_SANDBOX_PASSWD"
+            # Create an ephemeral HOME so subprocesses don't touch the real home.
+            # Lives under /tmp which is already allowed read-write in the profile.
+            REAL_HOME="$HOME"
+            SANDBOX_HOME=$(mktemp -d /private/tmp/sandbox-home.XXXXXX)
+            _SANDBOX_PASSWD=$(mktemp /tmp/sandbox-passwd.XXXXXX)
+            printf 'user:x:%s:%s:sandbox user:%s:/bin/sh\n' "$(id -u)" "$(id -g)" "$REAL_HOME" > "$_SANDBOX_PASSWD"
 
-          # Symlink state / ro dirs/files into sandbox HOME so $HOME-relative
-          # lookups reach the real paths through the Seatbelt-allowed targets.
-          ${nestedBindGuardBashStr}
-          ${symlinkStateDirsStr}
-          ${symlinkStateFilesStr}
-          ${symlinkRoDirsStr}
-          ${symlinkRoFilesStr}
+            # Symlink state / ro dirs/files into sandbox HOME so $HOME-relative
+            # lookups reach the real paths through the Seatbelt-allowed targets.
+            ${nestedBindGuardBashStr}
+            ${symlinkStateDirsStr}
+            ${symlinkStateFilesStr}
+            ${symlinkRoDirsStr}
+            ${symlinkRoFilesStr}
 
-          # Walk ancestor directories between REAL_HOME and REPO_ROOT (or CWD)
-          # and patch the seatbelt profile at runtime with file-read-metadata rules.
-          ${ancestorTraversalBashStr}
-          ${ancestorProfilePatchBashStr}
-          ${gitProtectionProfilePatchBashStr}
+            # Walk ancestor directories between REAL_HOME and REPO_ROOT (or CWD)
+            # and patch the seatbelt profile at runtime with file-read-metadata rules.
+            ${ancestorTraversalBashStr}
+            ${ancestorProfilePatchBashStr}
+            ${gitProtectionProfilePatchBashStr}
 
-          ${conditionalNetworkingParams.proxyStartupBashStr}
-          ${conditionalNetworkingParams.networkRuntimePatchBashStr}
-          ${conditionalNetworkingParams.bashTrapCleanupStr}
+            ${conditionalNetworkingParams.proxyStartupBashStr}
+            ${conditionalNetworkingParams.networkRuntimePatchBashStr}
+            ${conditionalNetworkingParams.bashTrapCleanupStr}
 
 
-          ${conditionalNetworkingParams.sandboxExecBashStr}/usr/bin/env -i \
-            HOME="$SANDBOX_HOME" \
-            TERM="$TERM" \
-            SHELL="${bashWrapper}/bin/bash" \
-            PATH="${pathStr}" \
-            SSL_CERT_DIR="${pkgs.cacert}/etc/ssl/certs" \
-            TMPDIR=/tmp \
-            GIT_CONFIG_COUNT="1" \
-            GIT_CONFIG_KEY_0="user.useConfigOnly" \
-            GIT_CONFIG_VALUE_0="true" \
-            ${conditionalNetworkingParams.caCertEnvInlineBashStr} \
-            ${conditionalNetworkingParams.proxyEnvInlineBashStr} \
-            ${extraEnvInlineStr} \
-            /usr/bin/sandbox-exec \
-            -f "$SANDBOX_PROFILE" \
-            -D CWD="$CWD" \
-            -D GIT_DIR="$GIT_DIR_PARAM" \
-            -D REPO_ROOT="$REPO_ROOT" \
-            -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
-            -D MY_TTY="$MY_TTY" \
-            -D TMPDIR="/tmp" \
-            -D HOME="$SANDBOX_HOME"  \
-            -D REAL_HOME="$REAL_HOME" \
-            -D SANDBOX_PASSWD="$_SANDBOX_PASSWD" \
-            ${nixDaemonSocketFlag} \
-            -D HOME_CACHE="$SANDBOX_HOME/.cache" \
-            -D HOME_LOCAL="$SANDBOX_HOME/.local" \
-            -D HOME_LOCAL_STATE="$SANDBOX_HOME/.local/state" \
-            -D HOME_LOCAL_SHARE="$SANDBOX_HOME/.local/share" ${stateDirFlags} ${stateFileFlags} ${roDirFlags} ${roFileFlags} \
-            ${preEntryScript} ${pkg}/bin/${binName} "$@"
-        '';
-    })
+            /usr/bin/env -i \
+              HOME="$SANDBOX_HOME" \
+              TERM="$TERM" \
+              SHELL="${bashWrapper}/bin/bash" \
+              PATH="${pathStr}" \
+              SSL_CERT_DIR="${pkgs.cacert}/etc/ssl/certs" \
+              TMPDIR=/tmp \
+              GIT_CONFIG_COUNT="1" \
+              GIT_CONFIG_KEY_0="user.useConfigOnly" \
+              GIT_CONFIG_VALUE_0="true" \
+              ${conditionalNetworkingParams.caCertEnvInlineBashStr} \
+              ${conditionalNetworkingParams.proxyEnvInlineBashStr} \
+              ${extraEnvInlineStr} \
+              /usr/bin/sandbox-exec \
+              -f "$SANDBOX_PROFILE" \
+              -D CWD="$CWD" \
+              -D GIT_DIR="$GIT_DIR_PARAM" \
+              -D REPO_ROOT="$REPO_ROOT" \
+              -D REPO_ROOT_PARENT="$REPO_ROOT_PARENT" \
+              -D MY_TTY="$MY_TTY" \
+              -D TMPDIR="/tmp" \
+              -D HOME="$SANDBOX_HOME"  \
+              -D REAL_HOME="$REAL_HOME" \
+              -D SANDBOX_PASSWD="$_SANDBOX_PASSWD" \
+              ${nixDaemonSocketFlag} \
+              -D HOME_CACHE="$SANDBOX_HOME/.cache" \
+              -D HOME_LOCAL="$SANDBOX_HOME/.local" \
+              -D HOME_LOCAL_STATE="$SANDBOX_HOME/.local/state" \
+              -D HOME_LOCAL_SHARE="$SANDBOX_HOME/.local/share" ${stateDirFlags} ${stateFileFlags} ${roDirFlags} ${roFileFlags} \
+              ${preEntryScript} ${pkg}/bin/${binName} "$@"
+          '';
+      }
+    )
   )
