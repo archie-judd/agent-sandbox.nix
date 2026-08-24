@@ -55,6 +55,23 @@ def _get_missing_binds(host: HostStateLinux | HostStateDarwin) -> list[DeclaredP
     return [declared for declared in host.declared if not declared.exists]
 
 
+def _get_relative_paths(host: HostStateLinux | HostStateDarwin) -> list[DeclaredPath]:
+    """Declared paths that did not expand to an absolute path.
+
+    Nothing is a base for these. The bash handed the declared string to
+    bubblewrap, which resolved it against its own working directory, so
+    `rwDirs = [ "somedir" ]` bound a different folder depending on where the
+    wrapper was run from. This is also what catches `$(...)`: command
+    substitution no longer happens, so the text survives literally, and literal
+    text is not an absolute path.
+    """
+    return [
+        declared
+        for declared in host.declared
+        if not declared.expanded_path.is_absolute()
+    ]
+
+
 def _is_cwd_above_home(host: HostStateLinux | HostStateDarwin) -> bool:
     """Whether the launch directory sits above the real home.
 
@@ -177,7 +194,21 @@ def get_launch_refusals(
     """Every reason this launch must not proceed. Empty means allowed."""
     refusals: list[str] = []
 
+    relative = _get_relative_paths(host)
+    for declared in relative:
+        refusals.append(
+            f"{declared.expanded_path}: declared as "
+            f"{_get_declared_label(declared)} but is not an absolute path; "
+            f"write it out in full or use $HOME"
+            f"{_origin_suffix(declared)}"
+        )
+
     for declared in _get_missing_binds(host):
+        # A relative path is reported once, for the reason that matters. Whether
+        # it happens to exist relative to the launch directory is beside the
+        # point, and saying both would suggest making it exist would help.
+        if declared in relative:
+            continue
         refusals.append(
             f"{declared.expanded_path}: declared as "
             f"{_get_declared_label(declared)} but does not exist"

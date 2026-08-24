@@ -374,8 +374,13 @@ def _get_declared_paths(
         # Asked before the flattening, since that is the form whose symlinks
         # are the ones the sandbox has to reproduce.
         parent_symlinks = _get_parent_symlinks(expanded)
-        resolved_parent = Path(os.path.realpath(expanded.parent))
-        expanded = resolved_parent / expanded.name
+        # Only an absolute path is flattened. realpath would resolve a relative
+        # one against the launch directory, which is the very thing
+        # get_launch_refusals refuses it for, and doing that here would leave
+        # the refusal nothing to see.
+        if expanded.is_absolute():
+            resolved_parent = Path(os.path.realpath(expanded.parent))
+            expanded = resolved_parent / expanded.name
         exists = _path_exists(expanded)
         symlink_chain = _get_symlink_chain_for_file(expanded)
         path: DeclaredPath
