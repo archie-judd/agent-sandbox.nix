@@ -225,7 +225,11 @@ def _get_profile_lines(
     # Last, so they outrank every allow above, including a declared rwDir that
     # happens to contain the gitdir.
     if git is not None:
-        lines += seatbelt.git_protection(git.protected_dirs, git.protected_files)
+        # Existence is irrelevant here: a deny on a path that does not exist
+        # yet is harmless, and becomes effective the moment it appears.
+        lines += seatbelt.git_protection(
+            git.protected_dirs, tuple(git.protected_files.keys())
+        )
     return lines
 
 
@@ -252,6 +256,8 @@ def compute_launch_config(
         # The session directory survives for debugging, and everything at a
         # fixed name inside it survives with it. Only the sandbox home goes.
         cleanup=(session.sandbox_home,),
+        # macOS binds nothing, so nothing is materialised to clean up.
+        cleanup_if_empty=(),
         warnings=tuple(warnings),
         seatbelt_profile_lines=tuple(_get_profile_lines(spec, host, session, git)),
         home_symlinks=tuple(_get_home_symlinks(host, session.sandbox_home)),

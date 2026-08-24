@@ -19,4 +19,8 @@ class SandboxLaunchConfig:
     argv_after_env: tuple[str, ...]
     passwd: str
     cleanup: tuple[Path, ...]
+    # Removed only if still empty. Bubblewrap materialises a mount destination
+    # on the host, so a path bound over to make it read-only has to go; but if
+    # something wrote real content there in the meantime it must be left alone.
+    cleanup_if_empty: tuple[Path, ...]
     warnings: tuple[str, ...]

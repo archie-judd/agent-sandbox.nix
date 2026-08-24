@@ -48,6 +48,9 @@ class DependenciesLinux:
     nft: Path
     ip: Path
     env: Path
+    # The in-namespace entry point runs before env -i, so it inherits the
+    # stub's PYTHONPATH. Only the interpreter has to be named here.
+    python: Path
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
@@ -57,7 +60,10 @@ class DependenciesLinux:
         nft = Path(data["nft"])
         ip = Path(data["ip"])
         env = Path(data["env"])
-        return cls(git=git, bwrap=bwrap, pasta=pasta, nft=nft, ip=ip, env=env)
+        python = Path(data["python"])
+        return cls(
+            git=git, bwrap=bwrap, pasta=pasta, nft=nft, ip=ip, env=env, python=python
+        )
 
 
 @dataclass(frozen=True, kw_only=True)

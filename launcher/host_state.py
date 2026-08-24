@@ -28,7 +28,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Sequence, TypedDict, assert_never
+from typing import Literal, Mapping, Sequence, TypedDict, assert_never
 
 from launcher.build_spec import (
     SandboxBuildSpecDarwin,
@@ -79,7 +79,11 @@ class GitState:
     # directories, config files, and the pointers that redirect git at another
     # gitdir entirely.
     protected_dirs: tuple[Path, ...]
-    protected_files: tuple[Path, ...]
+    # Each protected file, mapped to whether it exists on the host. A path that
+    # does not exist yet still has to be made read-only rather than merely
+    # creatable, so the backends bind an empty file over it. Paired structurally
+    # rather than positionally, so the two can never drift apart.
+    protected_files: Mapping[Path, bool]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -437,21 +441,23 @@ def _read_git_state(git: Path, cwd: Path) -> GitState | None:
     common_dir = Path(common)
 
     protected_dirs: list[Path] = []
-    protected_files: list[Path] = []
+    protected_files: dict[Path, bool] = {}
 
     for gitdir in _get_all_gitdirs(common_dir):
         hooks = gitdir / "hooks"
         if hooks.is_dir():
             protected_dirs.append(hooks)
-        protected_files += _get_protected_files_in_gitdir(git, gitdir)
+        for path in _get_protected_files_in_gitdir(git, gitdir):
+            protected_files[path] = _path_exists(path)
 
-    protected_files += _get_worktree_dot_git_files(git, cwd)
+    for path in _get_worktree_dot_git_files(git, cwd):
+        protected_files[path] = _path_exists(path)
 
     return GitState(
         common_dir=common_dir,
         repo_root=common_dir.parent,
         protected_dirs=tuple(protected_dirs),
-        protected_files=tuple(protected_files),
+        protected_files=protected_files,
     )
 
 

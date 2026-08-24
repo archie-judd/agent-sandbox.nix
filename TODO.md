@@ -875,8 +875,12 @@ The `SANDBOX_PROXY_PORT="$_PROXY_PORT"` assignment prefixed to the pasta
 invocation disappears: a shell assignment prefix cannot be an argv element, and
 once the port is baked into `nft.rules` nothing reads the variable.
 
-Three things to verify rather than assume. That `bwrap --args` exists in the
-pinned nixpkgs: `bwrap --help | grep -- '--args'`. That fd 3 survives pasta into
+Three things to verify rather than assume, one of which is currently assumed
+rather than verified. `bwrap --args` is taken on trust, because it is Linux-only
+and cannot be checked from a macOS worktree: run `bwrap --help | grep -- '--args'`
+against the pin before believing this. If it is absent, the fallback is passing
+bubblewrap's arguments inline, which gives up the whitespace-safety fix that is
+half the reason for the artifact. That fd 3 survives pasta into
 bubblewrap, since the whole args-file design rests on it. And whether the macOS
 passwd file has any reader at all: it is created at `lib/darwin/default.nix:635`,
 passed as `-D SANDBOX_PASSWD` at `:680` and granted `file-read*` at
