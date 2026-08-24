@@ -120,6 +120,7 @@ let
   );
 
   stub = pkgs.replaceVars ../stub.sh {
+    bash = "${pkgs.bashInteractive}/bin/bash";
     python = "${pkgs.python3}/bin/python3";
     launcher = "${launcherPackage}";
     spec = "${sandboxBuildSpec}";

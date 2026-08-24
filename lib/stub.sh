@@ -1,4 +1,7 @@
-#!/usr/bin/env bash
+#!@bash@
+# The interpreter is pinned, not resolved from PATH. macOS ships bash 3.2,
+# which has no mapfile at all, so `/usr/bin/env bash` turns this into a
+# script that silently assembles an empty command line.
 # shellcheck shell=bash
 #
 # What $out/bin/<outName> actually is. Identical for every wrapper and both
