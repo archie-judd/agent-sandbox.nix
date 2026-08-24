@@ -17,6 +17,7 @@ import os
 import re
 import select
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -207,6 +208,24 @@ def _teardown(process: subprocess.Popen[str] | None, sandbox_home: Path | None) 
         process.kill()
     if sandbox_home is not None:
         shutil.rmtree(sandbox_home, ignore_errors=True)
+
+
+def teardown_session_state(
+    session: "SessionStateLinux | SessionStateDarwin",
+) -> None:
+    """Undo what create_session_state made, from the state itself.
+
+    Used when prepare fails after the session exists. cleanup_launch does the
+    same job from the session directory instead, because by then it is a
+    different process.
+    """
+    if session.proxy is not None:
+        try:
+            os.kill(session.proxy.pid, signal.SIGKILL)
+        except OSError:
+            pass
+    if isinstance(session, SessionStateDarwin):
+        shutil.rmtree(session.sandbox_home, ignore_errors=True)
 
 
 def create_session_state(

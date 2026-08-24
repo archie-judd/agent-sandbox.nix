@@ -17,7 +17,6 @@ from typing import Mapping, Sequence
 
 from launcher.build_spec import SandboxBuildSpecLinux
 from launcher.constants import (
-    BWRAP_ARGS,
     CA_BUNDLE,
     CA_CERT,
     NETWORK,
@@ -93,12 +92,27 @@ class _DeclaredBinds:
 
 
 @dataclass(frozen=True, kw_only=True)
+class NetworkConfig:
+    """Everything the in-namespace entry point applies, as one artifact.
+
+    It carries the binary paths too, so that entry point holds no policy and no
+    hardcoded paths: it reads this, does what it says, and execs onwards.
+    """
+
+    nft: Path
+    ip: Path
+    # Only in restricted mode. Belt and braces over the drop policy, but it is a
+    # security control and turning it into a no-op is not this port's call.
+    delete_default_route: bool
+    # /proc/sys writes an nft ruleset cannot express.
+    sysctls: Mapping[str, str]
+    rules: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
 class SandboxLaunchConfigLinux(SandboxLaunchConfig):
     bwrap_args: tuple[str, ...]
-    # Applied inside pasta's namespace before bubblewrap runs.
-    delete_default_route: bool
-    sysctls: Mapping[str, str]
-    nft_rules: tuple[str, ...]
+    network: NetworkConfig
 
 
 def _is_already_bound(path: Path, prefixes: Sequence[Path]) -> bool:
@@ -495,7 +509,11 @@ def compute_launch_config(
         bwrap_args=tuple(
             _get_bwrap_args(spec, host, session, git, binds, git_args)
         ),
-        delete_default_route=session.proxy is not None,
-        sysctls=sysctls,
-        nft_rules=tuple(_get_nft_rules(proxy_port, spec.allowed_local_ports)),
+        network=NetworkConfig(
+            nft=spec.dependencies.nft,
+            ip=spec.dependencies.ip,
+            delete_default_route=session.proxy is not None,
+            sysctls=sysctls,
+            rules=tuple(_get_nft_rules(proxy_port, spec.allowed_local_ports)),
+        ),
     )

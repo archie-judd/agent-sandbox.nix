@@ -983,6 +983,12 @@ speedup and be a security regression in the suite.
 Add mypy strict and shellcheck to `.github/workflows/test.yml`. Shellcheck has
 almost nothing left to check, which is the intended end state.
 
+Add `ruff check --select F401,F811,F841` alongside them: unused imports,
+redefinitions, unused locals. Deliberately not the whole of ruff, and no
+`[tool.ruff]` section, so this is not an adoption of its formatting or style
+opinions. mypy strict does not look for dead imports, and two had already
+accumulated in the launcher by the time the modules were finished.
+
 Acceptance: the suite passes, mypy and shellcheck run clean in CI, and the unit
 tier covers the four areas above on both platforms.
 

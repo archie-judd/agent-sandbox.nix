@@ -10,7 +10,7 @@ from pathlib import Path
 
 from launcher.build_spec import SandboxBuildSpecDarwin
 from launcher.constants import CA_BUNDLE, CA_CERT, PASSWD, SEATBELT_PROFILE, WARN_PREFIX
-from launcher.host_state import DeclaredPath, GitState, HostStateDarwin
+from launcher.host_state import GitState, HostStateDarwin
 from launcher.launch_config import seatbelt
 from launcher.launch_config.shared import SandboxLaunchConfig
 from launcher.session_state import SessionStateDarwin
