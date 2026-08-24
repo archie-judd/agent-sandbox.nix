@@ -173,6 +173,29 @@ are fine.
 
 mypy strict, fully annotated.
 
+No nested functions. A function defined inside another closes over its enclosing
+locals, which is the same invisible-scope problem the whole port exists to
+remove: you cannot tell what it depends on from its signature, and you cannot
+call it from a test. Lifting one out means passing what it needs as arguments,
+which is the point.
+
+Internal functions are prefixed with `_`, exported ones are not. The prefix is
+what says a name is not part of the module's surface, so it has to be accurate:
+a helper used only by its own module gets one even when a test reaches in for
+it.
+
+Explicit keyword arguments rather than `**` splatting, with one exception: a
+`TypedDict`. mypy validates the unpacked keys against the constructor being
+called when the source is typed, and cannot when it is a plain dict, so the
+splat stays as checkable as writing the arguments out. That is what
+`_CommonHostState` is for, and the cost it pays is duplicating the shared field
+list once.
+
+`Path` rather than `str` wherever the value is a real path. The one exception is
+declared paths before expansion, which carry `$VAR` and `~` and so are not paths
+yet; they become `Path` in `host_state`, and the type changing at that boundary
+is what makes it impossible to stat an unexpanded path by accident.
+
 Not packaged at all. Nix copies the source tree into the store and the stub
 points `PYTHONPATH` at it. `buildPythonApplication` was rejected because it
 emits a bash wrapper per console script that runs on every launch in front of
@@ -194,6 +217,17 @@ breaks loudly rather than silently.
 the Linux hot path and needs only `os` and `sys`, so it pays a bare interpreter
 start of around 16 ms rather than the 33 ms the full import set costs. Any
 re-export added to `__init__.py` would silently hand it the whole package.
+
+### Nix constraints
+
+No `inherit` and no `with`. Write attribute bindings out explicitly, so
+`{ pkgs = pkgs; shared = shared; }` rather than `{ inherit pkgs shared; }`. Both
+forms make the origin of a name invisible at the point of use, which is the
+ambient-scope problem this port is removing from the bash; explicit bindings
+also survive grep.
+
+Nix keeps camelCase. The JSON it emits does not, because that is a wire format
+read by Python rather than Nix source.
 
 ### Naming
 
@@ -650,7 +684,6 @@ class DeclaredDir(DeclaredPath):
 class GitState:
     common_dir: Path
     repo_root: Path
-    worktree_config_enabled: bool
     protected_dirs: tuple[Path, ...]
     protected_files: tuple[Path, ...]
 

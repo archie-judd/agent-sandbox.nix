@@ -17,7 +17,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, TypedDict
 
 from launcher.constants import ERROR_PREFIX
 
@@ -32,10 +32,13 @@ class ProxySpec:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ProxySpec:
+        binary = Path(data["binary"])
+        allowlist_file = Path(data["allowlist_file"])
+        redirects = dict(data["redirects"])
         return cls(
-            binary=Path(data["binary"]),
-            allowlist_file=Path(data["allowlist_file"]),
-            redirects=dict(data["redirects"]),
+            binary=binary,
+            allowlist_file=allowlist_file,
+            redirects=redirects,
         )
 
 
@@ -50,14 +53,13 @@ class DependenciesLinux:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> DependenciesLinux:
-        return cls(
-            git=Path(data["git"]),
-            bwrap=Path(data["bwrap"]),
-            pasta=Path(data["pasta"]),
-            nft=Path(data["nft"]),
-            ip=Path(data["ip"]),
-            env=Path(data["env"]),
-        )
+        git = Path(data["git"])
+        bwrap = Path(data["bwrap"])
+        pasta = Path(data["pasta"])
+        nft = Path(data["nft"])
+        ip = Path(data["ip"])
+        env = Path(data["env"])
+        return cls(git=git, bwrap=bwrap, pasta=pasta, nft=nft, ip=ip, env=env)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -66,20 +68,25 @@ class DependenciesDarwin:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> DependenciesDarwin:
-        return cls(git=Path(data["git"]))
+        git = Path(data["git"])
+        return cls(git=git)
 
 
 @dataclass(frozen=True, kw_only=True)
 class SandboxBuildSpec:
     out_name: str
-    sandbox_path: str # $PATH not Path
+    sandbox_path: str  # $PATH not Path
     allow_nix: bool
     rw_dirs: tuple[str, ...]
     rw_files: tuple[str, ...]
     ro_dirs: tuple[str, ...]
     ro_files: tuple[str, ...]
-    env_keys: tuple[str, ...] # Keys only. The values are shell expressions by design, so Nix emits them as a fragment the stub sources and they never enter this process.
-    allowed_local_ports: tuple[int, ...] | None # None means every host-local TCP port; the empty tuple means none.
+    env_keys: tuple[
+        str, ...
+    ]  # Keys only. The values are shell expressions by design, so Nix emits them as a fragment the stub sources and they never enter this process.
+    allowed_local_ports: (
+        tuple[int, ...] | None
+    )  # None means every host-local TCP port; the empty tuple means none.
     closure_paths_file: Path
     cacert_dir: Path
     cacert_bundle: Path
@@ -103,27 +110,63 @@ class SandboxBuildSpecDarwin(SandboxBuildSpec):
     dependencies: DependenciesDarwin
 
 
-def _shared_fields(data: Mapping[str, Any]) -> dict[str, Any]:
-    proxy = data.get("proxy")
+class _CommonBuildSpec(TypedDict):
+    """The fields both platforms share, typed so `**` is checked.
+
+    Duplicates the field list on SandboxBuildSpec, which is the cost of this
+    shape. mypy validates the unpacked keys against the constructor it is
+    splatted into, which it cannot do for a plain dict.
+    """
+
+    out_name: str
+    sandbox_path: str
+    allow_nix: bool
+    rw_dirs: tuple[str, ...]
+    rw_files: tuple[str, ...]
+    ro_dirs: tuple[str, ...]
+    ro_files: tuple[str, ...]
+    env_keys: tuple[str, ...]
+    allowed_local_ports: tuple[int, ...] | None
+    closure_paths_file: Path
+    cacert_dir: Path
+    cacert_bundle: Path
+    shell: Path
+    pre_entry_script: Path
+    sandboxed_binary: Path
+    proxy: ProxySpec | None
+
+
+def _common_build_spec(data: Mapping[str, Any]) -> _CommonBuildSpec:
     ports = data["allowed_local_ports"]
-    return {
-        "out_name": data["out_name"],
-        "sandbox_path": data["sandbox_path"],
-        "allow_nix": data["allow_nix"],
-        "rw_dirs": tuple(data["rw_dirs"]),
-        "rw_files": tuple(data["rw_files"]),
-        "ro_dirs": tuple(data["ro_dirs"]),
-        "ro_files": tuple(data["ro_files"]),
-        "env_keys": tuple(data["env_keys"]),
-        "allowed_local_ports": None if ports is None else tuple(ports),
-        "closure_paths_file": Path(data["closure_paths_file"]),
-        "cacert_dir": Path(data["cacert_dir"]),
-        "cacert_bundle": Path(data["cacert_bundle"]),
-        "shell": Path(data["shell"]),
-        "pre_entry_script": Path(data["pre_entry_script"]),
-        "sandboxed_binary": Path(data["sandboxed_binary"]),
-        "proxy": ProxySpec.from_dict(proxy) if proxy is not None else None,
-    }
+    if ports is None:
+        allowed_local_ports = None
+    else:
+        allowed_local_ports = tuple(ports)
+
+    proxy_data = data.get("proxy")
+    if proxy_data is None:
+        proxy = None
+    else:
+        proxy = ProxySpec.from_dict(proxy_data)
+
+    return _CommonBuildSpec(
+        out_name=data["out_name"],
+        sandbox_path=data["sandbox_path"],
+        allow_nix=data["allow_nix"],
+        rw_dirs=tuple(data["rw_dirs"]),
+        rw_files=tuple(data["rw_files"]),
+        ro_dirs=tuple(data["ro_dirs"]),
+        ro_files=tuple(data["ro_files"]),
+        env_keys=tuple(data["env_keys"]),
+        allowed_local_ports=allowed_local_ports,
+        closure_paths_file=Path(data["closure_paths_file"]),
+        cacert_dir=Path(data["cacert_dir"]),
+        cacert_bundle=Path(data["cacert_bundle"]),
+        shell=Path(data["shell"]),
+        pre_entry_script=Path(data["pre_entry_script"]),
+        sandboxed_binary=Path(data["sandboxed_binary"]),
+        proxy=proxy,
+    )
 
 
 def load_build_spec(path: Path) -> SandboxBuildSpecLinux | SandboxBuildSpecDarwin:
@@ -132,25 +175,31 @@ def load_build_spec(path: Path) -> SandboxBuildSpecLinux | SandboxBuildSpecDarwi
 
     platform = data["platform"]
     # The wrapper is built for one system, so this cannot happen by accident.
-    # It fails loudly rather than silently rendering the wrong backend.
+    # It fails loudly rather than silently computing for the wrong backend.
     if platform != sys.platform:
         raise SystemExit(
             f"{ERROR_PREFIX} {path}: built for {platform}, running on {sys.platform}"
         )
 
-    shared = _shared_fields(data)
-    if platform == "linux":
-        return SandboxBuildSpecLinux(
-            platform="linux",
-            hosts_file=Path(data["hosts_file"]),
-            empty_file=Path(data["empty_file"]),
-            dependencies=DependenciesLinux.from_dict(data["dependencies"]),
-            **shared,
-        )
-    if platform == "darwin":
-        return SandboxBuildSpecDarwin(
-            platform="darwin",
-            dependencies=DependenciesDarwin.from_dict(data["dependencies"]),
-            **shared,
-        )
-    raise SystemExit(f"{ERROR_PREFIX} {path}: unknown platform {platform!r}")
+    common = _common_build_spec(data)
+    dependencies_data = data["dependencies"]
+
+    match platform:
+        case "linux":
+            return SandboxBuildSpecLinux(
+                **common,
+                platform="linux",
+                hosts_file=Path(data["hosts_file"]),
+                empty_file=Path(data["empty_file"]),
+                dependencies=DependenciesLinux.from_dict(dependencies_data),
+            )
+        case "darwin":
+            return SandboxBuildSpecDarwin(
+                **common,
+                platform="darwin",
+                dependencies=DependenciesDarwin.from_dict(dependencies_data),
+            )
+        case _:
+            # Reachable, unlike the match in host_state: platform comes from
+            # JSON, so it is not a Literal the type checker can exhaust.
+            raise SystemExit(f"{ERROR_PREFIX} {path}: unknown platform {platform!r}")
