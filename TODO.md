@@ -1001,9 +1001,22 @@ which removes most of the exposure, but `$SANDBOX_HOME` still lives under
 Deny the name patterns after the rwDirs and roDirs allows so no user config can
 re-grant them, then re-allow this session's own HOME.
 
-`roDirs` and `roFiles` nested inside a read-write path stay writable on macOS,
-because seatbelt is last-match-wins and the read-only rules are emitted first.
-Nearly free once Python owns the whole profile and its ordering, which is why
+The grant survives unit 2 for two reasons only: the sandbox HOME lives under
+`/private/tmp`, and `TMPDIR` is set to `/tmp` so programs find scratch space
+where they expect it. Pointing `TMPDIR` at a directory inside the sandbox HOME
+would remove the second, at which point `/tmp` needs no grant beyond the home
+itself and the deny-then-re-allow dance is unnecessary. That is a behaviour
+change for anything hardcoding `/tmp` rather than respecting `TMPDIR`, which is
+why it is not folded into the port, but it is the smaller end state and worth
+weighing against the patterns approach.
+
+`roDirs` and `roFiles` nested inside a read-write path stay writable on macOS.
+Not for the reason previously recorded here: the read-only rules are emitted
+last, not first. Seatbelt matches per operation, and `(allow file-read* (subpath
+X))` says nothing about `file-write*`, so for a write under a nested `roDir` the
+only matching rule is still the enclosing `rwDir`'s `file-write*` allow. No
+ordering fixes that, at any position. The fix is an explicit `(deny file-write*
+(subpath X))` emitted after the read-write allows, which is why
 `seatbelt_profile_lines` is an ordered sequence rather than a template.
 
 The symlink walk continuing from an invented cursor when a hop cannot be
