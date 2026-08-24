@@ -128,7 +128,7 @@ launcher/
   build_spec.py            SandboxBuildSpec, Dependencies, ProxySpec
   host_state.py            HostState, DeclaredPath / File / Dir, GitState
   session_state.py         SessionState, ProxyState
-  launch_checks.py         check_launch_allowed, and the only prompt in the program
+  launch_checks.py         get_launch_refusals, and the only prompt in the program
   launch_config/
     shared.py              SandboxLaunchConfig, write_launch_config
     linux.py               SandboxLaunchConfigLinux, compute_launch_config
@@ -240,7 +240,7 @@ Settled:
 | `SessionState` | what the launcher creates for this launch |
 | `SandboxLaunchConfig` | the pure result: argv segments, artifact bodies, warnings |
 | `read_host_state` | observes, decides nothing |
-| `check_launch_allowed` | refuses or continues |
+| `get_launch_refusals` | every reason to refuse; empty means allowed |
 | `create_session_dir` | the directory, before anything can refuse |
 | `create_session_state` | the proxy and the sandbox home |
 | `compute_launch_config` | the pure decision layer |
@@ -559,21 +559,32 @@ prepare_launch(spec_path) -> session dir
   spec        = load_build_spec(spec_path)
   session_dir = create_session_dir(spec)
   host        = read_host_state(spec)
-                check_launch_allowed(spec, host)
+                get_launch_refusals(spec, host)
   session     = create_session_state(spec, host, session_dir)
   config      = compute_launch_config(spec, host, session)
                 write_launch_config(config, session)
 ```
+
+`get_launch_refusals` returns every reason the launch must not proceed rather
+than the first, so a run with three typo'd paths reports all three. It is the
+one place in the launcher that prompts, since launching from the real home has
+to be confirmed by a human, and `prepare_launch` owns the exit.
 
 `create_session_dir` is separate from `create_session_state` so the directory
 exists before anything can refuse the launch, without a proxy having been
 started for a run that is about to be refused.
 
 `read_host_state` may read files, run git and resolve symlinks. It may not
-create, delete, prompt or decide. `check_launch_allowed` holds the
-bind-existence check, the home-directory confirmation, the git-root-is-home
-refusal and the nested-bind refusal; all four are pure predicates over
-`HostState` except the confirmation, which needs `/dev/tty`.
+create, delete, prompt or decide. `get_launch_refusals` holds the
+bind-existence check, the home-directory confirmation and, on macOS only, the
+nested-bind refusal; all are pure predicates over `HostState` except the
+confirmation, which needs `/dev/tty`.
+
+The git-root-is-home rule is not among them. It does not refuse a launch, it
+disables git for the session and warns, so a function whose contract is refuse
+or continue cannot express it. It is a decision about what to bind, so it lives
+in `compute_launch_config` with the other bind decisions, and its warning goes
+into `SandboxLaunchConfig.warnings`.
 `create_session_state` is the only step that creates anything.
 `compute_launch_config` is pure. `write_launch_config` is the only step that
 knows a file format.

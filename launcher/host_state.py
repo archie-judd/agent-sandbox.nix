@@ -98,6 +98,20 @@ class HostStateDarwin(HostState):
     tty: Path | None
 
 
+def _path_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _path_is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def _expand_env_var(reference: str, environ: dict[str, str]) -> str:
     """Resolve one reference, given the text after the `$`: `VAR` or `{VAR}`.
 
@@ -215,7 +229,7 @@ def _get_declared_paths(
     paths: list[DeclaredPath] = []
     for unexpanded in declared:
         expanded = _expand_path(unexpanded, environ)
-        exists = expanded.exists()
+        exists = _path_exists(expanded)
         symlink_chain = _get_symlink_chain_for_file(expanded)
         path: DeclaredPath
         if kind == "dir":
@@ -484,7 +498,11 @@ def _common_host_state(
 
     return _CommonHostState(
         cwd=cwd,
-        real_home=Path(home),
+        # Physical, matching Path.cwd(). $HOME may traverse a symlink, and a
+        # logical-versus-physical comparison would silently report that the
+        # launch directory is not the home directory when it is, skipping the
+        # confirmation that stops the whole home being exposed unattended.
+        real_home=Path(os.path.realpath(home)),
         uid=os.getuid(),
         gid=os.getgid(),
         term=os.environ.get("TERM"),
@@ -503,7 +521,7 @@ def host_state_from_spec(
 
     match spec.platform:
         case "linux":
-            if SYSTEMD_RESOLV_CONF.is_file():
+            if _path_is_file(SYSTEMD_RESOLV_CONF):
                 systemd_resolv_conf = SYSTEMD_RESOLV_CONF
             else:
                 systemd_resolv_conf = None
