@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/nested-binds.nix")
+SANDBOXED=$(build_fixture nested-binds.nix)
 SHELL_BIN="$SANDBOXED/bin/sandboxed-bash-nested-binds"
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"

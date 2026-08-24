@@ -14,8 +14,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED_NOID=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/no-git-identity.nix")
-SANDBOXED_ENV=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/git-identity.nix")
+SANDBOXED_NOID=$(build_fixture no-git-identity.nix)
+SANDBOXED_ENV=$(build_fixture git-identity.nix)
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"

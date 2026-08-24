@@ -1,6 +1,6 @@
 # Test fixture: basic sandbox isolation
+{ pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;

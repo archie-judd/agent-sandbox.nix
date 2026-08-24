@@ -10,8 +10,8 @@
 # allow for /private/var/run/mDNSResponder so DNS still works). This
 # fixture exercises the filtered-mode mechanism; the open-mode mechanism
 # is covered by tests/darwin/test-localhost-denied-unrestricted.sh.
+{ pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;

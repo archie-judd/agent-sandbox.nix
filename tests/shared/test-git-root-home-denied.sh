@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/expose-repo-root.nix")
+SANDBOXED=$(build_fixture expose-repo-root.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash"
 
 # The fake HOME must NOT be under /tmp, which the sandbox always exposes
@@ -40,14 +40,14 @@ echo "project-file" >"$FAKE_HOME/subdir/project.txt"
 # detected git root (dirname of .git) equals $HOME and the guard fires.
 cd "$FAKE_HOME/subdir"
 
-run() { HOME="$FAKE_HOME" "$SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run_home_root() { HOME="$FAKE_HOME" "$SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
 
 echo "=== git-root-home-denied tests (shared) ==="
 echo
 
 # Sanity: git resolves inside the sandbox (otherwise the assertions below are
 # meaningless — a missing binary also exits non-zero).
-expect_ok "git binary is available inside the sandbox" "command -v git"
+expect_ok run_home_root "git binary is available inside the sandbox" "command -v git"
 
 # 1. The wrapper warns that git was disabled. The warning is emitted by the
 #    outer wrapper (before sandbox entry) on stderr, so any command triggers it.
@@ -63,14 +63,14 @@ fi
 # 2. The security property: the home directory is NOT exposed. The secret sits
 #    in the (would-be) REPO_ROOT, one level above CWD. Without the fix this
 #    succeeds via the REPO_ROOT read grant; with the fix home is never bound.
-expect_fail "cannot read sibling file in home-repo root" "cat ../home-secret.txt"
+expect_fail run_home_root "cannot read sibling file in home-repo root" "cat ../home-secret.txt"
 
 # 3. Git is disabled (not crashed): inside the sandbox there is no repo to find.
-expect_fail "git does not see the home repo from inside the sandbox" "git rev-parse --git-dir"
+expect_fail run_home_root "git does not see the home repo from inside the sandbox" "git rev-parse --git-dir"
 
 # 4. The project subdir (CWD) remains fully usable.
-expect_ok "CWD remains readable" "cat ./project.txt"
-expect_ok "CWD remains writable" "touch ./test-write && rm ./test-write"
+expect_ok run_home_root "CWD remains readable" "cat ./project.txt"
+expect_ok run_home_root "CWD remains writable" "touch ./test-write && rm ./test-write"
 
 # 5. A git root strictly *above* $HOME is refused the same way. This branch
 #    stays unconditional: launching from $HOME itself grants the home by
@@ -83,7 +83,7 @@ git -C "$OUTER_REPO" init -q
 echo "outer-secret-content" >"$OUTER_REPO/outer-secret.txt"
 mkdir -p "$OUTER_REPO/home/project"
 
-run() { (cd "$OUTER_REPO/home/project" && HOME="$OUTER_REPO/home" "$SHELL" --norc --noprofile -c "$@") >/dev/null 2>&1; }
+run_above_home() { (cd "$OUTER_REPO/home/project" && HOME="$OUTER_REPO/home" "$SHELL" --norc --noprofile -c "$1") >/dev/null 2>&1; }
 
 WARN_OUT=$( (cd "$OUTER_REPO/home/project" && HOME="$OUTER_REPO/home" "$SHELL" --norc --noprofile -c 'true') 2>&1 >/dev/null || true)
 if echo "$WARN_OUT" | grep -q "git is disabled for this session"; then
@@ -93,8 +93,8 @@ else
 	echo "FAIL: expected above-home-git-root warning on stderr, got: $WARN_OUT"
 	FAIL=$((FAIL + 1))
 fi
-expect_fail "cannot read the repo root above home" "cat ../../outer-secret.txt"
-expect_fail "git does not see the repo rooted above home" "git rev-parse --git-dir"
+expect_fail run_above_home "cannot read the repo root above home" "cat ../../outer-secret.txt"
+expect_fail run_above_home "git does not see the repo rooted above home" "git rev-parse --git-dir"
 
 print_results
 exit_status

@@ -1,8 +1,8 @@
 # Test fixture: a git identity declared via `env`
 # (GIT_AUTHOR_* / GIT_COMMITTER_*). git in allowedPackages so the launch-time
 # probe runs and resolves the declared identity (the no-warning case).
+{ pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;

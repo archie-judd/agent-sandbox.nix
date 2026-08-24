@@ -3,8 +3,8 @@
 # declared paths exist before each launch, so all four cases (both
 # missing / only rwDir / only rwFile / all present) can be exercised
 # against this single fixture.
+{ pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;

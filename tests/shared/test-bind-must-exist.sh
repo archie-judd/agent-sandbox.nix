@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/bind-must-exist.nix")
+SANDBOXED=$(build_fixture bind-must-exist.nix)
 SHELL_BIN="$SANDBOXED/bin/sandboxed-bash-bind-must-exist"
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"

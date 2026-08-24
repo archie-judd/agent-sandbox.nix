@@ -10,12 +10,12 @@ TEST_CWD="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/network-unrestricted.nix")
+SANDBOXED=$(build_fixture network-unrestricted.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash-unres"
 
-HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
+HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
 
-run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$@") >/dev/null 2>&1; }
+run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$1") >/dev/null 2>&1; }
 
 # --- Setup ---
 
@@ -79,10 +79,10 @@ echo "TCP4=$TCP4_PORT (host 127.0.0.1, probed via pasta gateway 10.0.2.2)"
 echo "INSIDE_PORT=$INSIDE_PORT"
 echo
 
-expect_ok  "curl is available" "command -v curl"
-expect_ok  "python3 is available" "command -v python3"
+expect_ok run  "curl is available" "command -v curl"
+expect_ok run  "python3 is available" "command -v python3"
 
-expect_status "can reach service started inside same sandbox on loopback" 0 \
+expect_status run "can reach service started inside same sandbox on loopback" 0 \
 	"python3 '$SCRIPT_DIR/../helpers/inside-http-loopback.py' '$INSIDE_PORT'"
 
 # Host loopback is reachable from inside the pasta namespace via the pasta
@@ -90,10 +90,10 @@ expect_status "can reach service started inside same sandbox on loopback" 0 \
 # The nftables drop rule for 10.0.2.2 must block this. Use curl --max-time
 # rather than /dev/tcp: nftables drop is silent (no RST/ICMP), so /dev/tcp
 # would hang until the kernel's TCP timeout; curl bounds the wait explicitly.
-expect_fail "cannot reach host loopback via pasta gateway (TCP/v4)" \
+expect_fail run "cannot reach host loopback via pasta gateway (TCP/v4)" \
 	"curl -sf --noproxy '*' --max-time 3 http://10.0.2.2:$TCP4_PORT/"
 
-expect_ok "public internet reachable (http://example.com)" \
+expect_ok run "public internet reachable (http://example.com)" \
 	"curl -s --retry 3 --retry-delay 2 --retry-connrefused --max-time 10 -o /dev/null http://example.com"
 
 print_results

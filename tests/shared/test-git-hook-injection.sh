@@ -27,7 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/expose-repo-root.nix")
+SANDBOXED=$(build_fixture expose-repo-root.nix)
 SHELL_BIN="$SANDBOXED/bin/sandboxed-bash"
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
@@ -79,7 +79,7 @@ if [ "$DETECTED" != "$COMMON_GIT" ]; then
 	exit 1
 fi
 
-run() { "$SHELL_BIN" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { "$SHELL_BIN" --norc --noprofile -c "$1" >/dev/null 2>&1; }
 
 echo "=== Git hook injection protection (shared) ==="
 echo
@@ -88,50 +88,50 @@ cd "$WT"
 echo "--- launched from a linked worktree ---"
 
 # Persistence vectors: writes denied.
-expect_fail "cannot create .git/hooks/post-checkout" \
+expect_fail run "cannot create .git/hooks/post-checkout" \
 	"touch '$COMMON_GIT/hooks/post-checkout'"
-expect_fail "cannot create .git/hooks/pre-commit" \
+expect_fail run "cannot create .git/hooks/pre-commit" \
 	"touch '$COMMON_GIT/hooks/pre-commit'"
-expect_fail "cannot append to .git/config (core.hooksPath bypass)" \
+expect_fail run "cannot append to .git/config (core.hooksPath bypass)" \
 	"echo '' >> '$COMMON_GIT/config'"
-expect_fail "cannot overwrite .git/config" \
+expect_fail run "cannot overwrite .git/config" \
 	"echo '[evil]' > '$COMMON_GIT/config'"
 # git writes config atomically: stage to config.lock, then rename onto
 # config. The rename target is read-only, so the atomic write still fails.
-expect_fail "cannot rename a lockfile onto .git/config" \
+expect_fail run "cannot rename a lockfile onto .git/config" \
 	"touch '$COMMON_GIT/config.sandbox-evil' && mv '$COMMON_GIT/config.sandbox-evil' '$COMMON_GIT/config'"
 
 # config.worktree is read instead of config for worktree-scoped settings once
 # extensions.worktreeConfig is on, so it carries the same core.hooksPath
 # vector. Neither file exists yet, so this also covers the masking of a
 # protected path that is absent at launch.
-expect_fail "cannot create .git/config.worktree" \
+expect_fail run "cannot create .git/config.worktree" \
 	"echo '[core]' > '$COMMON_GIT/config.worktree'"
-expect_fail "cannot create worktrees/feat/config.worktree" \
+expect_fail run "cannot create worktrees/feat/config.worktree" \
 	"echo '[core]' > '$COMMON_GIT/worktrees/feat/config.worktree'"
 
 # Pointer vectors: redirect the host's git at a gitdir the agent controls and
 # the content protections above never get consulted.
-expect_fail "cannot rewrite worktrees/feat/commondir" \
+expect_fail run "cannot rewrite worktrees/feat/commondir" \
 	"echo '/tmp/evil' > '$COMMON_GIT/worktrees/feat/commondir'"
-expect_fail "cannot rewrite the worktree's own .git pointer" \
+expect_fail run "cannot rewrite the worktree's own .git pointer" \
 	"echo 'gitdir: /tmp/evil' > '$WT/.git'"
 
 # Submodule gitdirs live inside the common gitdir's read-write bind and have
 # their own hooks and config.
-expect_fail "cannot create a submodule hook" \
+expect_fail run "cannot create a submodule hook" \
 	"touch '$SUB_GIT/hooks/pre-commit'"
-expect_fail "cannot append to a submodule config" \
+expect_fail run "cannot append to a submodule config" \
 	"echo '' >> '$SUB_GIT/config'"
 
 # Reads still work — git needs to run existing hooks and read existing config.
-expect_ok "can read .git/config" "head -c 1 '$COMMON_GIT/config' >/dev/null"
-expect_ok "can list .git/hooks/" "ls '$COMMON_GIT/hooks/' >/dev/null"
+expect_ok run "can read .git/config" "head -c 1 '$COMMON_GIT/config' >/dev/null"
+expect_ok run "can list .git/hooks/" "ls '$COMMON_GIT/hooks/' >/dev/null"
 
 # Sanity: commit still works from the worktree. This is the whole reason
 # the fix keeps GIT_DIR rw and only narrows these paths — objects/ and refs/
 # must remain writable, otherwise git commit and git fetch would fail.
-expect_ok ".git remains writable for commits from worktree" \
+expect_ok run ".git remains writable for commits from worktree" \
 	"git commit --allow-empty -m sandbox-test-commit"
 
 echo
@@ -140,33 +140,33 @@ echo "--- launched from the repo root ---"
 
 # The gitdir is inside CWD here rather than reached by a bind of its own, so
 # this position exercises a different path through the wrapper.
-expect_fail "cannot create .git/hooks/post-checkout" \
+expect_fail run "cannot create .git/hooks/post-checkout" \
 	"touch '$COMMON_GIT/hooks/post-checkout'"
-expect_fail "cannot append to .git/config" \
+expect_fail run "cannot append to .git/config" \
 	"echo '' >> '$COMMON_GIT/config'"
-expect_fail "cannot create .git/config.worktree" \
+expect_fail run "cannot create .git/config.worktree" \
 	"echo '[core]' > '$COMMON_GIT/config.worktree'"
-expect_fail "cannot create a submodule hook" \
+expect_fail run "cannot create a submodule hook" \
 	"touch '$SUB_GIT/hooks/pre-commit'"
-expect_fail "cannot rewrite the submodule's .git pointer" \
+expect_fail run "cannot rewrite the submodule's .git pointer" \
 	"echo 'gitdir: /tmp/evil' > '$MAIN_REPO/vendor/sub/.git'"
-expect_fail "cannot rewrite a worktree's .git pointer from the root" \
+expect_fail run "cannot rewrite a worktree's .git pointer from the root" \
 	"echo 'gitdir: /tmp/evil' > '$WT/.git'"
 
 # Over-blocking guard: git init hard-fails if it cannot copy the hook
 # templates, so a protection expressed as a pattern rather than a list of
 # known paths would break creating repos inside the sandbox.
-expect_ok "can git init a new repo under CWD" \
+expect_ok run "can git init a new repo under CWD" \
 	"mkdir -p '$MAIN_REPO/brand-new' && cd '$MAIN_REPO/brand-new' && git init -q ."
-expect_ok "can read the submodule's history" \
+expect_ok run "can read the submodule's history" \
 	"cd '$MAIN_REPO/vendor/sub' && git log --oneline >/dev/null"
-expect_ok "can write source files" \
+expect_ok run "can write source files" \
 	"echo change > '$MAIN_REPO/file.txt'"
 
 # Boundary: a repo that merely sits under the launch directory is not covered.
 # This is deliberate — covering it would mean searching the working tree — and
 # is documented alongside the launch-directory warning.
-expect_ok "an unrelated nested repo's hooks stay writable (documented non-goal)" \
+expect_ok run "an unrelated nested repo's hooks stay writable (documented non-goal)" \
 	"touch '$NESTED/.git/hooks/post-checkout'"
 
 print_results

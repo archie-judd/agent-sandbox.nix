@@ -4,6 +4,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OS=$(uname)
 
+# One nix-build per unique fixture across the whole suite instead of one per
+# test file. Removed at the end because out-links are GC roots.
+TEST_BUILD_CACHE=$(mktemp -d)
+export TEST_BUILD_CACHE
+trap 'rm -rf "$TEST_BUILD_CACHE"' EXIT
+
 FAILED_SUITES=()
 
 run_suite() {

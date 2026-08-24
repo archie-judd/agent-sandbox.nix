@@ -15,7 +15,7 @@ expect_rule_count() {
 	local desc="$1" ports="$2" rule="$3" count="$4"
 	local build_log out profile actual
 	build_log=$(mktemp)
-	if ! out=$(nix-build --no-out-link --arg ports "$ports" "$SCRIPT_DIR/../fixtures/allowed-local-ports.nix" 2>"$build_log"); then
+	if ! out=$(build_fixture allowed-local-ports.nix --arg ports "$ports" 2>"$build_log"); then
 		echo "FAIL: $desc (build failed)"
 		sed 's/^/    /' "$build_log"
 		rm -f "$build_log"

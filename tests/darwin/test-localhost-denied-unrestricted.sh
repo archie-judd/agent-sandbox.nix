@@ -13,15 +13,15 @@ TEST_CWD="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/network-unrestricted-with-socat.nix")
+SANDBOXED=$(build_fixture network-unrestricted-with-socat.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash-unres-socat"
 
 # Host-side python3 from nixpkgs, for the listener trio below.
 # /usr/bin/python3 on macOS is a Command Line Tools stub that isn't safe
 # to depend on in CI; nix-provided python3 is reproducible.
-HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
+HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
 
-run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$@") >/dev/null 2>&1; }
+run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$1") >/dev/null 2>&1; }
 
 host_tcp_connect() {
 	"$HOST_PYTHON3" -c '
@@ -115,11 +115,11 @@ echo
 
 # Sanity: client tools resolve inside the sandbox. If these fail the deny
 # assertions below would be meaningless (a missing binary also exits non-zero).
-expect_ok "socat is available" "command -v socat"
-expect_ok "curl is available" "command -v curl"
-expect_ok "python3 is available" "command -v python3"
+expect_ok run "socat is available" "command -v socat"
+expect_ok run "curl is available" "command -v curl"
+expect_ok run "python3 is available" "command -v python3"
 
-expect_status "cannot reach service started inside same sandbox on loopback" 10 \
+expect_status run "cannot reach service started inside same sandbox on loopback" 10 \
 	"python3 '$SCRIPT_DIR/../helpers/inside-http-loopback.py' '$INSIDE_PORT'"
 
 # Real assertions: each connect() must be denied.
@@ -134,17 +134,17 @@ expect_status "cannot reach service started inside same sandbox on loopback" 10 
 # UNIX-socket probe still uses socat: AF_UNIX has no /dev/tcp equivalent,
 # and socat distinguishes "connect denied" (rc=1, "Operation not permitted")
 # from a successful connect (rc=0) correctly here.
-expect_fail "cannot connect to host loopback 127.0.0.1 (TCP/v4)" \
+expect_fail run "cannot connect to host loopback 127.0.0.1 (TCP/v4)" \
 	"exec 3<>/dev/tcp/127.0.0.1/$TCP4_PORT"
 
-expect_fail "cannot connect to host loopback ::1 (TCP/v6)" \
+expect_fail run "cannot connect to host loopback ::1 (TCP/v6)" \
 	"exec 3<>/dev/tcp/::1/$TCP6_PORT"
 
-expect_fail "cannot connect to host UNIX socket" \
+expect_fail run "cannot connect to host UNIX socket" \
 	"printf x | socat -t 1 - UNIX-CONNECT:'$SOCK_PATH'"
 
 # Open mode promises the public internet works — sanity-check that.
-expect_ok "public internet reachable (http://example.com)" \
+expect_ok run "public internet reachable (http://example.com)" \
 	"curl -s --retry 3 --retry-delay 2 --retry-connrefused --max-time 10 -o /dev/null http://example.com"
 
 print_results

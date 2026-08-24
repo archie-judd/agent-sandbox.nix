@@ -2,8 +2,8 @@
 # HOME-relative and the test overrides HOME, so the nesting is entirely under
 # the test's control. This is the shape the README recommends for git identity
 # (roFiles = [ "$HOME/.config/git/config" ]) landing under a declared parent.
+{ pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;

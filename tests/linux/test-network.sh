@@ -9,12 +9,12 @@ echo "=== Network restriction tests (Linux) ==="
 echo
 
 # Build a sandbox with one allowed domain
-SANDBOXED_NET=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/network-allowed.nix")
+SANDBOXED_NET=$(build_fixture network-allowed.nix)
 NET_SHELL="$SANDBOXED_NET/bin/sandboxed-bash-net"
-run() { "$NET_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { "$NET_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
 
 # Linux only: DNS resolution is blocked when allowedDomains is set (filtered mode)
-expect_fail "DNS resolution blocked when allowedDomains is set" \
+expect_fail run "DNS resolution blocked when allowedDomains is set" \
 	'getent hosts example.com'
 
 # Test: sandbox cannot reach the proxy host on non-proxy TCP ports.
@@ -51,7 +51,7 @@ else
 		kill "$_HOST_IP_SVC_PID" 2>/dev/null || true
 		exit 1
 	fi
-	expect_fail "proxy host non-proxy port unreachable from sandbox (nftables)" \
+	expect_fail run "proxy host non-proxy port unreachable from sandbox (nftables)" \
 		"curl -sf --noproxy '*' --max-time 2 http://$_HOST_IP:$HOST_IP_PORT/"
 	kill "$_HOST_IP_SVC_PID" 2>/dev/null || true
 	trap - EXIT
@@ -83,7 +83,7 @@ if [ "$_ready" -ne 1 ]; then
 	kill "$_PASTA_GW_SVC_PID" 2>/dev/null || true
 	exit 1
 fi
-expect_fail "pasta gateway non-proxy port unreachable from sandbox (nftables)" \
+expect_fail run "pasta gateway non-proxy port unreachable from sandbox (nftables)" \
 	"curl -sf --noproxy '*' --max-time 2 http://10.0.2.2:$PASTA_GW_PORT/"
 kill "$_PASTA_GW_SVC_PID" 2>/dev/null || true
 trap - EXIT
@@ -104,7 +104,7 @@ trap 'kill "$_UDP_SVC_PID" 2>/dev/null || true; rm -f "$_UDP_TMP"' EXIT
 sleep 0.3  # nc -lu binds immediately; brief pause is enough
 run "bash -c 'echo probe >/dev/udp/10.0.2.2/$PASTA_GW_UDP_PORT'" || true  # send always returns 0
 sleep 0.3  # give pasta time to forward if it were going to
-expect_ok "udp to pasta gateway dropped (listener received nothing)" \
+expect_ok run "udp to pasta gateway dropped (listener received nothing)" \
 	"[ ! -s '$_UDP_TMP' ]"
 kill "$_UDP_SVC_PID" 2>/dev/null || true
 trap - EXIT
@@ -115,7 +115,7 @@ rm -f "$_UDP_TMP"
 # if it doesn't (e.g. ping_group_range not permissive in this namespace) we
 # skip the gateway probe rather than record a false positive.
 if run "ping -c 1 -W 2 127.0.0.1"; then
-	expect_fail "icmp to pasta gateway dropped" \
+	expect_fail run "icmp to pasta gateway dropped" \
 		'ping -c 1 -W 2 10.0.2.2'
 else
 	echo "SKIP: unprivileged ping not available in this namespace; skipping ICMP test" >&2

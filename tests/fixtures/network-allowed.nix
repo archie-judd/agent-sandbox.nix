@@ -2,9 +2,8 @@
 # httpbin.test is redirected to a local go-httpbin started by the test
 # harness, so tests don't depend on public services. The port is passed
 # in via --argstr httpbinPort.
-{ httpbinPort ? "18918" }:
+{ httpbinPort ? "18918", pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
   pkg = pkgs.bash;

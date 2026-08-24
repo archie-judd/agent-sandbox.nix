@@ -1,5 +1,5 @@
+{ pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
   nonClosurePkg = pkgs.hello;
 in sandbox.mkSandbox {

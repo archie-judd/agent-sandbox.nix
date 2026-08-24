@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/expose-repo-root.nix")
+SANDBOXED=$(build_fixture expose-repo-root.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash"
 
 # Set up a git repo with a subdirectory.
@@ -33,15 +33,13 @@ echo "modified" >"$REPO/root-file.txt"
 # All tests run from the subdirectory
 cd "$REPO/subdir"
 
-run() { "$ACTIVE_SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
-run_output() { "$ACTIVE_SHELL" --norc --noprofile -c "$@" 2>/dev/null; }
+run() { "$SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
+run_output() { "$SHELL" --norc --noprofile -c "$1" 2>/dev/null; }
 
 echo "=== exposeRepoRoot tests (shared) ==="
 echo
 
-ACTIVE_SHELL="$SHELL"
-
-expect_ok "git diff works from subdirectory" "git diff --exit-code --quiet -- ../subdir/sub-file.txt"
+expect_ok run "git diff works from subdirectory" "git diff --exit-code --quiet -- ../subdir/sub-file.txt"
 
 # git diff should detect the change we made to root-file.txt
 if [ -n "$(run_output 'git diff --name-only')" ]; then
@@ -52,10 +50,10 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
-expect_ok "can read files outside CWD but inside repo root" "cat ../root-file.txt"
-expect_fail "cannot write files outside CWD but inside repo root" "echo test > ../outside-cwd.txt"
-expect_ok "CWD remains writable" "touch ./test-write && rm ./test-write"
-expect_ok ".git remains writable (git commit works)" "git add -A && git commit --allow-empty -m test-commit"
+expect_ok run "can read files outside CWD but inside repo root" "cat ../root-file.txt"
+expect_fail run "cannot write files outside CWD but inside repo root" "echo test > ../outside-cwd.txt"
+expect_ok run "CWD remains writable" "touch ./test-write && rm ./test-write"
+expect_ok run ".git remains writable (git commit works)" "git add -A && git commit --allow-empty -m test-commit"
 
 print_results
 exit_status

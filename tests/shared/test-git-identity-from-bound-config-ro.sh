@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/bound-git-config-ro.nix")
+SANDBOXED=$(build_fixture bound-git-config-ro.nix)
 SHELL_BIN="$SANDBOXED/bin/sandboxed-bash"
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"

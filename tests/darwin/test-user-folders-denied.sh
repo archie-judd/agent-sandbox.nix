@@ -8,10 +8,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/basic-sandbox.nix")
+SANDBOXED=$(build_fixture basic-sandbox.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash"
 
-run() { "$SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { "$SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
@@ -35,15 +35,15 @@ echo "USER_TMP=$USER_TMP"
 echo "USER_CACHE=$USER_CACHE"
 echo
 
-expect_fail "cannot stat DARWIN_USER_TEMP_DIR" "test -d '$USER_TMP'"
-expect_fail "cannot stat DARWIN_USER_CACHE_DIR" "test -d '$USER_CACHE'"
-expect_fail "cannot list DARWIN_USER_TEMP_DIR" "ls '$USER_TMP/'"
-expect_fail "cannot list DARWIN_USER_CACHE_DIR" "ls '$USER_CACHE/'"
-expect_fail "cannot stat /private/var/folders" "test -d /private/var/folders"
-expect_fail "cannot enumerate /private/var/folders" "ls /private/var/folders/"
+expect_fail run "cannot stat DARWIN_USER_TEMP_DIR" "test -d '$USER_TMP'"
+expect_fail run "cannot stat DARWIN_USER_CACHE_DIR" "test -d '$USER_CACHE'"
+expect_fail run "cannot list DARWIN_USER_TEMP_DIR" "ls '$USER_TMP/'"
+expect_fail run "cannot list DARWIN_USER_CACHE_DIR" "ls '$USER_CACHE/'"
+expect_fail run "cannot stat /private/var/folders" "test -d /private/var/folders"
+expect_fail run "cannot enumerate /private/var/folders" "ls /private/var/folders/"
 
 # Sanity: legitimate temp use via /tmp still works.
-expect_ok "can write to /tmp" "touch /tmp/sandbox-user-folders-test && rm /tmp/sandbox-user-folders-test"
+expect_ok run "can write to /tmp" "touch /tmp/sandbox-user-folders-test && rm /tmp/sandbox-user-folders-test"
 
 print_results
 exit_status

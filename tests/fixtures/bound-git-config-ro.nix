@@ -3,8 +3,8 @@
 # agent reads [user] through git's normal global-config lookup, but
 # cannot write core.hooksPath / core.fsmonitor / aliases that would
 # fire host code on the next host `git` invocation.
+{ pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;

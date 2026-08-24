@@ -6,8 +6,8 @@
 # The test overrides HOME to a throwaway dir and pre-populates
 # $HOME/.config/git/config with a [user] block, so the read grant comes from
 # this rwDir's OWN bind. git picks it up at its XDG-default global-config path.
+{ pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;

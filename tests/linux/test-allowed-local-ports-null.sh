@@ -6,12 +6,12 @@ TEST_CWD="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link --arg ports null "$SCRIPT_DIR/../fixtures/allowed-local-ports.nix")
+SANDBOXED=$(build_fixture allowed-local-ports.nix --arg ports null)
 SHELL="$SANDBOXED/bin/sandboxed-bash-allowed-local-ports"
 
-HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
+HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
 
-run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$@") >/dev/null 2>&1; }
+run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$1") >/dev/null 2>&1; }
 
 PORT_A=18937
 PORT_B=18938
@@ -41,7 +41,7 @@ echo "=== allowedLocalPorts = null (Linux) ==="
 echo "PORT_A=$PORT_A PORT_B=$PORT_B"
 echo
 
-expect_ok "curl is available" "command -v curl"
+expect_ok run "curl is available" "command -v curl"
 
 "$HOST_PYTHON3" "$SCRIPT_DIR/../helpers/host-http-loopback.py" \
 	"$PORT_A" "$PORT_B" >"$TESTDIR/server.log" 2>&1 &
@@ -61,16 +61,16 @@ if [ "$_ready" -ne 1 ]; then
 	exit 1
 fi
 
-expect_ok "can reach first host-local TCP port through localhost" \
+expect_ok run "can reach first host-local TCP port through localhost" \
 	"curl -sf --noproxy '*' --max-time 3 http://localhost:$PORT_A/"
 
-expect_ok "can reach second host-local TCP port through localhost" \
+expect_ok run "can reach second host-local TCP port through localhost" \
 	"curl -sf --noproxy '*' --max-time 3 http://localhost:$PORT_B/"
 
-expect_ok "can reach first host-local TCP port through pasta gateway" \
+expect_ok run "can reach first host-local TCP port through pasta gateway" \
 	"curl -sf --noproxy '*' --max-time 3 http://10.0.2.2:$PORT_A/"
 
-expect_ok "can reach second host-local TCP port through pasta gateway" \
+expect_ok run "can reach second host-local TCP port through pasta gateway" \
 	"curl -sf --noproxy '*' --max-time 3 http://10.0.2.2:$PORT_B/"
 
 print_results

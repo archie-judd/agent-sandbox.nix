@@ -21,7 +21,7 @@ eval_with() {
 	local extra_args="$1"
 	nix-instantiate --eval -E "
     let
-      pkgs = import <nixpkgs> { };
+      pkgs = import ${TESTS_DIR}/pinned-nixpkgs.nix { };
       sandbox = import ${REPO_ROOT}/default.nix { inherit pkgs; };
       wrapper = sandbox.mkSandbox {
         pkg = pkgs.bashInteractive;

@@ -5,11 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/ro-binds-sandbox.nix")
+SANDBOXED=$(build_fixture ro-binds-sandbox.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash-ro-binds"
 
-run() { "$SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
-run_output() { "$SHELL" --norc --noprofile -c "$@" 2>/dev/null; }
+run() { "$SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
+run_output() { "$SHELL" --norc --noprofile -c "$1" 2>/dev/null; }
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
@@ -26,8 +26,8 @@ echo "=== roDirs / roFiles read-only behavior (shared) ==="
 echo
 
 # --- roDir reads succeed ---
-expect_ok "can read file under roDir" "cat \$HOME/.test-ro-dir/contents.txt > /dev/null"
-expect_ok "can list roDir contents" "ls \$HOME/.test-ro-dir > /dev/null"
+expect_ok run "can read file under roDir" "cat \$HOME/.test-ro-dir/contents.txt > /dev/null"
+expect_ok run "can list roDir contents" "ls \$HOME/.test-ro-dir > /dev/null"
 content=$(run_output "cat \$HOME/.test-ro-dir/contents.txt")
 if [ "$content" = "dir-content" ]; then
 	echo "PASS: roDir file content is correct"
@@ -38,12 +38,12 @@ else
 fi
 
 # --- roDir writes fail ---
-expect_fail "cannot modify file under roDir" "echo modified > \$HOME/.test-ro-dir/contents.txt"
-expect_fail "cannot create new file under roDir" "touch \$HOME/.test-ro-dir/new-file"
-expect_fail "cannot delete file under roDir" "rm \$HOME/.test-ro-dir/contents.txt"
+expect_fail run "cannot modify file under roDir" "echo modified > \$HOME/.test-ro-dir/contents.txt"
+expect_fail run "cannot create new file under roDir" "touch \$HOME/.test-ro-dir/new-file"
+expect_fail run "cannot delete file under roDir" "rm \$HOME/.test-ro-dir/contents.txt"
 
 # --- roFile reads succeed ---
-expect_ok "can read roFile" "cat \$HOME/.test-ro-file > /dev/null"
+expect_ok run "can read roFile" "cat \$HOME/.test-ro-file > /dev/null"
 content=$(run_output "cat \$HOME/.test-ro-file")
 if [ "$content" = "file-content" ]; then
 	echo "PASS: roFile content is correct"
@@ -54,8 +54,8 @@ else
 fi
 
 # --- roFile writes fail ---
-expect_fail "cannot overwrite roFile" "echo overwrite > \$HOME/.test-ro-file"
-expect_fail "cannot append to roFile" "echo append >> \$HOME/.test-ro-file"
+expect_fail run "cannot overwrite roFile" "echo overwrite > \$HOME/.test-ro-file"
+expect_fail run "cannot append to roFile" "echo append >> \$HOME/.test-ro-file"
 # Note: we deliberately don't assert `rm $HOME/.test-ro-file` fails. On Darwin
 # the wrapper exposes roFiles by symlinking them into SANDBOX_HOME, so `rm`
 # unlinks the writable symlink rather than the bound host file. The check

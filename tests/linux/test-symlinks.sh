@@ -5,11 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/symlinks-sandbox.nix")
+SANDBOXED=$(build_fixture symlinks-sandbox.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash-symlinks"
 
-run() { "$SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
-run_output() { "$SHELL" --norc --noprofile -c "$@" 2>/dev/null; }
+run() { "$SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
+run_output() { "$SHELL" --norc --noprofile -c "$1" 2>/dev/null; }
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
@@ -31,9 +31,9 @@ echo "=== rwDir/rwFile and symlink resolution tests (Linux) ==="
 echo
 
 # --- rwDirs / rwFiles (regression: non-symlink paths) ---
-expect_ok "can write to rwDir" "echo test > \$HOME/.test-state-dir/file && cat \$HOME/.test-state-dir/file"
-expect_ok "can write to rwFile" "echo test > \$HOME/.test-state-file && cat \$HOME/.test-state-file"
-expect_fail "rwDir does not weaken isolation" "ls \$HOME/.ssh"
+expect_ok run "can write to rwDir" "echo test > \$HOME/.test-state-dir/file && cat \$HOME/.test-state-dir/file"
+expect_ok run "can write to rwFile" "echo test > \$HOME/.test-state-file && cat \$HOME/.test-state-file"
+expect_fail run "rwDir does not weaken isolation" "ls \$HOME/.ssh"
 
 # Retrieve store paths baked into the sandbox at build time
 CLOSURE_STORE_FILE=$(run_output 'echo $CLOSURE_STORE_FILE')
@@ -46,22 +46,22 @@ echo "real content" > "$REAL_FILE"
 rm -f "$HOME/.test-state-file"
 ln -sfn "$OOB_FILE" "$HOME/.test-state-file"
 
-expect_fail "rwFile symlink to out-of-bounds path: target not accessible (security)" "cat $OOB_FILE"
-expect_ok  "rwFile symlink to out-of-bounds path: sandbox still starts cleanly" "echo ok"
+expect_fail run "rwFile symlink to out-of-bounds path: target not accessible (security)" "cat $OOB_FILE"
+expect_ok run  "rwFile symlink to out-of-bounds path: sandbox still starts cleanly" "echo ok"
 
 # --- Test B: rwFile is a symlink to a nix store file (in closure) ---
 rm -f "$HOME/.test-state-file"
 ln -sfn "$CLOSURE_STORE_FILE" "$HOME/.test-state-file"
 
-expect_ok "rwFile symlink to nix store file: readable at nix store path" "cat \$CLOSURE_STORE_FILE"
-expect_ok "rwFile symlink to nix store file: readable at declared path" "cat \$HOME/.test-state-file"
+expect_ok run "rwFile symlink to nix store file: readable at nix store path" "cat \$CLOSURE_STORE_FILE"
+expect_ok run "rwFile symlink to nix store file: readable at declared path" "cat \$HOME/.test-state-file"
 
 # --- Test B2: roFile is a symlink to a nix store file (in closure) ---
 rm -f "$HOME/.test-ro-file"
 ln -sfn "$CLOSURE_STORE_FILE" "$HOME/.test-ro-file"
 
-expect_ok   "roFile symlink to nix store file: readable at declared path"   "cat \$HOME/.test-ro-file"
-expect_fail "roFile symlink to nix store file: not writable at declared path" "echo x >> \$HOME/.test-ro-file"
+expect_ok run   "roFile symlink to nix store file: readable at declared path"   "cat \$HOME/.test-ro-file"
+expect_fail run "roFile symlink to nix store file: not writable at declared path" "echo x >> \$HOME/.test-ro-file"
 
 rm -f "$HOME/.test-ro-file"; touch "$HOME/.test-ro-file"
 
@@ -75,19 +75,19 @@ rm -f "$HOME/.test-state-file"; touch "$HOME/.test-state-file"
 mkdir -p "$HOME/.test-state-dir"
 ln -sfn "$OOB_FILE" "$HOME/.test-state-dir/link-to-oob"
 
-expect_fail "rwDir symlink to out-of-bounds path: target not accessible (security)" "cat $OOB_FILE"
-expect_ok  "rwDir symlink to out-of-bounds path: sandbox still starts cleanly" "echo ok"
+expect_fail run "rwDir symlink to out-of-bounds path: target not accessible (security)" "cat $OOB_FILE"
+expect_ok run  "rwDir symlink to out-of-bounds path: sandbox still starts cleanly" "echo ok"
 
 # --- Test D: rwDir contains a symlink to a nix store file NOT in closure ---
 ln -sfn "$NONCLOSURE_STORE_FILE" "$HOME/.test-state-dir/link-to-nonclosure"
 
-expect_ok "rwDir symlink to non-closure store file: readable" "test -e \$NONCLOSURE_STORE_FILE"
-expect_fail "rwDir symlink to non-closure store file: not writable" "echo x >> \$NONCLOSURE_STORE_FILE"
+expect_ok run "rwDir symlink to non-closure store file: readable" "test -e \$NONCLOSURE_STORE_FILE"
+expect_fail run "rwDir symlink to non-closure store file: not writable" "echo x >> \$NONCLOSURE_STORE_FILE"
 
 # --- Test E: rwDir contains a symlink to a nix store file already in closure ---
 ln -sfn "$CLOSURE_STORE_FILE" "$HOME/.test-state-dir/link-to-closure"
 
-expect_ok "rwDir symlink to in-closure store file: readable" "cat \$CLOSURE_STORE_FILE"
+expect_ok run "rwDir symlink to in-closure store file: readable" "cat \$CLOSURE_STORE_FILE"
 
 # --- Test F: deduplication: two symlinks to the same Nix store target ---
 # Both symlinks point at the same non-closure store path; bwrap must only
@@ -95,8 +95,8 @@ expect_ok "rwDir symlink to in-closure store file: readable" "cat \$CLOSURE_STOR
 ln -sfn "$NONCLOSURE_STORE_FILE" "$HOME/.test-state-dir/dup-link-1"
 ln -sfn "$NONCLOSURE_STORE_FILE" "$HOME/.test-state-dir/dup-link-2"
 
-expect_ok "deduplication: sandbox starts with two symlinks to same Nix target" "echo ok"
-expect_ok "deduplication: common Nix target accessible" "test -e \$NONCLOSURE_STORE_FILE"
+expect_ok run "deduplication: sandbox starts with two symlinks to same Nix target" "echo ok"
+expect_ok run "deduplication: common Nix target accessible" "test -e \$NONCLOSURE_STORE_FILE"
 
 # Cleanup
 rm -f "$HOME/.test-state-file"; touch "$HOME/.test-state-file"
@@ -116,8 +116,8 @@ _MID_SYM=$(mktemp -u /tmp/sandbox-chain-sym.XXXXXX)
 ln -sfn "$REAL_FILE" "$_MID_SYM"
 ln -sfn "$_MID_SYM" "$HOME/.test-state-dir/double-link"
 
-expect_fail "double symlink via out-of-bounds intermediate: chain not accessible (security)" "cat \$HOME/.test-state-dir/double-link"
-expect_ok  "double symlink via out-of-bounds intermediate: sandbox still starts cleanly" "echo ok"
+expect_fail run "double symlink via out-of-bounds intermediate: chain not accessible (security)" "cat \$HOME/.test-state-dir/double-link"
+expect_ok run  "double symlink via out-of-bounds intermediate: sandbox still starts cleanly" "echo ok"
 
 rm -f "$_MID_SYM" "$HOME/.test-state-dir/double-link"
 
@@ -134,9 +134,9 @@ echo "content-b" > "$_HM_LIKE/cfg/b"
 ln -sfn "$_HM_LIKE/cfg/a" "$HOME/.test-state-dir/sibling-a"
 ln -sfn "$_HM_LIKE/cfg/b" "$HOME/.test-state-dir/sibling-b"
 
-expect_fail "sibling symlinks to out-of-bounds /tmp: first target not accessible (security)" "cat \$HOME/.test-state-dir/sibling-a"
-expect_fail "sibling symlinks to out-of-bounds /tmp: second target not accessible (security)" "cat \$HOME/.test-state-dir/sibling-b"
-expect_ok  "sibling symlinks to out-of-bounds /tmp: sandbox still starts cleanly" "echo ok"
+expect_fail run "sibling symlinks to out-of-bounds /tmp: first target not accessible (security)" "cat \$HOME/.test-state-dir/sibling-a"
+expect_fail run "sibling symlinks to out-of-bounds /tmp: second target not accessible (security)" "cat \$HOME/.test-state-dir/sibling-b"
+expect_ok run  "sibling symlinks to out-of-bounds /tmp: sandbox still starts cleanly" "echo ok"
 
 rm -rf "$_HM_LIKE" "$HOME/.test-state-dir/sibling-a" "$HOME/.test-state-dir/sibling-b"
 
@@ -147,8 +147,8 @@ NONCLOSURE_STORE_FILE2=$(run_output 'echo $NONCLOSURE_STORE_FILE2')
 ln -sfn "$NONCLOSURE_STORE_FILE" "$HOME/.test-state-dir/nix-sib-a"
 ln -sfn "$NONCLOSURE_STORE_FILE2" "$HOME/.test-state-dir/nix-sib-b"
 
-expect_ok "sibling Nix store symlinks: first target readable" "test -e \$NONCLOSURE_STORE_FILE"
-expect_ok "sibling Nix store symlinks: second target readable (not shadowed by --dir ancestor)" "test -e \$NONCLOSURE_STORE_FILE2"
+expect_ok run "sibling Nix store symlinks: first target readable" "test -e \$NONCLOSURE_STORE_FILE"
+expect_ok run "sibling Nix store symlinks: second target readable (not shadowed by --dir ancestor)" "test -e \$NONCLOSURE_STORE_FILE2"
 
 rm -f "$HOME/.test-state-dir/nix-sib-a" "$HOME/.test-state-dir/nix-sib-b"
 
@@ -162,7 +162,7 @@ rm -f "$HOME/.test-state-dir/nix-sib-a" "$HOME/.test-state-dir/nix-sib-b"
 #
 # The confirmation for launching from $HOME is read from /dev/tty, so this runs
 # under a pty. See tests/shared/test-home-cwd-confirm.sh for the guard itself.
-HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
+HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
 STORE_DIR=$(dirname "$NONCLOSURE_STORE_FILE")
 FAKE_HOME=$(mktemp -d "$TESTDIR_ROOT/symlink-dir-home.XXXXXX")
 ln -s "$STORE_DIR" "$FAKE_HOME/.test-state-dir"

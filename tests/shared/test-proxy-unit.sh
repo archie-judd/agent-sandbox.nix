@@ -3,10 +3,12 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+source "$SCRIPT_DIR/../lib.sh"
+
 echo "=== Proxy unit tests (shared) ==="
 echo
 
-GO_BIN=$(nix-build --no-out-link '<nixpkgs>' -A go)/bin/go
+GO_BIN=$(build_host_pkg go)/bin/go
 
 # The proxy has no module dependencies, so the tests run offline. Pinning the
 # toolchain keeps it that way: without this, a go.mod directive newer than the

@@ -20,12 +20,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/bound-git-config-ro.nix")
+SANDBOXED=$(build_fixture bound-git-config-ro.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash"
 
-HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
-STORE_GITCONFIG=$(nix-build --no-out-link -E \
-  '(import <nixpkgs> {}).writeText "test-home-cwd-gitconfig" "[user]\n\tname = Test\n\temail = test@test.com\n"')
+HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
+STORE_GITCONFIG=$(build_host_pkg 'writeText "test-home-cwd-gitconfig" "[user]\n\tname = Test\n\temail = test@test.com\n"')
 
 # The fake HOME must NOT be under /tmp, which the sandbox always exposes
 # read-write — that would mask the assertions below.
@@ -57,7 +56,7 @@ run_tty() {
   shift 3
   printf '%s\n' "$reply" | (cd "$cwd" && HOME="$home" "$HOST_PYTHON3" -c \
     'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))' \
-    "$SHELL" --norc --noprofile -c "$@")
+    "$SHELL" --norc --noprofile -c "$1")
 }
 
 # Same launch with no controlling terminal at all: os.setsid() detaches the
@@ -67,14 +66,14 @@ run_no_tty() {
   shift 2
   (cd "$cwd" && HOME="$home" "$HOST_PYTHON3" -c \
     'import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
-    "$SHELL" --norc --noprofile -c "$@")
+    "$SHELL" --norc --noprofile -c "$1")
 }
 
 # A launch that must not prompt at all: no pty, no reply.
 run_plain() {
   local home="$1" cwd="$2"
   shift 2
-  (cd "$cwd" && HOME="$home" "$SHELL" --norc --noprofile -c "$@")
+  (cd "$cwd" && HOME="$home" "$SHELL" --norc --noprofile -c "$1")
 }
 
 echo "=== launching from \$HOME tests (shared) ==="

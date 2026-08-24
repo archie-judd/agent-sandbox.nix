@@ -1,8 +1,8 @@
 # Test fixture: roDir + roFile read-only binds. Tests pre-populate
 # $HOME/.test-ro-dir and $HOME/.test-ro-file with known content before
 # invoking the sandbox.
+{ pkgs ? import ../pinned-nixpkgs.nix { } }:
 let
-  pkgs = import <nixpkgs> { };
   sandbox = import ../../default.nix { pkgs = pkgs; };
 in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;

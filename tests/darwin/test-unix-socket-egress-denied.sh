@@ -11,15 +11,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/unix-socket-client-sandbox.nix")
+SANDBOXED=$(build_fixture unix-socket-client-sandbox.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash"
 
 # Host-side python3 from nixpkgs, for the UNIX-socket listener below.
 # /usr/bin/python3 on macOS is a Command Line Tools stub that isn't safe
 # to depend on in CI; nix-provided python3 is reproducible.
-HOST_PYTHON3=$(nix-build --no-out-link -E '(import <nixpkgs> {}).python3Minimal')/bin/python3
+HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
 
-run() { "$SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { "$SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
@@ -80,12 +80,12 @@ echo
 
 # Sanity: the client tool resolves inside the sandbox. If this fails the
 # egress assertion below is meaningless (a missing binary also exits non-zero).
-expect_ok "socat binary is available inside the sandbox" "command -v socat"
+expect_ok run "socat binary is available inside the sandbox" "command -v socat"
 
 # Real assertion. socat exits non-zero on connect() failure. We send a
 # byte (printf x) to ensure the right side is opened — socat's bidirectional
 # mode is lazy when stdin is EOF, which would skip the connect syscall.
-expect_fail "cannot connect() to UNIX socket on host" "printf x | socat -t 1 - UNIX-CONNECT:'$SOCK_PATH'"
+expect_fail run "cannot connect() to UNIX socket on host" "printf x | socat -t 1 - UNIX-CONNECT:'$SOCK_PATH'"
 
 print_results
 exit_status

@@ -9,10 +9,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(nix-build --no-out-link "$SCRIPT_DIR/../fixtures/ro-binds-sandbox.nix")
+SANDBOXED=$(build_fixture ro-binds-sandbox.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash-ro-binds"
 
-run() { "$SHELL" --norc --noprofile -c "$@" >/dev/null 2>&1; }
+run() { "$SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
@@ -32,8 +32,8 @@ ln -sfn "$OOB_FILE" "$HOME/.test-ro-dir/link-to-oob"
 echo "=== roDir symlink hardening (Linux) ==="
 echo
 
-expect_fail "roDir symlink to OOB path: target not accessible (security)" "cat $OOB_FILE"
-expect_ok  "roDir symlink to OOB path: sandbox still starts cleanly" "echo ok"
+expect_fail run "roDir symlink to OOB path: target not accessible (security)" "cat $OOB_FILE"
+expect_ok run  "roDir symlink to OOB path: sandbox still starts cleanly" "echo ok"
 
 print_results
 exit_status
