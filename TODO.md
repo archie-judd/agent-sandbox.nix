@@ -1122,13 +1122,54 @@ Plus the full nested-bind resolution deferred from S2.
 
 Acceptance: the suite passes, plus one regression test per finding.
 
+### 6. Duplication left by the port
+
+Not started. Around 7 files. 1.5 days.
+
+Two kinds of repetition, both introduced by unit 2, both cheaper to remove now
+that the layers either side of them have settled.
+
+The first is in the Nix. `lib/linux/default.nix` and `lib/darwin/default.nix`
+share 139 lines, which is all but nine of the darwin file: the argument list,
+`preEntryScript`, `implicitPackages`, `pathStr`, `closurePathsFile`,
+`validatedAllowedLocalPorts`, the `launcherSource` filter, `launcherPackage`,
+`envFragment`, the `stub` substitution and the whole `builtins.seq` tail are
+identical text in both. What actually differs is the platform string, whether
+`coreutils` enters the closure, `hostsFile` and `emptyFile`, and the doc comment.
+The shared part belongs in one place, leaving each platform file holding the
+differences and the debugging notes that are genuinely about its own backend.
+Silent divergence is what this removes: a fix to the closure or to the stub
+wiring has to be made twice today, and nothing fails if it is made once.
+
+The second is the platform unions. `SandboxBuildSpec{Linux,Darwin}`,
+`HostState{Linux,Darwin}`, `SessionState{Linux,Darwin}` and
+`SandboxLaunchConfig{Linux,Darwin}` are four independent unions all encoding one
+bit, which is known at build time and already in the spec. The type checker
+cannot see that the four agree, so `prepare._compute_launch_config` re-establishes
+the platform with a nine-way `isinstance` conjunction and carries an unreachable
+arm reporting that the types do not agree, and `_CommonBuildSpec` duplicates the
+entire field list of `SandboxBuildSpec` so that `**common` is checked at all.
+Narrowing once, on the platform read out of the spec, and running a per-platform
+path from there removes the conjunction, the unreachable arm and the reason
+`_CommonBuildSpec` exists. This plumbing is a meaningful share of the line count
+the port added, so the unit is a subtraction rather than a rearrangement.
+
+What the shared Nix and the per-platform path are called is not settled, and is
+decided when the unit is written rather than here.
+
+Acceptance: the suite passes, mypy strict is clean, the two platform Nix files
+hold only what differs between the platforms, and no platform re-narrowing
+remains in `prepare`.
+
 ## Totals
 
 Units 0, 1 and 2 are done, plus both security fixes. What remains is unit 3, the
 session directory's retention and logging; unit 4, the pytest tier and the CI
-checks; and unit 5, the security backlog. None of the three depends on the other
-two, and unit 4 is the one that pays for itself fastest now that the pure layer
-exists to test.
+checks; unit 5, the security backlog; and unit 6, the duplication left by the
+port. None of units 3, 4 and 5 depends on the other two, and unit 4 is the one
+that pays for itself fastest now that the pure layer exists to test. Unit 6 goes
+after unit 4, since the pytest tier is what makes collapsing the unions a
+checkable change rather than a hopeful one.
 
 ## Decisions still open
 
