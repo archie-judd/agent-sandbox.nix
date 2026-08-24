@@ -32,7 +32,7 @@ from launcher.host_state import (
     SymlinkChain,
     SymlinkHop,
 )
-from launcher.launch_config.shared import SandboxLaunchConfig
+from launcher.launch_config.shared import SandboxLaunchConfig, get_usable_git_state
 from launcher.session_state import SessionStateLinux
 
 NIX_STORE = Path("/nix/store")
@@ -600,7 +600,10 @@ def compute_launch_config(
     host: HostStateLinux,
     session: SessionStateLinux,
 ) -> SandboxLaunchConfigLinux:
-    git = host.git
+    # Not host.git: a repository whose root is the home directory, or above it,
+    # is refused here and git disabled for the session. Everything below takes
+    # the usable state, so nothing binds a root this rejected.
+    git, warnings = get_usable_git_state(host)
     prefixes = _get_bound_prefixes(spec, host, git)
     binds = _get_declared_binds(host, prefixes)
     git_args, masked = _get_git_binds(spec, git)
@@ -609,6 +612,8 @@ def compute_launch_config(
     sysctls: dict[str, str] = {}
     if spec.allowed_local_ports is None or spec.allowed_local_ports:
         sysctls = {path: "1" for path in ROUTE_LOCALNET_SYSCTLS}
+
+    bwrap_args = _get_bwrap_args(spec, host, session, git, binds, git_args)
 
     argv_before_env = (
         [str(spec.dependencies.pasta)]
@@ -627,13 +632,20 @@ def compute_launch_config(
         ]
         + _get_computed_env(spec, host, session)
     )
-    argv_after_env = [
-        str(spec.dependencies.bwrap),
-        "--args",
-        "3",
-        str(spec.pre_entry_script),
-        str(spec.sandboxed_binary),
-    ]
+    # Bubblewrap's arguments are inline rather than read from the args file it
+    # also gets written to. --args needs a descriptor, and pasta does not pass
+    # an inherited one to its child, so the only place left to open it is the
+    # network entry point, which would put bubblewrap's argument passing inside
+    # the module that configures the namespace. Inline costs nothing: these are
+    # argv entries the whole way, NUL-separated in the artifact and expanded as
+    # a quoted array by the stub, so a path containing a space or a newline
+    # stays one argument. What it does not do is hide the paths, and nothing was
+    # hiding them anyway: they are in the spec, in the world-readable store.
+    argv_after_env = (
+        [str(spec.dependencies.bwrap)]
+        + bwrap_args
+        + [str(spec.pre_entry_script), str(spec.sandboxed_binary)]
+    )
 
     return SandboxLaunchConfigLinux(
         argv_before_env=tuple(argv_before_env),
@@ -641,10 +653,8 @@ def compute_launch_config(
         passwd=f"user:x:{host.uid}:{host.gid}:sandbox user:{host.real_home}:/bin/sh\n",
         cleanup=(),
         cleanup_if_empty=tuple(masked),
-        warnings=binds.warnings,
-        bwrap_args=tuple(
-            _get_bwrap_args(spec, host, session, git, binds, git_args)
-        ),
+        warnings=tuple(warnings) + binds.warnings,
+        bwrap_args=tuple(bwrap_args),
         network=NetworkConfig(
             nft=spec.dependencies.nft,
             ip=spec.dependencies.ip,

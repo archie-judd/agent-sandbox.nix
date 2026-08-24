@@ -1,78 +1,31 @@
 /*
   mkLinuxSandbox — wraps a binary in a bubblewrap (bwrap) container.
 
-    Bubblewrap creates a lightweight Linux namespace sandbox. It builds an
-    entirely new mount tree from scratch — nothing is visible unless
-    explicitly mounted in. The sandbox also unshares all namespaces (PID,
-    user, IPC, UTS, cgroup) except network.
+  This file no longer knows what a bubblewrap command line looks like. It
+  validates arguments, decides what enters the closure, and produces four
+  things for the launcher to read: the spec, the launcher package, the env
+  fragment and the stub. Everything about the sandbox itself lives in
+  launcher/, where it can be read, type-checked and tested without building
+  anything: launcher/launch_config/linux.py holds the binds, the mount order
+  and the nftables rules, and launcher/apply_network_rules.py applies them
+  inside pasta's namespace.
 
-    ## Filesystem layout inside the sandbox
+  Nix keeps eval-time argument validation deliberately: validateAllowedLocalPorts
+  and assertNoLegacyArgs throw when the shell is built, not when the agent is
+  launched, and moving them into Python would turn a build error into a runtime
+  one.
 
-      Read-only bind mounts:
-        /nix/store/<hash>-... — only the closure of allowedPackages
-                  and pkg, not the entire nix store
-        /etc/passwd   — user identity for programs that need it
-        /etc/hosts    — loopback name resolution (localhost → 127.0.0.1)
-        /etc/resolv.conf — DNS resolution
-        /etc/ssl/certs   — TLS certificate verification
-      Kernel filesystems:
-        /proc   — mounted as a new procfs (only shows sandbox PIDs)
-        /dev    — minimal devtmpfs (null, zero, urandom, etc.)
-      Ephemeral tmpfs (empty, writable, lost on exit):
-        /tmp    — scratch space
-        $HOME   — prevents accidental reads of dotfiles; agent state
-                   dirs are bind-mounted back on top of this.
-                   Launching from $HOME is the one case where this
-                   masking does not apply: $CWD is bound read-write
-                   over the tmpfs, so the real home is exposed. That
-                   needs an interactive confirmation — see
-                   assertHomeCwdAllowedBashStr in lib/shared.nix.
-      Read-only bind mounts:
-        $REPO_ROOT  — the git repo root, so git commands and reads of
-                      files outside CWD work. CWD and GIT_DIR are
-                      mounted rw on top of this.
-      Read-write bind mounts:
-        $CWD        — the project directory (always)
-        rwDirs      — each path gets a --bind (e.g., ~/.config/claude)
-        rwFiles     — each path gets a --bind (e.g., specific rc files)
-        $GIT_DIR    — the .git dir, auto-detected. Needed when CWD is a
-                      worktree and .git/common is outside CWD.
-      Symlinks:
-        /bin/sh -> bash — many scripts assume /bin/sh exists
+  Nix also keeps writeClosure, and keeps deciding what enters the closure. The
+  proxy is referenced only from the spec's proxy block, which is omitted when
+  allowedDomains is unset, so an unrestricted wrapper does not carry the Go
+  proxy.
 
-    ## Key bwrap flags
-
-      --unshare-all  Unshare every namespace type (mount, PID, user, IPC,
-                     UTS, cgroup). The process is fully isolated.
-      --share-net    Re-share the network namespace (undoes the network
-                     part of --unshare-all). Required for API calls.
-      --die-with-parent  Kill the sandbox if the parent shell exits, so
-                         orphaned sandboxes don't accumulate.
-      --setenv       Set environment variables inside the sandbox. PATH
-                     is explicitly constructed from allowedPackages, so
-                     only those binaries are callable.
-
-    ## Debugging tips
-
-      "No such file or directory":
-        The binary is trying to access a path that isn't mounted.
-        Run the wrapper with `strace -f -e trace=openat` to find the
-        path, then add it to rwDirs/rwFiles.
-
-      "Operation not permitted" on /proc or /dev:
-        Unprivileged user namespaces may be disabled on the host.
-        Check: sysctl kernel.unprivileged_userns_clone (needs to be 1).
-
-      Git operations fail:
-        If CWD is a git worktree, the real .git/common dir lives
-        elsewhere. The wrapper auto-detects this with git rev-parse
-        --git-common-dir, but it fails silently if git isn't available
-        outside the sandbox. Check that $GIT_PROTECT_BINDS is non-empty.
-
-      DNS/TLS failures:
-        Ensure /etc/resolv.conf and /etc/ssl/certs exist on the host.
-        NixOS symlinks these — if the target is outside /etc, you may
-        need to bind-mount the real paths.
+  Debugging, for the parts that are still about this platform rather than the
+  launcher: "Operation not permitted" on /proc or /dev usually means
+  unprivileged user namespaces are disabled on the host, so check that
+  kernel.unprivileged_userns_clone is 1. For a missing path, read the computed
+  bwrap.args in the session directory the wrapper prints nothing about; it is
+  the whole argument list, one NUL-separated entry per line.
 */
 { pkgs, shared }:
 {
@@ -102,124 +55,38 @@
   stateFiles ? null,
 }:
 let
-  bashWrapper = shared.bashWrapper;
   # Runs inside the sandbox ahead of the agent binary: probes for a declared
   # git identity and warns the user at launch if none is found, then exec's
   # the real command. See lib/pre-entry-script.sh.
   preEntryScript = pkgs.writeShellScript "pre-entry-script" (
     builtins.readFile ../pre-entry-script.sh
   );
+
+  # Bound over /proc/cmdline and the boot id, and over git protected files that
+  # do not exist yet, which is how a path that could otherwise just be created
+  # is made read-only instead.
   emptyFile = pkgs.writeText "sandbox-empty" "";
-  implicitPackages = [
-    pkgs.cacert
-    bashWrapper
-  ]
-  ++ (if allowNix then [ pkgs.nix ] else [ ]);
+
   hostsFile = pkgs.writeText "sandbox-hosts" ''
     127.0.0.1 localhost
     ::1       localhost
   '';
+
+  implicitPackages = [
+    pkgs.cacert
+    shared.bashWrapper
+  ]
+  ++ (if allowNix then [ pkgs.nix ] else [ ]);
+
   pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
-  # Adds each rwDir / roDir to the BOUND_PREFIXES shell array at runtime
-  stateDirsBoundPrefixBashStr = builtins.concatStringsSep "\n" (
-    map (dir: ''BOUND_PREFIXES+=("${dir}")'') rwDirs
-  );
-  roDirsBoundPrefixBashStr = builtins.concatStringsSep "\n" (
-    map (dir: ''BOUND_PREFIXES+=("${dir}")'') roDirs
-  );
 
-  symlinkHelpers = import ./symlink-helpers.nix {
-    pkgs = pkgs;
-    shared = shared;
-  };
-
-  symlinkResolutionBashStr =
-    # bash
-    ''
-      # Complete the set of already-bound path prefixes
-      ${stateDirsBoundPrefixBashStr}
-      ${roDirsBoundPrefixBashStr}
-      BOUND_PREFIXES+=("$CWD")
-      BOUND_PREFIXES+=("/etc/resolv.conf" "/etc/passwd" "/etc/ssl/certs" "/etc/static" "/etc/pki")
-      [[ -n "$REPO_ROOT" ]] && BOUND_PREFIXES+=("$REPO_ROOT")
-      [[ -n "$GIT_DIR" ]] && BOUND_PREFIXES+=("$GIT_DIR")
-
-      ${symlinkHelpers.isAlreadyBoundBashStr}
-      ${symlinkHelpers.addSymlinkTargetBashStr}
-      ${symlinkHelpers.followSymlinkChainBashStr}
-
-      # Resolve rwFile / roFile symlinks — bind resolved targets, not the
-      # symlink paths. Non-symlink files go into STATE_FILE_BINDS (--bind)
-      # or RO_FILE_BINDS (--ro-bind) according to the declared mode.
-      STATE_FILE_BINDS=""
-      RO_FILE_BINDS=""
-      ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveFileBashStr rwFiles)}
-      ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveRoFileBashStr roFiles)}
-
-      # rwDir / roDir binds, built at runtime for the same reason as the files
-      # above: a declared dir that is itself a symlink cannot be a mount
-      # destination once an enclosing bind has exposed it.
-      STATE_DIR_BINDS=""
-      RO_DIR_BINDS=""
-      ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveDirBashStr rwDirs)}
-      ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkResolveRoDirBashStr roDirs)}
-
-      # Scan rwDirs / roDirs for internal symlinks and bind their resolved
-      # targets. Resolved targets are always bound read-only regardless of
-      # the containing dir's mode (see _add_symlink_target).
-      ${builtins.concatStringsSep "\n" (map symlinkHelpers.mkScanDirBashStr (rwDirs ++ roDirs))}
-    '';
-
-  extraEnvStr = builtins.concatStringsSep " " (
-    map (name: "--setenv ${name} ${builtins.toJSON env.${name}}") (builtins.attrNames env)
-  );
-
-  validatedAllowedLocalPorts = shared.validateAllowedLocalPorts allowedLocalPorts;
-
-  conditionalNetworkingParams = import ./networking.nix {
-    pkgs = pkgs;
-    shared = shared;
-    restrictNetwork = allowedDomains != null;
-    allowedDomains = if allowedDomains != null then allowedDomains else [ ];
-    allowedLocalPorts = validatedAllowedLocalPorts;
-    _proxyRedirects = _proxyRedirects;
-  };
-
-  sandboxPasswdBashStr =
-    # bash
-    ''
-      _SANDBOX_PASSWD=$(mktemp /tmp/sandbox-passwd.XXXXXX)
-      printf 'user:x:%s:%s:sandbox user:%s:/bin/sh\n' "$(id -u)" "$(id -g)" "$HOME" > "$_SANDBOX_PASSWD"
-    '';
-
-  trapBashStr =
-    let
-      networkCmds = conditionalNetworkingParams.bashCleanupCommandsStr;
-      # Removes only the mount points the wrapper created for protected paths
-      # that did not exist at launch, and only while they are still empty, so
-      # anything written there in the meantime is left alone.
-      maskedCleanup = ''for _masked in "''${GIT_MASKED_FILES[@]}"; do if [ -e "$_masked" ] && [ ! -s "$_masked" ]; then rm -f "$_masked"; fi; done'';
-      cmds =
-        if networkCmds == "" then
-          # bash
-          ''
-            rm -f "$_SANDBOX_PASSWD"; ${maskedCleanup}
-          ''
-        else
-          # bash
-          ''
-            rm -f "$_SANDBOX_PASSWD"; ${maskedCleanup}; ${networkCmds}
-          '';
-    in
-    "trap '${cmds}' EXIT";
-
-  # cacert and bashWrapper are always included: cacert so SSL/TLS
-  # verification works, bashWrapper so the hardcoded SHELL and
-  # /bin/sh symlink targets are always reachable in the store closure.
-  # bashWrapper forces --norc --noprofile on every bash invocation so
-  # that the sandboxed process cannot source /etc/bashrc or /etc/profile.
-  # coreutils is included for /usr/bin/env (shebang resolution) only — it is
-  # not in implicitPackages so it does not leak into PATH.
+  # cacert and bashWrapper are always included: cacert so SSL/TLS verification
+  # works, bashWrapper so the hardcoded SHELL and /bin/sh symlink targets are
+  # always reachable. bashWrapper forces --norc --noprofile on every bash
+  # invocation so the sandboxed process cannot source /etc/bashrc or
+  # /etc/profile. coreutils is here for the /usr/bin/env symlink, which
+  # shebang resolution needs, and deliberately not in implicitPackages, so it
+  # does not leak into PATH.
   closurePathsFile = pkgs.writeClosure (
     allowedPackages
     ++ implicitPackages
@@ -230,121 +97,64 @@ let
     ]
   );
 
-  gitDetectionBashStr =
-    # bash
-    ''
-      GIT_PROTECT_BINDS=()
-      GIT_MASKED_FILES=()
-      REPO_BIND=""
-      if GIT_DIR=$(${pkgs.git}/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
-        REPO_ROOT=$(dirname "$GIT_DIR")
-        # Fail closed if the git root is $HOME (or an ancestor of it). Exposing it
-        # would leak the entire home directory: REPO_ROOT is bound read-only and
-        # GIT_DIR (=~/.git) read-write — and a home-rooted repo's object store holds
-        # the history of tracked dotfiles (~/.ssh/config, tokens, etc.). There is no
-        # safe partial exposure, so disable git for the session and warn instead.
-        #
-        # The exception is launching from $HOME itself, where the user has already
-        # confirmed that the whole home is exposed read-write. Refusing git there
-        # would hide nothing and would break the case that motivates it: working on
-        # a home-rooted dotfiles repo. A root strictly above $HOME stays refused
-        # either way, since that reaches beyond the home the user consented to.
-        if [[ "$HOME" == "$REPO_ROOT"/* ]] || [[ "$HOME" == "$REPO_ROOT" && "$CWD" != "$HOME" ]]; then
-          echo "${shared.warnPrefix} git root resolves to your home directory ($HOME) — refusing to expose it. git is disabled for this session." >&2
-          # Empty so the git binds stay unset and the `[[ -n ... ]]`
-          # BOUND_PREFIXES guards below skip them too.
-          GIT_DIR=""
-          REPO_ROOT=""
-        else
-          REPO_BIND="--ro-bind $REPO_ROOT $REPO_ROOT"
-        fi
-      fi
+  validatedAllowedLocalPorts = shared.validateAllowedLocalPorts allowedLocalPorts;
 
-      ${shared.gitProtectedPathsBashStr}
+  sandboxBuildSpec = import ../spec.nix
+    {
+      pkgs = pkgs;
+      shared = shared;
+    }
+    {
+      platform = "linux";
+      outName = outName;
+      pkg = pkg;
+      binName = binName;
+      sandboxPath = pathStr;
+      allowNix = allowNix;
+      rwDirs = rwDirs;
+      rwFiles = rwFiles;
+      roDirs = roDirs;
+      roFiles = roFiles;
+      env = env;
+      allowedLocalPorts = validatedAllowedLocalPorts;
+      closurePathsFile = closurePathsFile;
+      preEntryScript = preEntryScript;
+      allowedDomains = allowedDomains;
+      _proxyRedirects = _proxyRedirects;
+      hostsFile = hostsFile;
+      emptyFile = emptyFile;
+    };
 
-      # The gitdir is bound read-write so commits and fetches keep working,
-      # then the paths that would let a sandboxed process run code on the host
-      # are bound back read-only on top of it.
-      if [[ -n "$GIT_DIR" ]]; then
-        GIT_PROTECT_BINDS+=(--bind "$GIT_DIR" "$GIT_DIR")
-        for _protected in "''${GIT_PROTECTED_DIRS[@]}"; do
-          GIT_PROTECT_BINDS+=(--ro-bind "$_protected" "$_protected")
-        done
-        for _protected in "''${GIT_PROTECTED_FILES[@]}"; do
-          if [[ -e "$_protected" ]]; then
-            GIT_PROTECT_BINDS+=(--ro-bind "$_protected" "$_protected")
-          else
-            # A protected path that does not exist yet (config.worktree in a
-            # repo that has the extension on but no per-worktree config) would
-            # otherwise just be created. Binding an empty file over it makes
-            # it read-only instead. bwrap materialises the mount point on the
-            # host, so record it and remove it again on exit.
-            GIT_PROTECT_BINDS+=(--ro-bind "${emptyFile}" "$_protected")
-            GIT_MASKED_FILES+=("$_protected")
-          fi
-        done
-      fi
-    '';
+  # __pycache__ would otherwise change the store hash from one build to the
+  # next depending on whether anything had imported the package in place.
+  launcherSource = builtins.filterSource (
+    path: type: baseNameOf path != "__pycache__"
+  ) ../../launcher;
 
-  # The launcher's input. Nothing reads it yet; the wrapper below is still the
-  # generated bash. Exposed on the derivation so it can be built and inspected.
-  sandboxBuildSpec =
-    import ../spec.nix
-      {
-        pkgs = pkgs;
-        shared = shared;
-      }
-      {
-        platform = "linux";
-        outName = outName;
-        pkg = pkg;
-        binName = binName;
-        sandboxPath = pathStr;
-        allowNix = allowNix;
-        rwDirs = rwDirs;
-        rwFiles = rwFiles;
-        roDirs = roDirs;
-        roFiles = roFiles;
-        env = env;
-        allowedLocalPorts = validatedAllowedLocalPorts;
-        closurePathsFile = closurePathsFile;
-        preEntryScript = preEntryScript;
-        allowedDomains = allowedDomains;
-        _proxyRedirects = _proxyRedirects;
-        hostsFile = hostsFile;
-        emptyFile = emptyFile;
-      };
+  launcherPackage = pkgs.runCommand "agent-sandbox-launcher" { } ''
+    mkdir -p $out
+    cp -r ${launcherSource} $out/launcher
+  '';
 
-  nixStoreBashStr =
-    if allowNix then
-      # bash
-      ''
-        BOUND_PREFIXES=("/nix/store")
-        NIX_DAEMON_SOCKET_PATH="''${NIX_DAEMON_SOCKET_PATH:-/nix/var/nix/daemon-socket/socket}"
-      ''
-    else
-      # bash
-      ''
-        # Build per-path ro-bind flags for the nix store closure
-        CLOSURE_BINDS=""
-        BOUND_PREFIXES=()
-        while IFS= read -r storePath; do
-          CLOSURE_BINDS="$CLOSURE_BINDS --ro-bind $storePath $storePath"
-          BOUND_PREFIXES+=("$storePath")
-        done < ${closurePathsFile}
-      '';
+  # One data line per declared variable, and no logic. The values are
+  # documented as runtime shell expressions, both the "$TOKEN" form and the
+  # sops "$(cat /run/secrets/...)" form, so they expand in the stub and never
+  # enter Python or touch disk. toJSON quotes the value, so each line appends
+  # exactly one array element even when the value contains spaces.
+  envFragment = pkgs.writeText "${outName}-env" (
+    pkgs.lib.concatMapStrings (
+      name: "DECLARED_ENV+=(${name}=${builtins.toJSON env.${name}})\n"
+    ) (builtins.attrNames env)
+  );
 
-  nixStoreBwrapStr =
-    if allowNix then
-      "--ro-bind /nix/store /nix/store --ro-bind-try /nix/var /nix/var"
-    else
-      "--tmpfs /nix/store $CLOSURE_BINDS";
-
-  nixDaemonSocketBwrapStr =
-    if allowNix then ''--setenv NIX_DAEMON_SOCKET_PATH "$NIX_DAEMON_SOCKET_PATH"'' else "";
+  stub = pkgs.replaceVars ../stub.sh {
+    python = "${pkgs.python3}/bin/python3";
+    launcher = "${launcherPackage}";
+    spec = "${sandboxBuildSpec}";
+    envFragment = "${envFragment}";
+  };
 
 in
-
 builtins.seq
   (shared.assertNoLegacyArgs {
     restrictNetwork = restrictNetwork;
@@ -354,81 +164,10 @@ builtins.seq
   })
   (
     builtins.seq validatedAllowedLocalPorts (
-      pkgs.writeTextFile {
-        name = outName;
-        executable = true;
-        destination = "/bin/${outName}";
-        text =
-          # bash
-          ''
-            #!${pkgs.bashInteractive}/bin/bash
-            CWD=$(pwd)
-            ${shared.assertBindsExistBashStr {
-              inherit
-                rwDirs
-                rwFiles
-                roDirs
-                roFiles
-                ;
-            }}
-            ${shared.assertHomeCwdAllowedBashStr}
-            ${gitDetectionBashStr}
-            ${nixStoreBashStr}
-            ${symlinkResolutionBashStr}
-            ${sandboxPasswdBashStr}
-            ${conditionalNetworkingParams.proxyStartupBashStr}
-            ${conditionalNetworkingParams.resolvConfSetupBashStr}
-            ${trapBashStr}
-            ${conditionalNetworkingParams.sandboxExecBashStr}${pkgs.coreutils}/bin/env -i ${pkgs.bubblewrap}/bin/bwrap \
-              ${conditionalNetworkingParams.etcResolvBind} \
-              ${nixStoreBwrapStr} \
-              --ro-bind "$_SANDBOX_PASSWD" /etc/passwd \
-              --ro-bind ${hostsFile} /etc/hosts \
-              --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
-              --ro-bind-try /etc/static /etc/static \
-              --ro-bind-try /etc/pki /etc/pki \
-              --proc /proc \
-              --ro-bind ${emptyFile} /proc/cmdline \
-              --ro-bind ${emptyFile} /proc/sys/kernel/random/boot_id \
-              --dev /dev \
-              --tmpfs /tmp \
-              --tmpfs "$HOME" \
-              $REPO_BIND \
-              --bind "$CWD" "$CWD" \
-              $STATE_DIR_BINDS \
-              $RO_DIR_BINDS \
-              $STATE_FILE_BINDS \
-              $RO_FILE_BINDS \
-              $SYMLINK_PARENT_DIRS \
-              $readonlyStateFileSymlinks \
-              "''${GIT_PROTECT_BINDS[@]}" \
-              --symlink ${bashWrapper}/bin/bash /bin/sh \
-              --symlink ${pkgs.coreutils}/bin/env /usr/bin/env \
-              --unshare-all \
-              --hostname sandbox \
-              --uid "$(id -u)" \
-              --gid "$(id -g)" \
-              --share-net \
-              --die-with-parent \
-              --chdir "$CWD" \
-              --clearenv \
-              --setenv HOME "$HOME" \
-              --setenv TERM "$TERM" \
-              --setenv SHELL "${bashWrapper}/bin/bash" \
-              --setenv PATH "${pathStr}" \
-              --setenv SSL_CERT_DIR "${pkgs.cacert}/etc/ssl/certs" \
-              --setenv TMPDIR /tmp \
-              --setenv GIT_CONFIG_COUNT 1 \
-              --setenv GIT_CONFIG_KEY_0 user.useConfigOnly \
-              --setenv GIT_CONFIG_VALUE_0 true \
-              ${conditionalNetworkingParams.sslCertEnvBubblewrapStr} \
-              ${conditionalNetworkingParams.caCertBubblewrapStr} \
-              ${conditionalNetworkingParams.proxyEnvBubblewrapStr} \
-              ${extraEnvStr} \
-              ${nixDaemonSocketBwrapStr} \
-              ${preEntryScript} ${pkg}/bin/${binName} "$@"
-          '';
-      }
+      pkgs.runCommand outName { } ''
+        mkdir -p $out/bin
+        install -m755 ${stub} $out/bin/${outName}
+      ''
       // {
         buildSpec = sandboxBuildSpec;
       }

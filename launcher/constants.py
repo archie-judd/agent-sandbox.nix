@@ -6,6 +6,8 @@ static, so it finds what it needs by name rather than being told.
 
 ARGV_BEFORE_ENV = "argv-before-env"
 ARGV_AFTER_ENV = "argv-after-env"
+# Written for reading, not for bubblewrap: it gets these as argv. See
+# write_launch_config.
 BWRAP_ARGS = "bwrap.args"
 # Everything the in-namespace entry point applies before exec: the nft
 # ruleset, the /proc/sys writes a ruleset cannot express, and whether to

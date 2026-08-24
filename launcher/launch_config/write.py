@@ -80,6 +80,10 @@ def write_launch_config(
             os.symlink(target, link)
         return
 
+    # For reading, not for bubblewrap, which gets these inline in argv-after-env.
+    # Written from the same tuple, so the two cannot disagree, and worth its own
+    # file because the bind list on its own is what you want to look at when a
+    # path is missing inside the sandbox.
     _write_nul_separated(session_dir / BWRAP_ARGS, config.bwrap_args)
     (session_dir / NETWORK).write_text(
         json.dumps(asdict(config.network), default=_as_json_value, indent=2)

@@ -40,12 +40,4 @@ source "@envFragment@"
 mapfile -d '' ARGV_BEFORE_ENV < "$SESSION_DIR/argv-before-env"
 mapfile -d '' ARGV_AFTER_ENV < "$SESSION_DIR/argv-after-env"
 
-# bubblewrap reads its arguments from this descriptor. Shell redirections are
-# not close-on-exec, so it survives pasta, the network entry point and `env -i`,
-# all of which clear the environment rather than the descriptor table. macOS
-# writes no such file.
-if [ -e "$SESSION_DIR/bwrap.args" ]; then
-  exec 3< "$SESSION_DIR/bwrap.args"
-fi
-
 "${ARGV_BEFORE_ENV[@]}" "${DECLARED_ENV[@]}" "${ARGV_AFTER_ENV[@]}" "$@"

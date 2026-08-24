@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from launcher.build_spec import SandboxBuildSpecDarwin
-from launcher.constants import CA_BUNDLE, CA_CERT, PASSWD, SEATBELT_PROFILE, WARN_PREFIX
+from launcher.constants import CA_BUNDLE, CA_CERT, PASSWD, SEATBELT_PROFILE
 from launcher.host_state import GitState, HostStateDarwin
 from launcher.launch_config import seatbelt
-from launcher.launch_config.shared import SandboxLaunchConfig
+from launcher.launch_config.shared import SandboxLaunchConfig, get_usable_git_state
 from launcher.session_state import SessionStateDarwin
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
@@ -28,42 +28,6 @@ class SandboxLaunchConfigDarwin(SandboxLaunchConfig):
     # so that $HOME-relative lookups inside the sandbox reach the real paths
     # through the seatbelt-allowed targets.
     home_symlinks: tuple[tuple[Path, Path], ...]
-
-
-def _is_git_root_the_home(host: HostStateDarwin, git: GitState) -> bool:
-    """Whether exposing this repository would expose the whole home directory.
-
-    A home-rooted repo's object store holds the history of tracked dotfiles:
-    ~/.ssh/config, tokens. The repo root is bound read-only and the gitdir
-    read-write, so there is no safe partial exposure.
-
-    Launching from the home directory itself is the exception. The user has
-    already confirmed that the whole home is exposed read-write, so refusing git
-    there would hide nothing and would break the case that motivates it, which
-    is working on a home-rooted dotfiles repo. A root strictly above the home
-    stays refused either way, since that reaches beyond what was consented to.
-    """
-    if host.real_home == git.repo_root:
-        return host.cwd != host.real_home
-    return git.repo_root in host.real_home.parents
-
-
-def _get_usable_git_state(host: HostStateDarwin) -> tuple[GitState | None, list[str]]:
-    """The git state to build rules from, plus any warning about dropping it.
-
-    This is a decision, not an observation, which is why it lives here rather
-    than in host_state or launch_checks. It does not refuse a launch: it
-    disables git for the session and says so.
-    """
-    if host.git is None:
-        return None, []
-    if _is_git_root_the_home(host, host.git):
-        return None, [
-            f"{WARN_PREFIX} git root resolves to your home directory "
-            f"({host.real_home}) — refusing to expose it. git is disabled for "
-            f"this session."
-        ]
-    return host.git, []
 
 
 def _get_ancestors(start: Path, stop: Path) -> list[Path]:
@@ -243,7 +207,7 @@ def compute_launch_config(
     host: HostStateDarwin,
     session: SessionStateDarwin,
 ) -> SandboxLaunchConfigDarwin:
-    git, warnings = _get_usable_git_state(host)
+    git, warnings = get_usable_git_state(host)
 
     argv_before_env = [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)
     argv_after_env = [
