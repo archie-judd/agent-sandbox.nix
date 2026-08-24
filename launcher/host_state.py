@@ -105,6 +105,10 @@ class DeclaredPath:
     mode: Literal["rw", "ro"]
     exists: bool
     symlink_chain: SymlinkChain
+    # The symlinked directories resolved out of expanded_path above. The
+    # sandbox needs them for the same reason a hop's do: expanded_path is the
+    # flattened form, and a program still opens the name that was declared.
+    parent_symlinks: tuple[Symlink, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -261,6 +265,10 @@ def _get_parent_symlinks(path: Path) -> tuple[Symlink, ...]:
     rather than the way the kernel would; callers normalise before asking.
     """
     parent_symlinks: list[Symlink] = []
+    # Absolute so the component walk starts from the root. Declared paths are
+    # not checked for being absolute anywhere yet, and a relative one would
+    # otherwise silently lose its first component here.
+    path = Path(os.path.abspath(path))
     resolved = Path(path.anchor)
     remaining = list(path.parent.parts[1:])
     follows = 0
@@ -362,6 +370,10 @@ def _get_declared_paths(
         # whole path would answer it destructively: a declared ~/.claude
         # pointing into the store would become the store path, losing the name
         # the sandboxed process is going to look for.
+        #
+        # Asked before the flattening, since that is the form whose symlinks
+        # are the ones the sandbox has to reproduce.
+        parent_symlinks = _get_parent_symlinks(expanded)
         resolved_parent = Path(os.path.realpath(expanded.parent))
         expanded = resolved_parent / expanded.name
         exists = _path_exists(expanded)
@@ -376,6 +388,7 @@ def _get_declared_paths(
                     mode=mode,
                     exists=exists,
                     symlink_chain=symlink_chain,
+                    parent_symlinks=parent_symlinks,
                     inner_symlinks=inner_symlinks,
                 )
             case "file":
@@ -385,6 +398,7 @@ def _get_declared_paths(
                     mode=mode,
                     exists=exists,
                     symlink_chain=symlink_chain,
+                    parent_symlinks=parent_symlinks,
                 )
             case _:
                 assert_never(kind)

@@ -28,6 +28,7 @@ from launcher.host_state import (
     DeclaredPath,
     GitState,
     HostStateLinux,
+    Symlink,
     SymlinkChain,
     SymlinkHop,
 )
@@ -206,8 +207,13 @@ def _get_symlink_target_args(
     return ["--ro-bind", str(target), str(target)], []
 
 
-def _get_parent_symlink_args(hop: SymlinkHop, planted: set[Path]) -> list[str]:
-    """--symlink for each symlinked directory this hop is reached through.
+def _get_parent_symlink_args(
+    parent_symlinks: Sequence[Symlink], prefixes: Sequence[Path], planted: set[Path]
+) -> list[str]:
+    """--symlink for each symlinked directory a path is reached through.
+
+    Takes the symlinks rather than what carried them, because a declared path
+    and a hop of its chain both have them and both need them planted.
 
     Emitted whatever becomes of the target, including when the target is already
     exposed. The name the link holds still has to exist inside the sandbox: the
@@ -219,11 +225,15 @@ def _get_parent_symlink_args(hop: SymlinkHop, planted: set[Path]) -> list[str]:
     an access grant, and following it reaches a file only if something else bound
     that file.
 
-    `planted` is updated in place, because two hops can share a parent.
+    Skipped where an enclosing bind already exposes the link, which is the host's
+    own symlink and so already the right thing: planting over it would give
+    bubblewrap two instructions for one path.
+
+    `planted` is updated in place, because two paths can share a parent.
     """
     args: list[str] = []
-    for link in hop.parent_symlinks:
-        if link.path in planted:
+    for link in parent_symlinks:
+        if link.path in planted or _is_already_bound(link.path, prefixes):
             continue
         planted.add(link.path)
         args.extend(["--symlink", str(link.points_to), str(link.path)])
@@ -246,7 +256,7 @@ def _get_chain_args(
     warnings: list[str] = []
 
     for hop in chain.hops:
-        links += _get_parent_symlink_args(hop, planted)
+        links += _get_parent_symlink_args(hop.parent_symlinks, prefixes, planted)
         target_args, target_warnings = _get_symlink_target_args(
             hop, prefixes, resolved
         )
@@ -315,6 +325,13 @@ def _get_declared_binds(
     dirs = [d for d in host.declared if isinstance(d, DeclaredDir)]
 
     for declared in [*files, *dirs]:
+        # The declared path's own symlinked parents, before its chain's. The
+        # name a program opens is the one that was declared, and expanded_path
+        # is already the flattened form of it.
+        parent_symlinks += _get_parent_symlink_args(
+            declared.parent_symlinks, prefixes, planted
+        )
+
         targets, chain_dirs, links, chain_warnings = _get_chain_args(
             declared.symlink_chain, prefixes, resolved, planted, seen_parents
         )
