@@ -210,7 +210,12 @@ def _get_profile_lines(
 
     lines += seatbelt.device_nodes(host.tty)
     lines += seatbelt.SYSTEM_LIBRARIES
-    lines += seatbelt.dns_tls(session.session_dir / PASSWD)
+    if session.proxy is None:
+        ca_bundle, ca_cert = None, None
+    else:
+        ca_bundle = session.session_dir / CA_BUNDLE
+        ca_cert = session.session_dir / CA_CERT
+    lines += seatbelt.dns_tls(session.session_dir / PASSWD, ca_bundle, ca_cert)
     lines += seatbelt.KEYCHAINS
     lines += seatbelt.temp_dirs(SANDBOX_TMPDIR)
     lines += seatbelt.NIX_STORE

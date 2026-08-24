@@ -6,9 +6,23 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
+# The profile is no longer a build artifact: it is computed per launch and
+# written into the session directory. `prepare` writes it before the sandbox
+# runs, so it exists even when the launch itself goes nowhere.
+SESSIONS=$(mktemp -d)
+trap 'rm -rf "$SESSIONS"' EXIT
+
 sandbox_profile_for_wrapper() {
 	local wrapper="$1/bin/sandboxed-bash-allowed-local-ports"
-	grep -Eo '/nix/store/[^" ]+-sandboxed-bash-allowed-local-ports-sandbox\.sb' "$wrapper" | head -n 1
+	local run
+	local profile
+	run=$(mktemp -d "$SESSIONS/run.XXXXXX")
+	AGENT_SANDBOX_LOG_DIR="$run" "$wrapper" -c true >/dev/null 2>&1 || true
+	profile=$(find "$run" -name seatbelt.sb | head -n 1)
+	# find succeeds with no output when nothing matches, so the caller's
+	# "profile not found" branch needs this to fail explicitly.
+	[ -n "$profile" ] || return 1
+	printf '%s\n' "$profile"
 }
 
 expect_rule_count() {

@@ -195,9 +195,18 @@ def device_nodes(tty: Path | None) -> list[str]:
     return lines
 
 
-def dns_tls(passwd: Path) -> list[str]:
-    """macOS uses /private/etc as the real location, with /etc as a symlink."""
-    return [
+def dns_tls(
+    passwd: Path, ca_bundle: Path | None, ca_cert: Path | None
+) -> list[str]:
+    """macOS uses /private/etc as the real location, with /etc as a symlink.
+
+    The session directory files are granted by name, never by subpath. Granting
+    the directory would also hand over proxy.pid, and the profile deliberately
+    denies kern.proc.* so the sandbox cannot enumerate host processes, while
+    (allow signal) is granted and macOS has no PID namespace. A readable pid
+    file reconstructs by hand the thing those denies exist to prevent.
+    """
+    lines = [
         "",
         ";; DNS, TLS & name resolution",
         "(allow file-read*",
@@ -209,6 +218,15 @@ def dns_tls(passwd: Path) -> list[str]:
         '  (subpath "/private/etc/static")',
         '  (literal "/private/etc/hosts"))',
     ]
+    # Only in restricted mode: without these the sandbox cannot read the CA it
+    # was told to trust, and every TLS handshake through the proxy fails.
+    if ca_bundle is not None and ca_cert is not None:
+        lines += [
+            "(allow file-read*",
+            f'  (literal "{ca_bundle}")',
+            f'  (literal "{ca_cert}"))',
+        ]
+    return lines
 
 
 def temp_dirs(tmpdir: Path) -> list[str]:

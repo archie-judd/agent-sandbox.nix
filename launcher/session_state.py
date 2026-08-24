@@ -1,5 +1,9 @@
 """What the launcher creates for this launch.
 
+Every path here is physical, for the same reason as in host_state: these paths
+become seatbelt rules and bubblewrap mount destinations, and the kernel resolves
+symlinks before either is matched.
+
 The only step with side effects. Everything here exists because we made it, which
 is what distinguishes it from SandboxLaunchConfig: that is a description and owns
 nothing.
@@ -102,7 +106,15 @@ def create_session_dir(
     name = f"{timestamp}-{os.getpid()}-{spec.out_name}"
     session_dir = _get_sessions_root() / name
     session_dir.mkdir(parents=True, exist_ok=True)
-    return session_dir
+    # Physical, like every other path the launcher hands on. The root comes from
+    # AGENT_SANDBOX_LOG_DIR, XDG_STATE_HOME or HOME, any of which can be a
+    # logical path: /tmp is a symlink to /private/tmp on macOS. The seatbelt
+    # rule granting the passwd file inside this directory is matched by the
+    # kernel after it has resolved symlinks, so a logical path there matches
+    # nothing and the sandbox cannot read its own passwd file. Resolved in full
+    # rather than parent-only because we just created it, so it is a real
+    # directory and not a symlink whose identity matters.
+    return Path(os.path.realpath(session_dir))
 
 
 def _create_darwin_sandbox_home() -> Path:

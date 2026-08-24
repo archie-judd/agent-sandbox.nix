@@ -339,10 +339,10 @@ The session directory must stay safe to attach to a GitHub issue. That is the
 property the debug logging design is built around, and it is why proxy
 allow-side URL logging stays out of scope.
 
-Two files in the session directory are read by the sandboxed process: the CA
-bundle via `SSL_CERT_FILE`, and the passwd file, if the passwd file turns out to
-have a reader on macOS at all (see unit 2). Grant those two by name, not the
-directory by subpath. Granting the subpath would also hand over
+Three files in the session directory are read by the sandboxed process: the CA
+bundle via `SSL_CERT_FILE`, the CA certificate via `NODE_EXTRA_CA_CERTS`, and
+the passwd file, if the passwd file turns out to have a reader on macOS at all
+(see unit 2). Grant those three by name, not the directory by subpath. Granting the subpath would also hand over
 `proxy.pid`, and `lib/darwin/seatbelt-profile.nix:45-49` deliberately denies
 `kern.proc.*` and `kern.procargs2` so the sandbox cannot enumerate host
 processes, while line 28 grants `(allow signal)` and macOS has no PID namespace.
@@ -581,14 +581,17 @@ to be confirmed by a human, and `prepare_launch` owns the exit.
 exists before anything can refuse the launch, without a proxy having been
 started for a run that is about to be refused.
 
-Every path in `HostState` is physical: parent directories resolved to their
-fully-followed form, with the final component left alone. Two names for the same
-directory never compare equal as strings, and `/tmp` being a symlink to
-`/private/tmp` on macOS is enough to break a comparison silently. Three separate
-defects came from this before the rule was written down: the launch-from-home
-confirmation never fired, the macOS nested-bind guard skipped every check, and
-symlink chain hops would have become seatbelt rules that match nothing, since
-the kernel resolves before the seatbelt hook. The final component keeps its own
+Every path the launcher hands on is physical, in `HostState` and in
+`SessionState` alike: parent directories resolved to their fully-followed form,
+with the final component left alone. Two names for the same directory never
+compare equal as strings, and `/tmp` being a symlink to `/private/tmp` on macOS
+is enough to break a comparison silently. Four separate defects came from this:
+the launch-from-home confirmation never fired, the macOS nested-bind guard
+skipped every check, symlink chain hops would have become seatbelt rules
+matching nothing, and the session directory stayed logical so the rule granting
+the sandbox its own passwd file matched nothing either. The first three were
+found by reasoning; the fourth only by building a real wrapper and reading the
+profile it produced. The final component keeps its own
 name because whether a declared path is itself a symlink decides how it is
 bound.
 

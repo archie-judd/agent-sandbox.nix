@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from launcher.build_spec import SandboxBuildSpecDarwin, SandboxBuildSpecLinux
-from launcher.constants import WARN_PREFIX
+from launcher.constants import ERROR_PREFIX, WARN_PREFIX
 from launcher.host_state import (
     DeclaredDir,
     DeclaredPath,
@@ -32,6 +32,18 @@ def _get_declared_label(declared: DeclaredPath) -> str:
     if isinstance(declared, DeclaredDir):
         return f"{declared.mode}Dir"
     return f"{declared.mode}File"
+
+
+def _origin_suffix(declared: DeclaredPath) -> str:
+    """How the path was written, when expansion changed it.
+
+    Empty when it did not, since repeating an absolute path back at someone
+    tells them nothing. Messages lead with the expanded path, because that is
+    the thing that does not exist and the thing worth grepping for.
+    """
+    if declared.unexpanded_path == str(declared.expanded_path):
+        return ""
+    return f' (declared as "{declared.unexpanded_path}")'
 
 
 def _get_missing_binds(host: HostStateLinux | HostStateDarwin) -> list[DeclaredPath]:
@@ -138,12 +150,22 @@ def _confirm_home_cwd_launch(host: HostStateLinux | HostStateDarwin) -> bool:
         f"every other project. Your home is not masked in this session.",
         file=sys.stderr,
     )
+    # Two single-mode opens rather than one "r+", matching the bash this
+    # replaces: `printf ... > /dev/tty` then `read < /dev/tty`. A read-write
+    # handle on a terminal is not the same thing and does not need to be.
     try:
-        with open("/dev/tty", "r+", encoding="utf-8") as terminal:
+        with open("/dev/tty", "w", encoding="utf-8") as terminal:
             terminal.write(f"{WARN_PREFIX} continue? [y/N] ")
             terminal.flush()
+        with open("/dev/tty", "r", encoding="utf-8") as terminal:
             reply = terminal.readline()
-    except OSError:
+    except OSError as error:
+        # Not a decline. Saying so keeps a broken terminal from looking like
+        # the user answering no.
+        print(
+            f"{ERROR_PREFIX} could not ask for confirmation on /dev/tty: {error}",
+            file=sys.stderr,
+        )
         return False
     return reply.strip() in _AFFIRMATIVE
 
@@ -157,15 +179,17 @@ def get_launch_refusals(
 
     for declared in _get_missing_binds(host):
         refusals.append(
-            f"{declared.unexpanded_path} ({declared.expanded_path}): declared as "
+            f"{declared.expanded_path}: declared as "
             f"{_get_declared_label(declared)} but does not exist"
+            f"{_origin_suffix(declared)}"
         )
 
     if spec.platform == "darwin" and isinstance(host, HostStateDarwin):
         for declared, problem in _get_nested_bind_conflicts(host):
             refusals.append(
-                f"{declared.unexpanded_path} ({declared.expanded_path}): declared as "
+                f"{declared.expanded_path}: declared as "
                 f"{_get_declared_label(declared)} but {problem}"
+                f"{_origin_suffix(declared)}"
             )
 
     if _is_cwd_above_home(host):
