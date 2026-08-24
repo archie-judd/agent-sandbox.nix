@@ -402,8 +402,8 @@ down to a directory, a proxy port and a pid. The sandbox home stays under
 `/private/tmp` on macOS: moving it here would put it under the real home, which
 changes what `(allow file-read* process-exec (subpath (param "HOME")))` grants.
 
-NUL separation is not only for `bwrap --args`. The `cleanup` file and both argv
-files use it too, because a path may contain a newline.
+Everything holding paths is NUL-separated: both argv files, both cleanup lists
+and `bwrap.args`, because a path may contain a newline.
 
 Root resolution: `AGENT_SANDBOX_LOG_DIR`, else `$XDG_STATE_HOME`, else
 `$HOME/.local/state`. Timestamp leads the name so `ls` sorts chronologically and
@@ -811,16 +811,16 @@ class SandboxLaunchConfig:
 
 class SandboxLaunchConfigLinux(SandboxLaunchConfig):
     bwrap_args: tuple[str, ...]
-    nft_rules: tuple[str, ...]
+    network: NetworkConfig
 
 class SandboxLaunchConfigDarwin(SandboxLaunchConfig):
     seatbelt_profile_lines: tuple[str, ...]
 ```
 
 The artifacts stay sequences through `compute_launch_config` and only meet a
-separator in `write_launch_config`. Flattening them earlier would throw away
-the structure the `--args` change exists to protect, and would reduce the unit
-tier to string matching. What the tests need to be able to write is that
+separator in `write_launch_config`. Flattening them earlier would throw away the
+structure that keeps a path with a space in it one argument, and would reduce the
+unit tier to string matching. What the tests need to be able to write is that
 `("--bind", "/tmp/a b", "/tmp/a b")` appears in `bwrap_args`, and that a deny
 line's index exceeds an allow line's index in `seatbelt_profile_lines`, since
 seatbelt is last-match-wins.
@@ -830,7 +830,7 @@ segments exist for exactly one reason, which is that the declared env values
 have to be injected between them without passing through Python.
 
 ```
-argv_before_env   Linux  pasta ... -- <nft entry> nft.rules
+argv_before_env   Linux  pasta ... -- <namespace entry> network.json
                          env -i <computed K=V>
                   macOS  env -i <computed K=V>
 
@@ -907,14 +907,16 @@ reintroduce the vector for paths containing newlines.
 
 The route-restrict layer moves to Python. The two `writeScript` scripts in
 `lib/linux/networking.nix` become one entry point that runs inside pasta's
-namespace, applies `nft.rules` and execs onwards. The rules are computed by
+namespace, applies `network.json` and execs onwards. The rules are computed by
 `compute_launch_config` and written as an artifact, so the entry point holds no
-policy and the nftables rules stop being a third generated artifact.
+policy and the nftables rules stop being a third generated artifact. It keeps
+the bash's fail-closed behaviour: a failed route deletion, ruleset load or
+sysctl write exits with a reason rather than falling through to the exec.
 `allowedLocalPorts` also needs two `/proc/sys/net/ipv4/conf/*/route_localnet`
 writes, which an nft ruleset cannot express, so those stay in the entry point.
 The `SANDBOX_PROXY_PORT="$_PROXY_PORT"` assignment prefixed to the pasta
 invocation disappears: a shell assignment prefix cannot be an argv element, and
-once the port is baked into `nft.rules` nothing reads the variable.
+once the port is baked into the computed rules nothing reads the variable.
 
 The fd 3 note, which is the one thing in this plan that was wrong rather than
 merely incomplete. `bwrap --args` does exist on the pin, `--args FD  Parse
@@ -992,6 +994,25 @@ configuration. That risk is accepted deliberately.
 
 Acceptance: the suite passes, mypy strict is clean, and the behaviour changes
 above are in the release notes.
+
+Four things the cutover found, all of them in code this plan called low risk.
+The git-root-is-home rule had only ever been written in `darwin.py`, so Linux
+bound a repository rooted at `$HOME` anyway, which the bash refused: it is
+shared policy and now lives in `launch_config/shared.py`. The relative-path
+refusal was listed under Behaviour changes as if it had shipped, and nothing
+implemented it. `apply_network_rules` aborted with a traceback where the bash
+printed a reason, on the path that removes the default route. And the two
+backends each carry their own copy of the launcher package, the env fragment and
+the stub substitution, so pinning the stub's interpreter in one left the other
+building a wrapper with `@bash@` in the shebang, which no Nix check can catch.
+That duplication should be factored into `shared.nix` now that the suite can say
+whether it broke.
+
+Left over, small: a regression test for a chain running through a symlinked
+directory, which is the one defect from the port the suite would not have
+caught; `shellcheck lib/stub.sh`, which unit 4 picks up anyway; and a
+`_physical_path` helper, since realpath-the-parents-keep-the-name is now written
+out inline in two places with a long comment each.
 
 ### 3. Session directory
 
@@ -1103,15 +1124,13 @@ Acceptance: the suite passes, plus one regression test per finding.
 
 ## Totals
 
-Around 12 to 15 days across six units, one per PR. Unit 0 is done. Unit 1 is
-around a day of test housekeeping and is the only thing standing before the
-port.
+Units 0, 1 and 2 are done, plus both security fixes. What remains is unit 3, the
+session directory's retention and logging; unit 4, the pytest tier and the CI
+checks; and unit 5, the security backlog. None of the three depends on the other
+two, and unit 4 is the one that pays for itself fastest now that the pure layer
+exists to test.
 
 ## Decisions still open
-
-How to pin the fixtures' nixpkgs in unit 1: a shared file deriving the revision
-from `flake.lock`, a `--arg pkgs` threaded from `run-all.sh`, or a pinned
-`fetchTarball` per fixture.
 
 Whether the pytest tier needs a nix devshell of its own, or rides on the
 existing one.
@@ -1124,6 +1143,11 @@ Nothing further on names. Modules follow one rule, one module per type family
 named for the type it owns, with `launch_checks`, `seatbelt` and `constants` as
 the exceptions that own no type. Types carry the `Sandbox` prefix and modules do
 not, since a module path is already `launcher.something`.
+
+Settled since: the fixtures' nixpkgs comes from `tests/pinned-nixpkgs.nix`,
+which reads the revision and hash out of `flake.lock`, and fixtures default to
+it rather than taking it from the harness, so building one by hand is pinned
+too.
 
 ## Deferred
 
