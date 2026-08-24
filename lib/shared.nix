@@ -5,7 +5,7 @@ let
   # output and greppable from interleaved logs.
   warnPrefix = "[WARN][agent-sandbox.nix]";
   errorPrefix = "[ERROR][agent-sandbox.nix]";
-  sandboxProxy = import ../proxy { pkgs = pkgs; };
+  sandboxProxy = import ../launch/proxy { pkgs = pkgs; };
   # Wrapper that forces --norc --noprofile on every bash invocation.
   # Newer claude-code versions spawn bash as a login/interactive shell,
   # which causes it to source /etc/bashrc and /etc/profile. This wrapper

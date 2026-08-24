@@ -15,5 +15,5 @@ GO_BIN=$(build_host_pkg go)/bin/go
 # nixpkgs Go would send the test run to the network for a toolchain.
 export GOTOOLCHAIN=local
 
-cd "$SCRIPT_DIR/../../proxy"
+cd "$SCRIPT_DIR/../../launch/proxy"
 "$GO_BIN" test ./...
