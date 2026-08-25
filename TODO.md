@@ -384,6 +384,7 @@ manifest that would otherwise pass between Python and bash.
   ca-cert.pem       restricted mode only
   proxy.pid         restricted mode only
   proxy.log         restricted mode only
+  stub.pid          written by the stub, read by a later launch's prune
   cleanup           NUL-separated paths to remove on exit
   cleanup-if-empty  NUL-separated, removed only if still empty
 ```
@@ -416,11 +417,18 @@ missing bind or a declined home-directory launch still records why.
 The wrapper prints nothing about the directory on success or failure.
 Discoverability is the README's job.
 
-Unit 2 creates the directory and writes the artifacts. Retention, the startup
-log and the warning when a declared path covers the root are unit 3, which adds
-behaviour to a directory that already exists rather than relocating anything.
-Until then directories accumulate unpruned, which is still an improvement on
-`mktemp` files scattered across `/tmp`.
+Unit 2 creates the directory and writes the artifacts. The startup log and the
+warning when a declared path covers the root are unit 3, which adds behaviour to
+a directory that already exists rather than relocating anything.
+
+Retention came forward out of unit 3 and shipped with the port, because leaving
+it out meant releasing unbounded accumulation one release after unit 0 fixed
+unbounded accumulation. The prune skips any session whose `stub.pid` is still
+alive, checked with signal 0, which delivers nothing. Without that it could
+delete a directory a running sandbox is still reading: `SSL_CERT_FILE` points
+into the session directory on macOS, and `cleanup` reads the proxy pid and both
+removal lists off disk on both platforms. Pid reuse can only make a finished
+session look live, so the error falls on the side of keeping a directory.
 
 ## Security fixes, ahead of unit 0
 
@@ -1016,14 +1024,15 @@ out inline in two places with a long comment each.
 
 ### 3. Session directory
 
-Not started. Around 4 files. 1.5 days.
+Partly done. Around 3 files left. 1 day.
 
 What the Session directory section above describes but unit 2 does not need in
-order to write its artifacts: retention, the startup log, and the warning when a
-declared path covers the root. What `startup.log` may hold, and why it is built
-in Nix, is under Secrets above.
+order to write its artifacts: the startup log and the warning when a declared
+path covers the root. What `startup.log` may hold, and why it is built in Nix,
+is under Secrets above.
 
-Retention is 25 directories, pruned at launch, as a constant in the Python
+Retention shipped with the port instead, for the reason recorded under Session
+directory. It is 25 directories, pruned at launch, as a constant in the Python
 source rather than a `mkSandbox` argument.
 
 Logging is best effort and never gates a launch. An unwritable root, a failed
@@ -1042,9 +1051,9 @@ Split out of unit 2 because unit 2's risk is concentrated entirely in bind
 ordering and seatbelt rule ordering, and this shares none of it. By the time it
 lands, the directory and the artifacts already exist, so nothing moves.
 
-Acceptance: the suite passes, plus tests that an unwritable root still launches,
-that pruning keeps the newest 25, and that a declared path covering the root
-warns.
+Acceptance: the suite passes, plus tests that an unwritable root still launches
+and that a declared path covering the root warns. Pruning is covered by
+`tests/shared/test-session-retention.sh`, which came with it.
 
 ### 4. Test tiers
 
@@ -1163,9 +1172,9 @@ remains in `prepare`.
 
 ## Totals
 
-Units 0, 1 and 2 are done, plus both security fixes. What remains is unit 3, the
-session directory's retention and logging; unit 4, the pytest tier and the CI
-checks; unit 5, the security backlog; and unit 6, the duplication left by the
+Units 0, 1 and 2 are done, plus both security fixes and unit 3's retention. What
+remains is the rest of unit 3, the startup log and the covers-the-root warning;
+unit 4, the pytest tier and the CI checks; unit 5, the security backlog; and unit 6, the duplication left by the
 port. None of units 3, 4 and 5 depends on the other two, and unit 4 is the one
 that pays for itself fastest now that the pure layer exists to test. Unit 6 goes
 after unit 4, since the pytest tier is what makes collapsing the unions a
@@ -1201,3 +1210,40 @@ stop the session directory being safe to attach to an issue.
 Letting `rwDirs` and friends vary without a rebuild, now that the seatbelt
 profile is generated at runtime and nothing structural prevents it. This is a
 capability change, not a refactor, and the reasons not to want it are separate.
+
+AF_UNIX sockets, behind an `allowUnixSockets` flag. Seatbelt mediates
+`network-bind` and `network-outbound` on a unix socket as operations independent
+of the filesystem grants, so a tool whose client and server rendezvous over a
+socket inside a directory it can already write fails at `bind()` on macOS. Linux
+has no equivalent gate: a pathname socket is reachable exactly when its path is
+visible in the mount namespace, so `rwDirs` already grants it there and there is
+no seccomp filter in the way. PR #92 proposes allowing bind and connect scoped
+to the working directory and `rwDirs` on macOS, which closes the gap by matching
+what Linux already does.
+
+A boolean rather than a list of directories, because it is the only shape that
+means the same thing on both platforms. macOS can express any path scope with
+`subpath` rules, while Linux has two positions and no third: none, via a seccomp
+filter rejecting `socket(AF_UNIX, ...)` on the family argument, or everything
+visible, via the mounts. Classic BPF cannot dereference the `sockaddr_un` to
+filter by path, so an allowlist would be enforced on macOS and unenforceable on
+Linux at every value except empty and total.
+
+The Linux half carries the cost. The filter depends on nothing at runtime, so
+the BPF program is a build-time artifact, one per architecture. But bubblewrap's
+`--seccomp` takes a descriptor, and pasta does not pass an inherited one to its
+child, which is the constraint that put bubblewrap's own arguments inline under
+unit 2. The only process left to open it in is the network entry point, which is
+the placement that was rejected there. The filter also has to permit
+`socketpair(AF_UNIX, ...)`, which is anonymous and reaches nothing, or every
+runtime using it for internal IPC breaks.
+
+One decision is open and one fact is unverified. `allowNix` conflicts on Linux:
+`/nix/var` is bound so the daemon socket is present, reaching it is AF_UNIX, and
+a family-level filter cannot carve out one path, so either the combination is
+refused at eval time or `allowNix` implies the permission. macOS has no such
+problem, since `seatbelt.nix_support` grants the daemon socket by path. Whether
+`(local unix-socket (subpath ...))` is accepted by the SBPL compiler at all is
+untested: the profile only ever uses `path-literal` under `remote unix-socket`,
+and if `subpath` is invalid in that position the macOS half needs a different
+shape. Check that before anything else.
