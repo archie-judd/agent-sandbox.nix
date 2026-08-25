@@ -22,9 +22,11 @@ PROXY_PID = "proxy.pid"
 PROXY_LOG = "proxy.log"
 CLEANUP = "cleanup"
 CLEANUP_IF_EMPTY = "cleanup-if-empty"
+STUB_PID = "stub.pid"
 
 PROXY_LISTEN_HOST = "127.0.0.1"
 PROXY_STARTUP_TIMEOUT_SECONDS = 5.0
+SESSION_RETENTION = 25
 
 WARN_PREFIX = "[WARN][agent-sandbox.nix]"
 ERROR_PREFIX = "[ERROR][agent-sandbox.nix]"

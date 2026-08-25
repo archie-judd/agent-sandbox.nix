@@ -67,6 +67,12 @@ if ! SESSION_DIR=$("@python@" -P -s -S -m launcher.prepare "@spec@"); then
   exit 1
 fi
 
+# The one thing the stub writes. Session directories outlive their run, so a
+# later launch prunes the oldest, and it has to be able to tell a finished
+# session from one still going: this shell does not exec, so it is the
+# sandbox's parent until the session ends and its pid answers that.
+echo $$ >"$SESSION_DIR/stub.pid"
+
 # Armed only now: before this point there is no session to clean up, and
 # prepare tears down its own failures.
 trap '"@python@" -P -s -S -m launcher.cleanup "$SESSION_DIR"' EXIT

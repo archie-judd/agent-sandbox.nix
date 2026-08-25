@@ -25,6 +25,10 @@ directory and a process.
 
 The stub's EXIT trap is only armed after prepare has printed the session
 directory, so until then nothing else would clean up a half-built session.
+
+The one exception to all of that is _prune_sessions_root, which gives back what
+earlier launches acquired rather than anything belonging to this one. Session
+directories survive their own run on purpose, so something has to bound them.
 """
 
 import os
@@ -46,12 +50,18 @@ from launcher.lib.constants import (
     PROXY_LISTEN_HOST,
     PROXY_LOG,
     PROXY_STARTUP_TIMEOUT_SECONDS,
+    SESSION_RETENTION,
+    STUB_PID,
 )
 
 SESSIONS_ROOT_OVERRIDE = "AGENT_SANDBOX_LOG_DIR"
 SESSIONS_ROOT_NAME = "agent-sandbox"
 DEFAULT_STATE_HOME = ".local/state"
 SESSION_DIR_TIMESTAMP = "%Y%m%d-%H%M%S"
+# Has to stay in step with the name create_session_dir builds. It is what stops
+# the prune from touching anything else, since the sessions root can be pointed
+# at a shared directory through SESSIONS_ROOT_OVERRIDE.
+SESSION_DIR_NAME = re.compile(r"\d{8}-\d{6}-\d+-.+")
 SANDBOX_HOME_PREFIX = "sandbox-home."
 # macOS only, and deliberately not inside the session directory: the sessions
 # root lives under the real home, and putting the sandbox HOME there would
@@ -96,11 +106,76 @@ def _get_sessions_root() -> Path:
     return Path(home) / DEFAULT_STATE_HOME / SESSIONS_ROOT_NAME
 
 
+def _is_session_live(session_dir: Path) -> bool:
+    """Whether the stub that created this session is still running.
+
+    The stub does not exec, so it is the sandbox's parent for the whole session
+    and its liveness is the session's. Anything written by an older wrapper, or
+    left behind by a stub that died before writing, reads as finished.
+
+    Both error directions fall the same way. A pid recycled onto an unrelated
+    process makes a finished session look live, so its directory survives until
+    the next launch looks again; nothing here can report a running session as
+    finished, which is the answer that would do damage.
+    """
+    try:
+        pid = int((session_dir / STUB_PID).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    # Zero and negative pids address process groups rather than a process.
+    if pid <= 0:
+        return False
+    try:
+        # Signal 0 delivers nothing: kill(2) performs its existence and
+        # permission checks and returns.
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # It exists and belongs to someone else, which for a same-user sessions
+        # root should not happen. Live is the conservative reading.
+        return True
+    return True
+
+
+def _prune_sessions_root(root: Path) -> None:
+    """Keep the newest SESSION_RETENTION sessions, and every running one.
+
+    Best effort, unlike the rest of this module: an unreadable root or a failed
+    removal leaves the launch to continue normally, because losing an old
+    directory is not worth refusing to start a sandbox over.
+
+    A running session is skipped rather than counted against the limit, so the
+    root can exceed it by however many sandboxes are open at once. Deleting one
+    would take the CA bundle out from under a running agent on macOS, where
+    SSL_CERT_FILE points into the session directory itself, and would strand the
+    proxy and the mount points its EXIT trap reads from disk on both platforms.
+    """
+    try:
+        sessions = [
+            entry
+            for entry in root.iterdir()
+            if SESSION_DIR_NAME.fullmatch(entry.name) and entry.is_dir()
+        ]
+    except OSError:
+        return
+
+    # The timestamp leads the name, so name order is age order.
+    sessions.sort(key=lambda session: session.name, reverse=True)
+    for session in sessions[SESSION_RETENTION:]:
+        if _is_session_live(session):
+            continue
+        shutil.rmtree(session, ignore_errors=True)
+
+
 def create_session_dir(spec: SandboxBuildSpec, now: datetime) -> Path:
     """Create this launch's directory, before anything can refuse the launch."""
     timestamp = now.strftime(SESSION_DIR_TIMESTAMP)
     name = f"{timestamp}-{os.getpid()}-{spec.out_name}"
-    session_dir = _get_sessions_root() / name
+    root = _get_sessions_root()
+    # Ahead of the mkdir so this launch's own directory is never a candidate.
+    _prune_sessions_root(root)
+    session_dir = root / name
     session_dir.mkdir(parents=True, exist_ok=True)
     return Path(os.path.realpath(session_dir))
 
