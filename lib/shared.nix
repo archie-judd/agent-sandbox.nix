@@ -131,13 +131,22 @@ let
   # One data line per declared variable, and no logic. The values are
   # documented as runtime shell expressions, both the "$TOKEN" form and the
   # sops "$(cat /run/secrets/...)" form, so they expand in the stub and never
-  # enter Python or touch disk. toJSON quotes the value, so each line appends
-  # exactly one array element even when the value contains spaces.
+  # enter Python or touch disk.
+  #
+  # Each line calls declare_env rather than appending to an array directly, so
+  # that the expansion happens inside the stub where a failure can be caught and
+  # reported against the env attribute it came from. toJSON supplies the double
+  # quotes the value expands inside, so a value containing spaces is still one
+  # word; escapeShellArg then carries that whole fragment through as a literal
+  # argument, unexpanded until declare_env evals it.
   mkEnvFragment =
     { outName, env }:
     pkgs.writeText "${outName}-env" (
       pkgs.lib.concatMapStrings (
-        name: "DECLARED_ENV+=(${name}=${builtins.toJSON env.${name}})\n"
+        name:
+        "declare_env ${pkgs.lib.escapeShellArg name} ${
+          pkgs.lib.escapeShellArg (builtins.toJSON env.${name})
+        }\n"
       ) (builtins.attrNames env)
     );
 
@@ -149,6 +158,7 @@ let
       launcher = "${launcherPackage}";
       spec = "${spec}";
       envFragment = "${envFragment}";
+      errorPrefix = errorPrefix;
     };
 
   # The wrapper itself. Both seqs are what make the validation an eval-time
