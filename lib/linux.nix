@@ -2,13 +2,13 @@
   mkLinuxSandbox — wraps a binary in a bubblewrap (bwrap) container.
 
   This file no longer knows what a bubblewrap command line looks like. It
-  validates arguments, decides what enters the closure, and produces four
-  things for the launcher to read: the spec, the launcher package, the env
-  fragment and the stub. Everything about the sandbox itself lives in
-  launcher/, where it can be read, type-checked and tested without building
-  anything: launcher/launch_config/linux.py holds the binds, the mount order
-  and the nftables rules, and launcher/apply_network_rules.py applies them
-  inside pasta's namespace.
+  validates arguments and decides what enters the closure; the spec, the
+  launcher package, the env fragment and the stub are assembled by
+  lib/shared.nix, which both platforms share. Everything about the sandbox
+  itself lives in launcher/, where it can be read, type-checked and tested
+  without building anything: launcher/launch_config/linux.py holds the binds,
+  the mount order and the nftables rules, and launcher/apply_network_rules.py
+  applies them inside pasta's namespace.
 
   Nix keeps eval-time argument validation deliberately: validateAllowedLocalPorts
   and assertNoLegacyArgs throw when the shell is built, not when the agent is
@@ -55,13 +55,6 @@
   stateFiles ? null,
 }:
 let
-  # Runs inside the sandbox ahead of the agent binary: probes for a declared
-  # git identity and warns the user at launch if none is found, then exec's
-  # the real command. See lib/pre-entry-script.sh.
-  preEntryScript = pkgs.writeShellScript "pre-entry-script" (
-    builtins.readFile ../pre-entry-script.sh
-  );
-
   # Bound over /proc/cmdline and the boot id, and over git protected files that
   # do not exist yet, which is how a path that could otherwise just be created
   # is made read-only instead.
@@ -72,34 +65,27 @@ let
     ::1       localhost
   '';
 
-  implicitPackages = [
-    pkgs.cacert
-    shared.bashWrapper
-  ]
-  ++ (if allowNix then [ pkgs.nix ] else [ ]);
+  implicitPackages = shared.mkImplicitPackages allowNix;
 
   pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
 
-  # cacert and bashWrapper are always included: cacert so SSL/TLS verification
-  # works, bashWrapper so the hardcoded SHELL and /bin/sh symlink targets are
-  # always reachable. bashWrapper forces --norc --noprofile on every bash
-  # invocation so the sandboxed process cannot source /etc/bashrc or
-  # /etc/profile. coreutils is here for the /usr/bin/env symlink, which
-  # shebang resolution needs, and deliberately not in implicitPackages, so it
-  # does not leak into PATH.
+  # coreutils is here for the /usr/bin/env symlink, which shebang resolution
+  # needs, and deliberately not in implicitPackages, so it does not leak into
+  # PATH. macOS resolves that symlink against its own /usr/bin and needs
+  # nothing.
   closurePathsFile = pkgs.writeClosure (
     allowedPackages
     ++ implicitPackages
     ++ [
       pkg
       pkgs.coreutils
-      preEntryScript
+      shared.preEntryScript
     ]
   );
 
   validatedAllowedLocalPorts = shared.validateAllowedLocalPorts allowedLocalPorts;
 
-  sandboxBuildSpec = import ../spec.nix
+  sandboxBuildSpec = import ./spec.nix
     {
       pkgs = pkgs;
       shared = shared;
@@ -118,59 +104,33 @@ let
       env = env;
       allowedLocalPorts = validatedAllowedLocalPorts;
       closurePathsFile = closurePathsFile;
-      preEntryScript = preEntryScript;
+      preEntryScript = shared.preEntryScript;
       allowedDomains = allowedDomains;
       _proxyRedirects = _proxyRedirects;
       hostsFile = hostsFile;
       emptyFile = emptyFile;
     };
 
-  # __pycache__ would otherwise change the store hash from one build to the
-  # next depending on whether anything had imported the package in place.
-  launcherSource = builtins.filterSource (
-    path: type: baseNameOf path != "__pycache__"
-  ) ../../launcher;
+  envFragment = shared.mkEnvFragment {
+    outName = outName;
+    env = env;
+  };
 
-  launcherPackage = pkgs.runCommand "agent-sandbox-launcher" { } ''
-    mkdir -p $out
-    cp -r ${launcherSource} $out/launcher
-  '';
-
-  # One data line per declared variable, and no logic. The values are
-  # documented as runtime shell expressions, both the "$TOKEN" form and the
-  # sops "$(cat /run/secrets/...)" form, so they expand in the stub and never
-  # enter Python or touch disk. toJSON quotes the value, so each line appends
-  # exactly one array element even when the value contains spaces.
-  envFragment = pkgs.writeText "${outName}-env" (
-    pkgs.lib.concatMapStrings (
-      name: "DECLARED_ENV+=(${name}=${builtins.toJSON env.${name}})\n"
-    ) (builtins.attrNames env)
-  );
-
-  stub = pkgs.replaceVars ../stub.sh {
-    bash = "${pkgs.bashInteractive}/bin/bash";
-    python = "${pkgs.python3}/bin/python3";
-    launcher = "${launcherPackage}";
-    spec = "${sandboxBuildSpec}";
-    envFragment = "${envFragment}";
+  stub = shared.mkStub {
+    spec = sandboxBuildSpec;
+    envFragment = envFragment;
   };
 
 in
-builtins.seq
-  (shared.assertNoLegacyArgs {
+shared.mkWrapper {
+  outName = outName;
+  stub = stub;
+  buildSpec = sandboxBuildSpec;
+  legacyArgs = {
     restrictNetwork = restrictNetwork;
     extraEnv = extraEnv;
     stateDirs = stateDirs;
     stateFiles = stateFiles;
-  })
-  (
-    builtins.seq validatedAllowedLocalPorts (
-      pkgs.runCommand outName { } ''
-        mkdir -p $out/bin
-        install -m755 ${stub} $out/bin/${outName}
-      ''
-      // {
-        buildSpec = sandboxBuildSpec;
-      }
-    )
-  )
+  };
+  allowedLocalPorts = validatedAllowedLocalPorts;
+}

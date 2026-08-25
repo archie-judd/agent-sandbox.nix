@@ -1,11 +1,11 @@
 { pkgs }:
 let
   shared = import ./lib/shared.nix { pkgs = pkgs; };
-  mkLinuxSandbox = import ./lib/linux {
+  mkLinuxSandbox = import ./lib/linux.nix {
     pkgs = pkgs;
     shared = shared;
   };
-  mkDarwinSandbox = import ./lib/darwin {
+  mkDarwinSandbox = import ./lib/darwin.nix {
     pkgs = pkgs;
     shared = shared;
   };

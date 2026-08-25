@@ -1,3 +1,7 @@
+# What both backends need. Two kinds of thing live here: the argument
+# validation and closure inputs that are the same on either platform, and the
+# machinery that turns a spec into $out/bin/<outName>. lib/linux.nix and
+# lib/darwin.nix hold only what actually differs between the two.
 { pkgs }:
 let
   # Standard stderr message prefixes. Used by all wrapper-emitted warnings and
@@ -45,9 +49,6 @@ let
           allowedDomains;
     in
     pkgs.writeText "sandbox-allowlist.json" (builtins.toJSON attrset);
-  # Internal: serializes _proxyRedirects ({ host = "addr:port"; ... }) to the
-  # SANDBOX_PROXY_REDIRECT env var value the proxy expects. Empty redirects
-  # produces an empty string so the env var is not set at all in production.
   validateAllowedLocalPorts =
     allowedLocalPorts:
     if allowedLocalPorts == null then
@@ -99,6 +100,79 @@ let
       builtins.throw throwMsg
     else
       null;
+
+  # Runs inside the sandbox ahead of the agent binary: probes for a declared
+  # git identity and warns the user at launch if none is found, then exec's
+  # the real command. See lib/pre-entry-script.sh.
+  preEntryScript = pkgs.writeShellScript "pre-entry-script" (builtins.readFile ./pre-entry-script.sh);
+
+  # __pycache__ would otherwise change the store hash from one build to the
+  # next depending on whether anything had imported the package in place.
+  launcherSource = builtins.filterSource (path: type: baseNameOf path != "__pycache__") ../launcher;
+
+  launcherPackage = pkgs.runCommand "agent-sandbox-launcher" { } ''
+    mkdir -p $out
+    cp -r ${launcherSource} $out/launcher
+  '';
+
+  # cacert and bashWrapper are always included: cacert so SSL/TLS verification
+  # works, bashWrapper so the hardcoded SHELL and /bin/sh symlink targets are
+  # always reachable. bashWrapper forces --norc --noprofile on every bash
+  # invocation so the sandboxed process cannot source /etc/bashrc or
+  # /etc/profile.
+  mkImplicitPackages =
+    allowNix:
+    [
+      pkgs.cacert
+      bashWrapper
+    ]
+    ++ (if allowNix then [ pkgs.nix ] else [ ]);
+
+  # One data line per declared variable, and no logic. The values are
+  # documented as runtime shell expressions, both the "$TOKEN" form and the
+  # sops "$(cat /run/secrets/...)" form, so they expand in the stub and never
+  # enter Python or touch disk. toJSON quotes the value, so each line appends
+  # exactly one array element even when the value contains spaces.
+  mkEnvFragment =
+    { outName, env }:
+    pkgs.writeText "${outName}-env" (
+      pkgs.lib.concatMapStrings (
+        name: "DECLARED_ENV+=(${name}=${builtins.toJSON env.${name}})\n"
+      ) (builtins.attrNames env)
+    );
+
+  mkStub =
+    { spec, envFragment }:
+    pkgs.replaceVars ./stub.sh {
+      bash = "${pkgs.bashInteractive}/bin/bash";
+      python = "${pkgs.python3}/bin/python3";
+      launcher = "${launcherPackage}";
+      spec = "${spec}";
+      envFragment = "${envFragment}";
+    };
+
+  # The wrapper itself. Both seqs are what make the validation an eval-time
+  # error: nothing else forces them, so without them a deprecated argument or
+  # an out-of-range port would only be discovered when the agent is launched.
+  mkWrapper =
+    {
+      outName,
+      stub,
+      buildSpec,
+      legacyArgs,
+      allowedLocalPorts,
+    }:
+    builtins.seq (assertNoLegacyArgs legacyArgs) (
+      builtins.seq allowedLocalPorts (
+        pkgs.runCommand outName { } ''
+          mkdir -p $out/bin
+          install -m755 ${stub} $out/bin/${outName}
+        ''
+        // {
+          buildSpec = buildSpec;
+        }
+      )
+    );
 in
 {
   bashWrapper = bashWrapper;
@@ -106,4 +180,10 @@ in
   sandboxProxy = sandboxProxy;
   assertNoLegacyArgs = assertNoLegacyArgs;
   validateAllowedLocalPorts = validateAllowedLocalPorts;
+  preEntryScript = preEntryScript;
+  launcherPackage = launcherPackage;
+  mkImplicitPackages = mkImplicitPackages;
+  mkEnvFragment = mkEnvFragment;
+  mkStub = mkStub;
+  mkWrapper = mkWrapper;
 }
