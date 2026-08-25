@@ -25,10 +25,8 @@ from launcher.lib.host_state import (
     DeclaredPath,
     GitState,
     HostStateLinux,
-    Symlink,
-    SymlinkChain,
-    SymlinkHop,
 )
+from launcher.lib.symlinks import Symlink
 
 NIX_STORE = Path("/nix/store")
 
@@ -113,11 +111,11 @@ def _get_parent_dirs(
 
 
 def _get_symlink_target_args(
-    hop: SymlinkHop, prefixes: Sequence[Path], resolved: set[Path]
+    target: Path, prefixes: Sequence[Path], resolved: set[Path]
 ) -> tuple[list[str], list[str]]:
-    """The bind exposing one hop's target, and any warning about refusing it.
+    """The bind exposing one hop's landing, and any warning about refusing it.
 
-    Targets are bound read-only whatever the declared mode, and only when they
+    Landings are bound read-only whatever the declared mode, and only when they
     are in the nix store: a target anywhere else would let an agent plant a
     symlink that expands the sandbox on the next launch. Store paths are exempt
     because they are immutable and agent-unwritable.
@@ -126,7 +124,6 @@ def _get_symlink_target_args(
     `resolved` is updated in place, because two declared paths can lead to the
     same target and it is bound once.
     """
-    target = hop.points_to
     if target in resolved:
         return [], []
     resolved.add(target)
@@ -174,31 +171,34 @@ def _get_parent_symlink_args(
     return args
 
 
-def _get_chain_args(
-    chain: SymlinkChain,
+def _get_hop_args(
+    hops: Sequence[Path],
     prefixes: Sequence[Path],
     resolved: set[Path],
-    planted: set[Path],
     seen_parents: set[Path],
-) -> tuple[list[str], list[str], list[str], list[str]]:
-    """Everything one symlink chain contributes, in the order the fields of
-    DeclaredBinds carry it: (symlink_targets, parent_dirs, parent_symlinks,
-    warnings)."""
+) -> tuple[list[str], list[str], list[str]]:
+    """Everything one chain of hop landings contributes, in the order the
+    fields of DeclaredBinds carry it: (symlink_targets, parent_dirs, warnings).
+
+    Only landings: the links met while walking a hop's text are recorded by
+    resolve_path as parent symlinks of the path that was resolved, so they are
+    planted with the rest of its parent symlinks rather than here.
+    """
     targets: list[str] = []
     parent_dirs: list[str] = []
-    links: list[str] = []
     warnings: list[str] = []
 
-    for hop in chain.hops:
-        links += _get_parent_symlink_args(hop.parent_symlinks, prefixes, planted)
-        target_args, target_warnings = _get_symlink_target_args(hop, prefixes, resolved)
+    for landing in hops:
+        target_args, target_warnings = _get_symlink_target_args(
+            landing, prefixes, resolved
+        )
         targets += target_args
         warnings += target_warnings
         if target_args:
-            for parent in _get_parent_dirs(hop.points_to, prefixes, seen_parents):
+            for parent in _get_parent_dirs(landing, prefixes, seen_parents):
                 parent_dirs += ["--dir", str(parent)]
 
-    return targets, parent_dirs, links, warnings
+    return targets, parent_dirs, warnings
 
 
 def _get_declared_bind_args(
@@ -220,13 +220,13 @@ def _get_declared_bind_args(
     """
     path = declared.expanded_path
     flag = "--bind" if declared.mode == "rw" else "--ro-bind"
-    if not declared.symlink_chain.hops:
+    if not declared.hops:
         return [flag, str(path), str(path)]
     if _is_already_bound(path.parent, prefixes):
         return []
     if isinstance(declared, DeclaredDir):
         return [flag, str(path), str(path)]
-    final = declared.symlink_chain.hops[-1].points_to
+    final = declared.hops[-1]
     if NIX_STORE not in final.parents:
         return []
     return [flag, str(final), str(path)]
@@ -255,19 +255,19 @@ def get_declared_binds(host: HostStateLinux, prefixes: Sequence[Path]) -> Declar
     dirs = [d for d in host.declared if isinstance(d, DeclaredDir)]
 
     for declared in [*files, *dirs]:
-        # The declared path's own symlinked parents, before its chain's. The
-        # name a program opens is the one that was declared, and expanded_path
-        # is already the flattened form of it.
+        # Every symlinked directory the walk met, whether above the declared
+        # name or inside a hop's text: resolve_path records them in one list,
+        # in walk order. The name a program opens is the one that was
+        # declared, and expanded_path is already the flattened form of it.
         parent_symlinks += _get_parent_symlink_args(
             declared.parent_symlinks, prefixes, planted
         )
 
-        targets, chain_dirs, links, chain_warnings = _get_chain_args(
-            declared.symlink_chain, prefixes, resolved, planted, seen_parents
+        targets, chain_dirs, chain_warnings = _get_hop_args(
+            declared.hops, prefixes, resolved, seen_parents
         )
         symlink_targets += targets
         parent_dirs += chain_dirs
-        parent_symlinks += links
         warnings += chain_warnings
 
         bind_args = _get_declared_bind_args(declared, prefixes)
@@ -285,20 +285,27 @@ def get_declared_binds(host: HostStateLinux, prefixes: Sequence[Path]) -> Declar
         # to exist first. A directory needs nothing: its own bind creates the
         # destination, and a path that is not a symlink is bound where it
         # already is.
-        if bind_args and not is_dir and declared.symlink_chain.hops:
+        if bind_args and not is_dir and declared.hops:
             for parent in _get_parent_dirs(
                 declared.expanded_path, prefixes, seen_parents
             ):
                 parent_dirs += ["--dir", str(parent)]
 
     for declared_dir in dirs:
-        for chain in declared_dir.inner_symlinks:
-            targets, chain_dirs, links, chain_warnings = _get_chain_args(
-                chain, prefixes, resolved, planted, seen_parents
+        for inner in declared_dir.inner_symlinks:
+            # An inner entry's parent symlinks include the declared directory's
+            # own parents, and the directory itself when it is a symlink, since
+            # resolve_path walks from the root. All of those are already
+            # planted or covered by the enclosing bind, so _get_parent_symlink_args
+            # skips them and only links found inside the entry's hop text are new.
+            parent_symlinks += _get_parent_symlink_args(
+                inner.parent_symlinks, prefixes, planted
+            )
+            targets, chain_dirs, chain_warnings = _get_hop_args(
+                inner.hops, prefixes, resolved, seen_parents
             )
             symlink_targets += targets
             parent_dirs += chain_dirs
-            parent_symlinks += links
             warnings += chain_warnings
 
     return DeclaredBinds(

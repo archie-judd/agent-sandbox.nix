@@ -35,11 +35,7 @@ from launcher.lib.build_spec import (
     SandboxBuildSpecLinux,
 )
 from launcher.lib.constants import ERROR_PREFIX
-
-# Matches the bash walk it replaces. Long enough that no legitimate chain hits
-# it, short enough that a cycle terminates.
-MAX_SYMLINK_HOPS = 40
-
+from launcher.lib.symlinks import ResolvedPath, Symlink, resolve_path
 
 SYSTEMD_RESOLV_CONF = Path("/run/systemd/resolve/resolv.conf")
 RESOLV_CONF = Path("/etc/resolv.conf")
@@ -47,68 +43,23 @@ DEFAULT_NIX_DAEMON_SOCKET = Path("/nix/var/nix/daemon-socket/socket")
 
 
 @dataclass(frozen=True, kw_only=True)
-class Symlink:
-    """A symlink on the host: where it lives, and where it points.
-
-    points_to is absolute with . and .. removed, but keeps any symlink its own
-    text runs through. It is what the link says, not where it ends up.
-    """
-
-    path: Path
-    points_to: Path
-
-
-@dataclass(frozen=True, kw_only=True)
-class SymlinkHop:
-    """One step of a symlink chain: one link, followed once.
-
-    points_to is where this link lands, with every symlink flattened away.
-
-    parent_symlinks are the symlinked directories walked on the way there, and
-    the sandbox needs each of them recreated. Bubblewrap builds its filesystem
-    from nothing, so a name exists inside only if something put it there; when a
-    program opens the original link the kernel walks the name the link literally
-    holds, and a missing directory along that name fails the open even though
-    the file at the end was bound. After the first, each is a parent of the path
-    as flattened so far rather than of the original text.
-
-    For ~/.claude/settings.json under home-manager:
-
-        points_to        /nix/store/xxx-hm-files/home-files/.claude/settings.json
-        parent_symlinks  [ ~/.local/state/.../gcroots/current-home
-                             -> /nix/store/xxx-hm-files ]
-    """
-
-    points_to: Path
-    parent_symlinks: tuple[Symlink, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class SymlinkChain:
-    """Every link followed from a path to the file it finally names.
-
-    hops is empty exactly when the path is not a symlink, so there is no
-    is_symlink field beside it: two ways to state one fact is two ways for it to
-    disagree with itself.
-    """
-
-    hops: tuple[SymlinkHop, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
 class DeclaredPath:
     unexpanded_path: str
     # Expanded, with parent directories resolved to their fully-followed form.
     # The final component is not resolved, so a declared path that is itself a
-    # symlink stays one.
+    # symlink stays one. A relative path is left exactly as expanded: resolving
+    # it would pick a base directory, which is the very choice
+    # get_launch_refusals refuses it for.
     expanded_path: Path
     mode: Literal["rw", "ro"]
     exists: bool
-    symlink_chain: SymlinkChain
-    # The symlinked directories resolved out of expanded_path above. The
-    # sandbox needs them for the same reason a hop's do: expanded_path is the
-    # flattened form, and a program still opens the name that was declared.
+    # The trace of resolving expanded_path, split as resolve_path records it:
+    # parent_symlinks are the links met in directory position, which the
+    # sandbox replants; hops are where the final component landed, one entry
+    # per dereference, which the sandbox binds. Both empty for a relative path,
+    # which is never walked.
     parent_symlinks: tuple[Symlink, ...]
+    hops: tuple[Path, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -118,10 +69,10 @@ class DeclaredFile(DeclaredPath):
 
 @dataclass(frozen=True, kw_only=True)
 class DeclaredDir(DeclaredPath):
-    # Chains for the symlinks directly inside the directory. A declared file
-    # cannot have these, which is why the split is by kind rather than by
-    # whether the path is itself a symlink.
-    inner_symlinks: tuple[SymlinkChain, ...]
+    # One resolution per symlink sitting directly inside the directory. A
+    # declared file cannot have these, which is why the split is by kind rather
+    # than by whether the path is itself a symlink.
+    inner_symlinks: tuple[ResolvedPath, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -245,95 +196,7 @@ def _expand_path(unexpanded: str, environ: dict[str, str]) -> Path:
     return Path(expanded)
 
 
-def _get_parent_symlinks(path: Path) -> tuple[Symlink, ...]:
-    """The symlinked directories above `path`, in the order they are walked.
-
-    The sandbox needs every one of them reproduced. Bubblewrap builds its
-    filesystem from nothing, so a name exists inside only if something put it
-    there; when a program opens a path the kernel walks the names as written,
-    and a missing directory partway along fails the open even though the file at
-    the end was bound.
-
-    realpath says where a path ends up but not what it went through, which is
-    the only reason this walk exists. It computes no path of its own: callers
-    resolve with realpath, and this answers the other half of the question.
-
-    The walk goes component by component from the root. On reaching a symlink it
-    records it and restarts from the target, because the target's own components
-    may be symlinks too and each of those needs reproducing as well. It follows
-    the path as written, so a `..` sitting after a symlink is walked textually
-    rather than the way the kernel would; callers normalise before asking.
-    """
-    parent_symlinks: list[Symlink] = []
-    # Absolute so the component walk starts from the root. Declared paths are
-    # not checked for being absolute anywhere yet, and a relative one would
-    # otherwise silently lose its first component here.
-    path = Path(os.path.abspath(path))
-    resolved = Path(path.anchor)
-    remaining = list(path.parent.parts[1:])
-    follows = 0
-
-    while remaining:
-        current = resolved / remaining.pop(0)
-        if not current.is_symlink():
-            resolved = current
-            continue
-        if follows >= MAX_SYMLINK_HOPS:
-            # A loop among the parent directories. Stop collecting; the path
-            # itself is the caller's realpath, which leaves a looping link
-            # unresolved and so still names what the user wrote.
-            break
-        follows += 1
-        link = Path(os.readlink(current))
-        if not link.is_absolute():
-            link = current.parent / link
-        target = Path(os.path.normpath(link))
-        parent_symlinks.append(Symlink(path=current, points_to=target))
-        remaining = list(target.parts[1:]) + remaining
-        resolved = Path(target.anchor)
-
-    return tuple(parent_symlinks)
-
-
-def _get_symlink_chain_for_file(path: Path) -> SymlinkChain:
-    """Every link followed from `path` to the file it finally names.
-
-    One hop per link, in order, rather than only the final target. Opening the
-    path makes the kernel follow every link in the chain, so a sandbox that
-    knows only where the chain ends cannot open it: the intermediate names have
-    to be reachable too.
-
-    Each hop's target is physical, parents resolved and final component left as
-    the link wrote it, and the symlinked directories resolved out of it are
-    recorded on the hop. See SymlinkHop.
-    """
-    hops: list[SymlinkHop] = []
-    current = Path(os.path.abspath(path))
-
-    for _ in range(MAX_SYMLINK_HOPS):
-        if not current.is_symlink():
-            break
-        link = Path(os.readlink(current))
-        # A relative link is relative to the directory the link itself sits in.
-        if not link.is_absolute():
-            link = current.parent / link
-        # Clean up `.` and `..`, so /tmp/../tmp/foo compares equal to /tmp/foo.
-        normalised = Path(os.path.normpath(link))
-        points_to = Path(os.path.realpath(normalised.parent)) / normalised.name
-        if str(points_to) == "/":
-            break
-        hops.append(
-            SymlinkHop(
-                points_to=points_to,
-                parent_symlinks=_get_parent_symlinks(normalised),
-            )
-        )
-        current = points_to
-
-    return SymlinkChain(hops=tuple(hops))
-
-
-def _get_all_symlink_chains_in_dir(directory: Path) -> tuple[SymlinkChain, ...]:
+def _get_inner_symlinks(directory: Path) -> tuple[ResolvedPath, ...]:
     try:
         entries = list(directory.iterdir())
     except OSError:
@@ -342,12 +205,11 @@ def _get_all_symlink_chains_in_dir(directory: Path) -> tuple[SymlinkChain, ...]:
         return ()
 
     entries.sort()
-    inner_symlinks: list[SymlinkChain] = []
+    inner_symlinks: list[ResolvedPath] = []
 
     for entry in entries:
         if entry.is_symlink():
-            chain = _get_symlink_chain_for_file(entry)
-            inner_symlinks.append(chain)
+            inner_symlinks.append(resolve_path(entry))
 
     return tuple(inner_symlinks)
 
@@ -359,41 +221,32 @@ def _get_declared_paths(
     paths: list[DeclaredPath] = []
     for unexpanded in declared:
         expanded = _expand_path(unexpanded, environ)
-        # Follow any symlinks in the directories ABOVE this path, then put the
-        # final name back on unchanged. realpath does the whole ancestor chain
-        # at any depth in one call, and is a no-op when there are none.
-        #
-        # Only the ancestors, because two names for one directory never compare
-        # equal as strings and everything downstream compares these paths.
-        # Whether this path is ITSELF a symlink is a different question, asked
-        # two lines below by _get_symlink_chain_for_file, and realpath on the
-        # whole path would answer it destructively: a declared ~/.claude
-        # pointing into the store would become the store path, losing the name
-        # the sandboxed process is going to look for.
-        #
-        # Asked before the flattening, since that is the form whose symlinks
-        # are the ones the sandbox has to reproduce.
-        parent_symlinks = _get_parent_symlinks(expanded)
-        # Only an absolute path is flattened. realpath would resolve a relative
-        # one against the launch directory, which is the very thing
-        # get_launch_refusals refuses it for, and doing that here would leave
-        # the refusal nothing to see.
+        # Only an absolute path is walked. Resolving a relative one would pick
+        # a base directory for it, which is the very thing get_launch_refusals
+        # refuses it for, and doing that here would leave the refusal nothing
+        # to see.
+        parent_symlinks: tuple[Symlink, ...] = ()
+        hops: tuple[Path, ...] = ()
         if expanded.is_absolute():
-            resolved_parent = Path(os.path.realpath(expanded.parent))
-            expanded = resolved_parent / expanded.name
+            resolved = resolve_path(expanded)
+            expanded = resolved.physical_path
+            parent_symlinks = resolved.parent_symlinks
+            hops = resolved.hops
         exists = _path_exists(expanded)
-        symlink_chain = _get_symlink_chain_for_file(expanded)
         path: DeclaredPath
         match kind:
             case "dir":
-                inner_symlinks = _get_all_symlink_chains_in_dir(expanded)
+                if expanded.is_absolute():
+                    inner_symlinks = _get_inner_symlinks(expanded)
+                else:
+                    inner_symlinks = ()
                 path = DeclaredDir(
                     unexpanded_path=unexpanded,
                     expanded_path=expanded,
                     mode=mode,
                     exists=exists,
-                    symlink_chain=symlink_chain,
                     parent_symlinks=parent_symlinks,
+                    hops=hops,
                     inner_symlinks=inner_symlinks,
                 )
             case "file":
@@ -402,8 +255,8 @@ def _get_declared_paths(
                     expanded_path=expanded,
                     mode=mode,
                     exists=exists,
-                    symlink_chain=symlink_chain,
                     parent_symlinks=parent_symlinks,
+                    hops=hops,
                 )
             case _:
                 assert_never(kind)
