@@ -9,12 +9,13 @@ is what distinguishes it from SandboxLaunchConfig: that is a description and own
 nothing.
 
 The session directory is created separately and first, by create_session_dir, so
-it exists before anything can refuse the launch. create_session_state runs only
-once the launch is known to be allowed, because it starts a process.
+it exists before anything can refuse the launch. The per-platform
+create_session_state runs only once the launch is known to be allowed, because
+it starts a process.
 
-If create_session_state fails partway it removes what it made before re-raising.
-The stub's EXIT trap is only armed after prepare has printed the session
-directory, so nothing else would clean up a half-built session.
+If it fails partway it removes what it made before re-raising. The stub's EXIT
+trap is only armed after prepare has printed the session directory, so nothing
+else would clean up a half-built session.
 """
 
 import os
@@ -31,6 +32,7 @@ from pathlib import Path
 
 from launcher.build_spec import (
     ProxySpec,
+    SandboxBuildSpec,
     SandboxBuildSpecDarwin,
     SandboxBuildSpecLinux,
 )
@@ -94,26 +96,12 @@ def _get_sessions_root() -> Path:
     return Path(home) / DEFAULT_STATE_HOME / SESSIONS_ROOT_NAME
 
 
-def create_session_dir(
-    spec: SandboxBuildSpecLinux | SandboxBuildSpecDarwin, now: datetime
-) -> Path:
-    """Create this launch's directory, before anything can refuse the launch.
-
-    outName is in the name because several wrappers share one root. The time is
-    an argument rather than read here, so the name is a function of its inputs.
-    """
+def create_session_dir(spec: SandboxBuildSpec, now: datetime) -> Path:
+    """Create this launch's directory, before anything can refuse the launch."""
     timestamp = now.strftime(SESSION_DIR_TIMESTAMP)
     name = f"{timestamp}-{os.getpid()}-{spec.out_name}"
     session_dir = _get_sessions_root() / name
     session_dir.mkdir(parents=True, exist_ok=True)
-    # Physical, like every other path the launcher hands on. The root comes from
-    # AGENT_SANDBOX_LOG_DIR, XDG_STATE_HOME or HOME, any of which can be a
-    # logical path: /tmp is a symlink to /private/tmp on macOS. The seatbelt
-    # rule granting the passwd file inside this directory is matched by the
-    # kernel after it has resolved symlinks, so a logical path there matches
-    # nothing and the sandbox cannot read its own passwd file. Resolved in full
-    # rather than parent-only because we just created it, so it is a real
-    # directory and not a symlink whose identity matters.
     return Path(os.path.realpath(session_dir))
 
 
@@ -206,67 +194,74 @@ def _read_proxy_port(process: subprocess.Popen[str], session_dir: Path) -> int:
     return int(reported)
 
 
-def _write_ca_bundle(
-    spec: SandboxBuildSpecLinux | SandboxBuildSpecDarwin, session_dir: Path
-) -> None:
+def _write_ca_bundle(spec: SandboxBuildSpec, session_dir: Path) -> None:
     """System certificates plus the proxy's ephemeral CA, in one file."""
     system = spec.cacert_bundle.read_bytes()
     proxy_ca = (session_dir / CA_CERT).read_bytes()
     (session_dir / CA_BUNDLE).write_bytes(system + proxy_ca)
 
 
-def _teardown(process: subprocess.Popen[str] | None, sandbox_home: Path | None) -> None:
-    if process is not None and process.poll() is None:
-        process.kill()
-    if sandbox_home is not None:
-        shutil.rmtree(sandbox_home, ignore_errors=True)
+def _kill_proxy(proxy: ProxyState | None) -> None:
+    if proxy is None:
+        return
+    try:
+        os.kill(proxy.pid, signal.SIGKILL)
+    except OSError:
+        pass
 
 
-def teardown_session_state(
-    session: "SessionStateLinux | SessionStateDarwin",
-) -> None:
-    """Undo what create_session_state made, from the state itself.
+def teardown_session_state_linux(session: SessionStateLinux) -> None:
+    """Undo what create_session_state_linux made, from the state itself.
 
     Used when prepare fails after the session exists. cleanup_launch does the
     same job from the session directory instead, because by then it is a
     different process.
     """
-    if session.proxy is not None:
-        try:
-            os.kill(session.proxy.pid, signal.SIGKILL)
-        except OSError:
-            pass
-    if isinstance(session, SessionStateDarwin):
-        shutil.rmtree(session.sandbox_home, ignore_errors=True)
+    _kill_proxy(session.proxy)
 
 
-def create_session_state(
-    spec: SandboxBuildSpecLinux | SandboxBuildSpecDarwin,
-    session_dir: Path,
-) -> SessionStateLinux | SessionStateDarwin:
-    sandbox_home: Path | None = None
-    process: subprocess.Popen[str] | None = None
-    proxy_state: ProxyState | None = None
+def teardown_session_state_darwin(session: SessionStateDarwin) -> None:
+    """As above, plus the ephemeral home that only macOS creates."""
+    _kill_proxy(session.proxy)
+    shutil.rmtree(session.sandbox_home, ignore_errors=True)
 
+
+def _create_proxy_state(spec: SandboxBuildSpec, session_dir: Path) -> ProxyState | None:
+    """Start the proxy and wait for the port it chose, when there is one.
+
+    None means an unrestricted wrapper, whose spec names no proxy at all.
+    """
+    if spec.proxy is None:
+        return None
+
+    process = _start_proxy(spec.proxy, session_dir)
     try:
-        if spec.platform == "darwin":
-            sandbox_home = _create_darwin_sandbox_home()
-
-        if spec.proxy is not None:
-            process = _start_proxy(spec.proxy, session_dir)
-            port = _read_proxy_port(process, session_dir)
-            _write_ca_bundle(spec, session_dir)
-            proxy_state = ProxyState(port=port, pid=process.pid)
+        port = _read_proxy_port(process, session_dir)
+        _write_ca_bundle(spec, session_dir)
     except BaseException:
-        _teardown(process, sandbox_home)
+        if process.poll() is None:
+            process.kill()
         raise
+    return ProxyState(port=port, pid=process.pid)
 
-    match spec.platform:
-        case "linux":
-            return SessionStateLinux(session_dir=session_dir, proxy=proxy_state)
-        case "darwin":
-            if sandbox_home is None:
-                raise SystemExit(f"{ERROR_PREFIX} sandbox home was not created")
-            return SessionStateDarwin(
-                session_dir=session_dir, proxy=proxy_state, sandbox_home=sandbox_home
-            )
+
+def create_session_state_linux(
+    spec: SandboxBuildSpecLinux, session_dir: Path
+) -> SessionStateLinux:
+    return SessionStateLinux(
+        session_dir=session_dir, proxy=_create_proxy_state(spec, session_dir)
+    )
+
+
+def create_session_state_darwin(
+    spec: SandboxBuildSpecDarwin, session_dir: Path
+) -> SessionStateDarwin:
+    sandbox_home = _create_darwin_sandbox_home()
+    try:
+        proxy = _create_proxy_state(spec, session_dir)
+    except BaseException:
+        shutil.rmtree(sandbox_home, ignore_errors=True)
+        raise
+    return SessionStateDarwin(
+        session_dir=session_dir, proxy=proxy, sandbox_home=sandbox_home
+    )

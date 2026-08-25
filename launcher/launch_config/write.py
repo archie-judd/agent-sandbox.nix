@@ -28,7 +28,8 @@ from launcher.constants import (
 )
 from launcher.launch_config.darwin import SandboxLaunchConfigDarwin
 from launcher.launch_config.linux import SandboxLaunchConfigLinux
-from launcher.session_state import SessionStateDarwin, SessionStateLinux
+from launcher.launch_config.shared import SandboxLaunchConfig
+from launcher.session_state import SessionState, SessionStateDarwin, SessionStateLinux
 
 
 def _as_json_value(value: object) -> str:
@@ -52,10 +53,7 @@ def _write_newline_separated(path: Path, lines: Sequence[str]) -> None:
     path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
 
 
-def write_launch_config(
-    config: SandboxLaunchConfigLinux | SandboxLaunchConfigDarwin,
-    session: SessionStateLinux | SessionStateDarwin,
-) -> None:
+def _write_common(config: SandboxLaunchConfig, session: SessionState) -> None:
     session_dir = session.session_dir
     _write_nul_separated(session_dir / ARGV_BEFORE_ENV, config.argv_before_env)
     _write_nul_separated(session_dir / ARGV_AFTER_ENV, config.argv_after_env)
@@ -71,22 +69,30 @@ def write_launch_config(
     if session.proxy is not None:
         (session_dir / PROXY_PID).write_text(f"{session.proxy.pid}\n", encoding="utf-8")
 
-    if isinstance(config, SandboxLaunchConfigDarwin):
-        _write_newline_separated(
-            session_dir / SEATBELT_PROFILE, config.seatbelt_profile_lines
-        )
-        for link, target in config.home_symlinks:
-            link.parent.mkdir(parents=True, exist_ok=True)
-            os.symlink(target, link)
-        return
+
+def write_launch_config_linux(
+    config: SandboxLaunchConfigLinux, session: SessionStateLinux
+) -> None:
+    _write_common(config, session)
 
     # For reading, not for bubblewrap, which gets these inline in argv-after-env.
     # Written from the same tuple, so the two cannot disagree, and worth its own
     # file because the bind list on its own is what you want to look at when a
     # path is missing inside the sandbox.
-    _write_nul_separated(session_dir / BWRAP_ARGS, config.bwrap_args)
-    (session_dir / NETWORK).write_text(
-        json.dumps(asdict(config.network), default=_as_json_value, indent=2)
-        + "\n",
+    _write_nul_separated(session.session_dir / BWRAP_ARGS, config.bwrap_args)
+    (session.session_dir / NETWORK).write_text(
+        json.dumps(asdict(config.network), default=_as_json_value, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def write_launch_config_darwin(
+    config: SandboxLaunchConfigDarwin, session: SessionStateDarwin
+) -> None:
+    _write_common(config, session)
+    _write_newline_separated(
+        session.session_dir / SEATBELT_PROFILE, config.seatbelt_profile_lines
+    )
+    for link, target in config.home_symlinks:
+        link.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(target, link)

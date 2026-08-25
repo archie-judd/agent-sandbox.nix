@@ -672,23 +672,17 @@ def _common_host_state(
     )
 
 
-def host_state_from_spec(
-    spec: SandboxBuildSpecLinux | SandboxBuildSpecDarwin,
-) -> HostStateLinux | HostStateDarwin:
-    common = _common_host_state(spec)
+def read_host_state_linux(spec: SandboxBuildSpecLinux) -> HostStateLinux:
+    if _path_is_file(SYSTEMD_RESOLV_CONF):
+        systemd_resolv_conf = SYSTEMD_RESOLV_CONF
+    else:
+        systemd_resolv_conf = None
+    return HostStateLinux(
+        **_common_host_state(spec),
+        resolv_conf_names_loopback=_resolv_conf_names_loopback(),
+        systemd_resolv_conf=systemd_resolv_conf,
+    )
 
-    match spec.platform:
-        case "linux":
-            if _path_is_file(SYSTEMD_RESOLV_CONF):
-                systemd_resolv_conf = SYSTEMD_RESOLV_CONF
-            else:
-                systemd_resolv_conf = None
-            return HostStateLinux(
-                **common,
-                resolv_conf_names_loopback=_resolv_conf_names_loopback(),
-                systemd_resolv_conf=systemd_resolv_conf,
-            )
-        case "darwin":
-            return HostStateDarwin(**common, tty=_get_stdin_tty())
-        case _:
-            assert_never(spec.platform)
+
+def read_host_state_darwin(spec: SandboxBuildSpecDarwin) -> HostStateDarwin:
+    return HostStateDarwin(**_common_host_state(spec), tty=_get_stdin_tty())
