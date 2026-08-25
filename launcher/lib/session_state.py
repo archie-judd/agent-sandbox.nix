@@ -1,4 +1,4 @@
-"""What the launcher creates for this launch.
+"""What the launcher acquires for this launch, and how to give each piece back.
 
 Every path here is physical, for the same reason as in host_state: these paths
 become seatbelt rules and bubblewrap mount destinations, and the kernel resolves
@@ -8,14 +8,23 @@ The only step with side effects. Everything here exists because we made it, whic
 is what distinguishes it from SandboxLaunchConfig: that is a description and owns
 nothing.
 
-The session directory is created separately and first, by create_session_dir, so
-it exists before anything can refuse the launch. The per-platform
-create_session_state runs only once the launch is known to be allowed, because
-it starts a process.
+Each acquisition is a function of its own, paired with the one that undoes it:
+create_session_dir, create_darwin_sandbox_home / remove_darwin_sandbox_home,
+create_proxy_state / kill_proxy. Nothing here decides when they run or in what
+order. prepare registers each rollback as it acquires and discards them all once
+the launch is committed, which is why no function here unwinds anything but its
+own half-finished work.
 
-If it fails partway it removes what it made before re-raising. The stub's EXIT
-trap is only armed after prepare has printed the session directory, so nothing
-else would clean up a half-built session.
+SessionState is the value those pieces are collected into once they all exist.
+It is what compute reads, and it creates nothing itself.
+
+The three do not share a lifecycle. The session directory is created first, by
+create_session_dir, so it exists before anything can refuse the launch. The other
+two run only once the launch is known to be allowed, because they cost a
+directory and a process.
+
+The stub's EXIT trap is only armed after prepare has printed the session
+directory, so until then nothing else would clean up a half-built session.
 """
 
 import os
@@ -30,14 +39,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from launcher.lib.build_spec import (
-    ProxySpec,
-    SandboxBuildSpec,
-    SandboxBuildSpecDarwin,
-    SandboxBuildSpecLinux,
-)
+from launcher.lib.build_spec import ProxySpec, SandboxBuildSpec
 from launcher.lib.constants import (
-    CA_BUNDLE,
     CA_CERT,
     ERROR_PREFIX,
     PROXY_LISTEN_HOST,
@@ -66,13 +69,10 @@ class ProxyState:
 
 @dataclass(frozen=True, kw_only=True)
 class SessionState:
+    """What Linux acquires, and the part macOS shares."""
+
     session_dir: Path
     proxy: ProxyState | None
-
-
-@dataclass(frozen=True, kw_only=True)
-class SessionStateLinux(SessionState):
-    pass
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -105,7 +105,7 @@ def create_session_dir(spec: SandboxBuildSpec, now: datetime) -> Path:
     return Path(os.path.realpath(session_dir))
 
 
-def _create_darwin_sandbox_home() -> Path:
+def create_darwin_sandbox_home() -> Path:
     """The ephemeral HOME macOS gives the sandbox.
 
     Linux gets a tmpfs from bubblewrap and needs nothing here. On macOS the
@@ -118,6 +118,12 @@ def _create_darwin_sandbox_home() -> Path:
         prefix=SANDBOX_HOME_PREFIX, dir=str(DARWIN_SANDBOX_HOME_PARENT)
     )
     return Path(os.path.realpath(created))
+
+
+def remove_darwin_sandbox_home(sandbox_home: Path) -> None:
+    """Undo create_darwin_sandbox_home. Best effort, like every rollback here:
+    it runs while another failure is propagating and must not mask it."""
+    shutil.rmtree(sandbox_home, ignore_errors=True)
 
 
 def _start_proxy(proxy: ProxySpec, session_dir: Path) -> subprocess.Popen[str]:
@@ -194,14 +200,12 @@ def _read_proxy_port(process: subprocess.Popen[str], session_dir: Path) -> int:
     return int(reported)
 
 
-def _write_ca_bundle(spec: SandboxBuildSpec, session_dir: Path) -> None:
-    """System certificates plus the proxy's ephemeral CA, in one file."""
-    system = spec.cacert_bundle.read_bytes()
-    proxy_ca = (session_dir / CA_CERT).read_bytes()
-    (session_dir / CA_BUNDLE).write_bytes(system + proxy_ca)
+def kill_proxy(proxy: ProxyState | None) -> None:
+    """Undo create_proxy_state. None is the unrestricted case and needs nothing.
 
-
-def _kill_proxy(proxy: ProxyState | None) -> None:
+    cleanup_launch does the same job from the recorded pid instead, because by
+    then it is a different process with no ProxyState to read.
+    """
     if proxy is None:
         return
     try:
@@ -210,26 +214,14 @@ def _kill_proxy(proxy: ProxyState | None) -> None:
         pass
 
 
-def teardown_session_state_linux(session: SessionStateLinux) -> None:
-    """Undo what create_session_state_linux made, from the state itself.
-
-    Used when prepare fails after the session exists. cleanup_launch does the
-    same job from the session directory instead, because by then it is a
-    different process.
-    """
-    _kill_proxy(session.proxy)
-
-
-def teardown_session_state_darwin(session: SessionStateDarwin) -> None:
-    """As above, plus the ephemeral home that only macOS creates."""
-    _kill_proxy(session.proxy)
-    shutil.rmtree(session.sandbox_home, ignore_errors=True)
-
-
-def _create_proxy_state(spec: SandboxBuildSpec, session_dir: Path) -> ProxyState | None:
+def create_proxy_state(spec: SandboxBuildSpec, session_dir: Path) -> ProxyState | None:
     """Start the proxy and wait for the port it chose, when there is one.
 
     None means an unrestricted wrapper, whose spec names no proxy at all.
+
+    The process it spawns is its own to clean up until it has a ProxyState to
+    return, since until then there is nothing for the caller to register a
+    rollback against.
     """
     if spec.proxy is None:
         return None
@@ -237,31 +229,8 @@ def _create_proxy_state(spec: SandboxBuildSpec, session_dir: Path) -> ProxyState
     process = _start_proxy(spec.proxy, session_dir)
     try:
         port = _read_proxy_port(process, session_dir)
-        _write_ca_bundle(spec, session_dir)
     except BaseException:
         if process.poll() is None:
             process.kill()
         raise
     return ProxyState(port=port, pid=process.pid)
-
-
-def create_session_state_linux(
-    spec: SandboxBuildSpecLinux, session_dir: Path
-) -> SessionStateLinux:
-    return SessionStateLinux(
-        session_dir=session_dir, proxy=_create_proxy_state(spec, session_dir)
-    )
-
-
-def create_session_state_darwin(
-    spec: SandboxBuildSpecDarwin, session_dir: Path
-) -> SessionStateDarwin:
-    sandbox_home = _create_darwin_sandbox_home()
-    try:
-        proxy = _create_proxy_state(spec, session_dir)
-    except BaseException:
-        shutil.rmtree(sandbox_home, ignore_errors=True)
-        raise
-    return SessionStateDarwin(
-        session_dir=session_dir, proxy=proxy, sandbox_home=sandbox_home
-    )

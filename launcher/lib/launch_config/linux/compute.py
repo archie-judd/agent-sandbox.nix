@@ -33,7 +33,7 @@ from launcher.lib.launch_config.shared import (
     SandboxLaunchConfig,
     get_usable_git_state,
 )
-from launcher.lib.session_state import SessionStateLinux
+from launcher.lib.session_state import SessionState
 
 SANDBOX_TMPDIR = Path("/tmp")
 # Where the sandbox sees its certificates and identity. Fixed paths rather than
@@ -99,7 +99,7 @@ class SandboxLaunchConfigLinux(SandboxLaunchConfig):
 
 
 def _get_computed_env(
-    spec: SandboxBuildSpecLinux, host: HostStateLinux, session: SessionStateLinux
+    spec: SandboxBuildSpecLinux, host: HostStateLinux, session: SessionState
 ) -> list[str]:
     """The environment the launcher decides, as K=V arguments to env -i.
 
@@ -145,7 +145,7 @@ def _get_computed_env(
 def _get_bwrap_args(
     spec: SandboxBuildSpecLinux,
     host: HostStateLinux,
-    session: SessionStateLinux,
+    session: SessionState,
     git: GitState | None,
     binds: DeclaredBinds,
     git_args: Sequence[str],
@@ -221,7 +221,7 @@ def _get_bwrap_args(
 def compute_launch_config(
     spec: SandboxBuildSpecLinux,
     host: HostStateLinux,
-    session: SessionStateLinux,
+    session: SessionState,
 ) -> SandboxLaunchConfigLinux:
     # Not host.git: a repository whose root is the home directory, or above it,
     # is refused here and git disabled for the session. Everything below takes
@@ -270,10 +270,17 @@ def compute_launch_config(
         + [str(spec.pre_entry_script), str(spec.sandboxed_binary)]
     )
 
+    ca_bundle = (
+        ()
+        if session.proxy is None
+        else (spec.cacert_bundle, session.session_dir / CA_CERT)
+    )
+
     return SandboxLaunchConfigLinux(
         argv_before_env=tuple(argv_before_env),
         argv_after_env=tuple(argv_after_env),
         passwd=f"user:x:{host.uid}:{host.gid}:sandbox user:{host.real_home}:/bin/sh\n",
+        ca_bundle=ca_bundle,
         cleanup=(),
         cleanup_if_empty=tuple(masked),
         warnings=tuple(warnings) + binds.warnings,

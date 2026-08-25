@@ -218,10 +218,17 @@ def compute_launch_config(
         str(spec.sandboxed_binary),
     ]
 
+    ca_bundle = (
+        ()
+        if session.proxy is None
+        else (spec.cacert_bundle, session.session_dir / CA_CERT)
+    )
+
     return SandboxLaunchConfigDarwin(
         argv_before_env=tuple(argv_before_env),
         argv_after_env=tuple(argv_after_env),
         passwd=_get_passwd(host),
+        ca_bundle=ca_bundle,
         # The session directory survives for debugging, and everything at a
         # fixed name inside it survives with it. Only the sandbox home goes.
         cleanup=(session.sandbox_home,),

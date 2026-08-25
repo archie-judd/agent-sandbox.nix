@@ -21,6 +21,10 @@ class SandboxLaunchConfig:
     argv_before_env: tuple[str, ...]
     argv_after_env: tuple[str, ...]
     passwd: str
+    # Concatenated, in order, into the session directory's ca-bundle.pem: the
+    # system certificates plus the proxy's ephemeral CA. Empty when the wrapper
+    # is unrestricted, since there is no proxy and no bundle to assemble.
+    ca_bundle: tuple[Path, ...]
     cleanup: tuple[Path, ...]
     # Removed only if still empty. Bubblewrap materialises a mount destination
     # on the host, so a path bound over to make it read-only has to go; but if

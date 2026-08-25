@@ -19,6 +19,7 @@ from launcher.lib.constants import (
     ARGV_AFTER_ENV,
     ARGV_BEFORE_ENV,
     BWRAP_ARGS,
+    CA_BUNDLE,
     CLEANUP,
     CLEANUP_IF_EMPTY,
     NETWORK,
@@ -29,11 +30,7 @@ from launcher.lib.constants import (
 from launcher.lib.launch_config.darwin.compute import SandboxLaunchConfigDarwin
 from launcher.lib.launch_config.linux.compute import SandboxLaunchConfigLinux
 from launcher.lib.launch_config.shared import SandboxLaunchConfig
-from launcher.lib.session_state import (
-    SessionState,
-    SessionStateDarwin,
-    SessionStateLinux,
-)
+from launcher.lib.session_state import SessionState, SessionStateDarwin
 
 
 def _as_json_value(value: object) -> str:
@@ -57,6 +54,11 @@ def _write_newline_separated(path: Path, lines: Sequence[str]) -> None:
     path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
 
 
+def _write_concatenated(path: Path, sources: Sequence[Path]) -> None:
+    """Bytes, not text: these are certificates, and re-encoding could alter them."""
+    path.write_bytes(b"".join(source.read_bytes() for source in sources))
+
+
 def _write_common(config: SandboxLaunchConfig, session: SessionState) -> None:
     session_dir = session.session_dir
     _write_nul_separated(session_dir / ARGV_BEFORE_ENV, config.argv_before_env)
@@ -67,6 +69,11 @@ def _write_common(config: SandboxLaunchConfig, session: SessionState) -> None:
         session_dir / CLEANUP_IF_EMPTY, [str(path) for path in config.cleanup_if_empty]
     )
 
+    # One of the sources is written by the proxy, into this same directory, so
+    # this cannot run before the proxy has reported its port.
+    if config.ca_bundle:
+        _write_concatenated(session_dir / CA_BUNDLE, config.ca_bundle)
+
     # Recorded because the process that starts the proxy and the process that
     # kills it never share memory: prepare exits, the proxy is reparented, and
     # cleanup runs later from the stub's EXIT trap.
@@ -75,7 +82,7 @@ def _write_common(config: SandboxLaunchConfig, session: SessionState) -> None:
 
 
 def write_launch_config_linux(
-    config: SandboxLaunchConfigLinux, session: SessionStateLinux
+    config: SandboxLaunchConfigLinux, session: SessionState
 ) -> None:
     _write_common(config, session)
 
