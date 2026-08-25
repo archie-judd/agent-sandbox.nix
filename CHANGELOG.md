@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.5.1...v3.0.0) (2026-08-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* migrate to python
+
+### Features
+
+* migrate to python ([7695a5f](https://github.com/archie-judd/agent-sandbox.nix/commit/7695a5f6319275aa75a816787424f57fdd83bfae))
+
 ## [2.5.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.5.0...v2.5.1) (2026-08-23)
 
 
