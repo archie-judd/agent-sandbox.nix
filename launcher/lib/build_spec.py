@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Mapping, Self, TypedDict
 
-from launcher.constants import ERROR_PREFIX
+from launcher.lib.constants import ERROR_PREFIX
 
 
 @dataclass(frozen=True, kw_only=True)

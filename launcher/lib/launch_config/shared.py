@@ -10,8 +10,8 @@ without a filesystem.
 from dataclasses import dataclass
 from pathlib import Path
 
-from launcher.constants import WARN_PREFIX
-from launcher.host_state import GitState, HostState
+from launcher.lib.constants import WARN_PREFIX
+from launcher.lib.host_state import GitState, HostState
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -1,6 +1,6 @@
 """The seatbelt profile, as ordered sections.
 
-Data, not decisions: darwin.py assembles these in order and owns that order,
+Data, not decisions: compute.py assembles these in order and owns that order,
 which is load-bearing. Seatbelt is last-match-wins, so a reordering that
 preserves the rule set can still change what is enforced.
 
@@ -22,7 +22,7 @@ pty rule rather than /nonexistent-tty.
 from pathlib import Path
 from typing import Sequence
 
-from launcher.host_state import DeclaredDir, DeclaredPath
+from launcher.lib.host_state import DeclaredDir, DeclaredPath
 
 HEADER = (
     "(version 1)",

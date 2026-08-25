@@ -8,12 +8,12 @@ assembled in is what is enforced, not merely how it reads.
 from dataclasses import dataclass
 from pathlib import Path
 
-from launcher.build_spec import SandboxBuildSpecDarwin
-from launcher.constants import CA_BUNDLE, CA_CERT, PASSWD, SEATBELT_PROFILE
-from launcher.host_state import GitState, HostStateDarwin
-from launcher.launch_config import seatbelt
-from launcher.launch_config.shared import SandboxLaunchConfig, get_usable_git_state
-from launcher.session_state import SessionStateDarwin
+from launcher.lib.build_spec import SandboxBuildSpecDarwin
+from launcher.lib.constants import CA_BUNDLE, CA_CERT, PASSWD, SEATBELT_PROFILE
+from launcher.lib.host_state import GitState, HostStateDarwin
+from launcher.lib.launch_config.darwin import seatbelt
+from launcher.lib.launch_config.shared import SandboxLaunchConfig, get_usable_git_state
+from launcher.lib.session_state import SessionStateDarwin
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_ENV = Path("/usr/bin/env")

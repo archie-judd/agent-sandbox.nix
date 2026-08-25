@@ -5,8 +5,9 @@ policy and no paths of its own: it reads network.json, does what it says, and
 replaces itself with the rest of the chain.
 
 On the Linux hot path, so it imports only what it uses: json to read the file,
-subprocess to run nft and ip, os to exec onwards. Anything added to
-launcher/__init__.py is imported here too, which is why that file is empty.
+subprocess to run nft and ip, os to exec onwards. Reaching launcher.lib.constants
+imports launcher/__init__.py and launcher/lib/__init__.py on the way, so anything
+added to either is imported here too, which is why both are empty.
 
 Every failure here is fatal and says so. The ruleset and the dropped default
 route are what stand between a restricted sandbox and the open internet, so
@@ -18,7 +19,7 @@ import os
 import subprocess
 import sys
 
-from launcher.constants import ERROR_PREFIX
+from launcher.lib.constants import ERROR_PREFIX
 
 
 def _run(argv: list[str], failure: str, stdin: str | None = None) -> None:

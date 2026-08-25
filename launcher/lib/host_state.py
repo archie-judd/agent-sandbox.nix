@@ -30,11 +30,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Mapping, Sequence, TypedDict, assert_never
 
-from launcher.build_spec import (
+from launcher.lib.build_spec import (
     SandboxBuildSpecDarwin,
     SandboxBuildSpecLinux,
 )
-from launcher.constants import ERROR_PREFIX
+from launcher.lib.constants import ERROR_PREFIX
 
 # Matches the bash walk it replaces. Long enough that no legitimate chain hits
 # it, short enough that a cycle terminates.

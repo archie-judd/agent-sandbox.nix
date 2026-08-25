@@ -15,9 +15,9 @@ the other bind decisions and its warning.
 import sys
 from pathlib import Path
 
-from launcher.build_spec import SandboxBuildSpecDarwin, SandboxBuildSpecLinux
-from launcher.constants import ERROR_PREFIX, WARN_PREFIX
-from launcher.host_state import (
+from launcher.lib.build_spec import SandboxBuildSpecDarwin, SandboxBuildSpecLinux
+from launcher.lib.constants import ERROR_PREFIX, WARN_PREFIX
+from launcher.lib.host_state import (
     DeclaredDir,
     DeclaredPath,
     HostStateDarwin,

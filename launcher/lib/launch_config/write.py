@@ -15,7 +15,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
-from launcher.constants import (
+from launcher.lib.constants import (
     ARGV_AFTER_ENV,
     ARGV_BEFORE_ENV,
     BWRAP_ARGS,
@@ -26,10 +26,14 @@ from launcher.constants import (
     PROXY_PID,
     SEATBELT_PROFILE,
 )
-from launcher.launch_config.darwin import SandboxLaunchConfigDarwin
-from launcher.launch_config.linux import SandboxLaunchConfigLinux
-from launcher.launch_config.shared import SandboxLaunchConfig
-from launcher.session_state import SessionState, SessionStateDarwin, SessionStateLinux
+from launcher.lib.launch_config.darwin.compute import SandboxLaunchConfigDarwin
+from launcher.lib.launch_config.linux.compute import SandboxLaunchConfigLinux
+from launcher.lib.launch_config.shared import SandboxLaunchConfig
+from launcher.lib.session_state import (
+    SessionState,
+    SessionStateDarwin,
+    SessionStateLinux,
+)
 
 
 def _as_json_value(value: object) -> str:

@@ -30,13 +30,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from launcher.build_spec import (
+from launcher.lib.build_spec import (
     ProxySpec,
     SandboxBuildSpec,
     SandboxBuildSpecDarwin,
     SandboxBuildSpecLinux,
 )
-from launcher.constants import (
+from launcher.lib.constants import (
     CA_BUNDLE,
     CA_CERT,
     ERROR_PREFIX,

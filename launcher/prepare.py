@@ -17,20 +17,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import assert_never
 
-from launcher.build_spec import (
+from launcher.lib.build_spec import (
     SandboxBuildSpecDarwin,
     SandboxBuildSpecLinux,
     load_build_spec,
 )
-from launcher.constants import ERROR_PREFIX
-from launcher.host_state import read_host_state_darwin, read_host_state_linux
-from launcher.launch_checks import get_launch_refusals
-from launcher.launch_config import darwin, linux
-from launcher.launch_config.write import (
+from launcher.lib.constants import ERROR_PREFIX
+from launcher.lib.host_state import read_host_state_darwin, read_host_state_linux
+from launcher.lib.launch_checks import get_launch_refusals
+from launcher.lib.launch_config.darwin import compute as darwin_compute
+from launcher.lib.launch_config.linux import compute as linux_compute
+from launcher.lib.launch_config.write import (
     write_launch_config_darwin,
     write_launch_config_linux,
 )
-from launcher.session_state import (
+from launcher.lib.session_state import (
     create_session_dir,
     create_session_state_darwin,
     create_session_state_linux,
@@ -62,7 +63,7 @@ def _prepare_launch_linux(spec: SandboxBuildSpecLinux, session_dir: Path) -> Pat
         # Nothing below creates anything, but it can still raise, and by now a
         # proxy may be running that only this process knows about. The stub's
         # EXIT trap is not armed until prepare_launch has returned.
-        config = linux.compute_launch_config(spec, host, session)
+        config = linux_compute.compute_launch_config(spec, host, session)
         write_launch_config_linux(config, session)
     except BaseException:
         teardown_session_state_linux(session)
@@ -78,7 +79,7 @@ def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> P
 
     session = create_session_state_darwin(spec, session_dir)
     try:
-        config = darwin.compute_launch_config(spec, host, session)
+        config = darwin_compute.compute_launch_config(spec, host, session)
         write_launch_config_darwin(config, session)
     except BaseException:
         teardown_session_state_darwin(session)

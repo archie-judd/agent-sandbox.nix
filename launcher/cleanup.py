@@ -15,7 +15,7 @@ import signal
 import sys
 from pathlib import Path
 
-from launcher.constants import CLEANUP, CLEANUP_IF_EMPTY, PROXY_PID
+from launcher.lib.constants import CLEANUP, CLEANUP_IF_EMPTY, PROXY_PID
 
 
 def _read_nul(path: Path) -> list[Path]:
