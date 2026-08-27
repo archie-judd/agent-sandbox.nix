@@ -6,6 +6,25 @@ TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PASS=0
 FAIL=0
 
+# Keep session directories out of the developer's real sessions root. Without
+# this every launch in the suite lands in $XDG_STATE_HOME/agent-sandbox, and
+# each one runs the prune, so a suite run does not merely litter: it evicts real
+# sessions beyond the retention limit.
+#
+# Set here rather than in run-all.sh because a test file run on its own has to
+# be scoped too, and skipped when the caller has already chosen a root, which is
+# how the files that assert against retention control their own.
+#
+# Under .tmp-test, which is gitignored, rather than mktemp -d: a failed test's
+# session directory is then still there to read afterwards. Cleared per file, so
+# what is left is the last run's.
+if [ -z "${AGENT_SANDBOX_SESSIONS_ROOT:-}" ]; then
+	AGENT_SANDBOX_SESSIONS_ROOT="$TESTS_DIR/../.tmp-test/sessions/$(basename "$0")"
+	export AGENT_SANDBOX_SESSIONS_ROOT
+	rm -rf "$AGENT_SANDBOX_SESSIONS_ROOT"
+	mkdir -p "$AGENT_SANDBOX_SESSIONS_ROOT"
+fi
+
 _usage_error() {
 	echo "HARNESS ERROR: $*" >&2
 	exit 2
