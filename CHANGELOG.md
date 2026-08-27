@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.1.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.0.0...v4.1.0) (2026-08-27)
+
+
+### Features
+
+* startup log ([#97](https://github.com/archie-judd/agent-sandbox.nix/issues/97)) ([9451d86](https://github.com/archie-judd/agent-sandbox.nix/commit/9451d86e545490c162bc9b2bbea2254a06f4d0c4))
+* version ([#99](https://github.com/archie-judd/agent-sandbox.nix/issues/99)) ([b2217b6](https://github.com/archie-judd/agent-sandbox.nix/commit/b2217b6f91e050608cc5a9f1c75eab54f5859103))
+
 ## [4.0.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v3.0.0...v4.0.0) (2026-08-27)
 
 
