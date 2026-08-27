@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v3.0.0...v4.0.0) (2026-08-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* Linux sandboxes that implicitly relied on AF_UNIX sockets must set allowUnixSockets = true.
+
+### darwin
+
+* allow AF_UNIX bind/connect scoped to writable dirs (CWD + rwD… ([#92](https://github.com/archie-judd/agent-sandbox.nix/issues/92)) ([dbca506](https://github.com/archie-judd/agent-sandbox.nix/commit/dbca50647f4e9f5933b3c573ee7b6e4552526129))
+
 ## [3.0.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v2.5.1...v3.0.0) (2026-08-25)
 
 
