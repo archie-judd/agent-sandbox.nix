@@ -4,9 +4,10 @@ Separate from shared.py because it has to see both platform configurations, and
 both of those import the base from shared: putting the writer there would make
 the imports circular.
 
-Every separator is chosen here and nowhere else. The argv files, the bubblewrap
-arguments and both cleanup lists are NUL-separated, because a path may contain a
-newline and nothing downstream re-splits a NUL-separated field.
+Every separator is chosen here and nowhere else. The argv files and both cleanup
+lists are NUL-separated, because a path may contain a newline and nothing
+downstream re-splits a NUL-separated field. The bubblewrap arguments are the one
+exception, for the reason given where they are written.
 """
 
 import json
@@ -91,7 +92,13 @@ def write_launch_config_linux(
     # Written from the same tuple, so the two cannot disagree, and worth its own
     # file because the bind list on its own is what you want to look at when a
     # path is missing inside the sandbox.
-    _write_nul_separated(session.session_dir / BWRAP_ARGS, config.bwrap_args)
+    #
+    # Newline-separated, unlike everything else here holding paths. Nothing
+    # re-splits this file, so the separator answers to the reader rather than to
+    # a parser, and NUL makes it one run-on line under cat. An argument holding
+    # a newline is ambiguous here as a result; argv-after-env is the copy that
+    # has to be right about that, and it is.
+    _write_newline_separated(session.session_dir / BWRAP_ARGS, config.bwrap_args)
 
     # Bytes: it is a compiled BPF program, read back by apply_network_rules
     # at the path network.json carries.

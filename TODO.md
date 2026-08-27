@@ -377,7 +377,7 @@ manifest that would otherwise pass between Python and bash.
 <root>/<timestamp>-<pid>-<outName>/
   argv-before-env   NUL-separated
   argv-after-env    NUL-separated
-  bwrap.args        Linux, NUL-separated, for reading only. See unit 2.
+  bwrap.args        Linux, newline-separated, for reading only. See unit 2.
   network.json      Linux: the nft ruleset, the sysctls, the route decision
   seatbelt.sb       macOS
   seccomp.bpf       Linux, the compiled AF_UNIX denial, unless allowUnixSockets
@@ -406,8 +406,12 @@ down to a directory, a proxy port and a pid. The sandbox home stays under
 `/private/tmp` on macOS: moving it here would put it under the real home, which
 changes what `(allow file-read* process-exec (subpath (param "HOME")))` grants.
 
-Everything holding paths is NUL-separated: both argv files, both cleanup lists
-and `bwrap.args`, because a path may contain a newline.
+Everything something re-splits is NUL-separated: both argv files and both
+cleanup lists, because a path may contain a newline. `bwrap.args` is not one of
+them. Nothing parses it, bubblewrap gets those arguments inline, and its only
+reader is a person, for whom NUL makes the file one run-on line; it is
+newline-separated so it can be read, and `argv-after-env` remains the copy that
+has to be unambiguous.
 
 Root resolution: `AGENT_SANDBOX_SESSIONS_ROOT`, else `$XDG_STATE_HOME`, else
 `$HOME/.local/state`. Timestamp leads the name so `ls` sorts chronologically and
