@@ -1310,9 +1310,6 @@ too.
 
 ## Deferred
 
-A version string in `launch.log` for issue triage. There is no version in the
-Nix source today, only tags and `CHANGELOG.md`, so it needs its own change.
-
 Proxy allow-side URL logging, with its own opt-in. It is high volume and would
 stop the session directory being safe to attach to an issue.
 

@@ -382,7 +382,7 @@ Every launch writes a directory recording what it did, under `$XDG_STATE_HOME/ag
 ls -t ~/.local/state/agent-sandbox | head
 ```
 
-Start with `launch.log`. It records what the wrapper was asked for, what your declared paths expanded to on this machine, any warnings, and the status the sandbox exited with.
+Start with `launch.log`. It records the version of agent-sandbox.nix the wrapper was built from, what the wrapper was asked for, what your declared paths expanded to on this machine, any warnings, and the status the sandbox exited with.
 
 The rest of the directory is the configuration the launch was assembled from, so it also answers what was actually allowed:
 

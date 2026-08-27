@@ -94,6 +94,10 @@ assert_output_equals "command runs in the sandbox" "ok"
 assert_log_contains "the request section names the wrapper" \
 	"sandboxed-bash launch requested"
 assert_log_contains "the request section lists the declared arguments" "rwDirs:"
+# Against version.txt rather than a literal, so a release bump does not have to
+# be made here too.
+assert_log_contains "the request section records the version" \
+	"version:           $(cat "$SCRIPT_DIR/../../version.txt")"
 assert_log_contains "the outcome section is written once the launch is prepared" \
 	"launch prepared"
 assert_log_contains "the outcome section records what a declared path expanded to" \

@@ -78,6 +78,9 @@ class DependenciesDarwin:
 
 @dataclass(frozen=True, kw_only=True)
 class SandboxBuildSpec:
+    # The release of agent-sandbox.nix that built this wrapper, for triage. Read
+    # by launch_log and by nothing that decides anything.
+    version: str
     out_name: str
     sandbox_path: str  # $PATH not Path
     allow_nix: bool
@@ -126,6 +129,7 @@ class _CommonBuildSpec(TypedDict):
     splatted into, which it cannot do for a plain dict.
     """
 
+    version: str
     out_name: str
     sandbox_path: str
     allow_nix: bool
@@ -159,6 +163,7 @@ def _common_build_spec(data: Mapping[str, Any]) -> _CommonBuildSpec:
         proxy = ProxySpec.from_dict(proxy_data)
 
     return _CommonBuildSpec(
+        version=data["version"],
         out_name=data["out_name"],
         sandbox_path=data["sandbox_path"],
         allow_nix=data["allow_nix"],

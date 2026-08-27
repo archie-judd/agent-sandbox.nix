@@ -121,6 +121,7 @@ def write_launch_request(
             _heading(now, f"{spec.out_name} launch requested"),
             _field("session", str(session_dir)),
             _field("launch directory", str(cwd)),
+            _field("version", spec.version),
             _field("platform", spec.platform),
             _field("network", network),
             _field("allowNix", str(spec.allow_nix).lower()),

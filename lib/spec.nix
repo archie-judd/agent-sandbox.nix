@@ -72,6 +72,12 @@ let
       { };
 
   spec = {
+    # Read here rather than passed in, like the cacert paths below: it is a
+    # constant of this source tree, not something a caller chooses. It is the
+    # last release the tree descends from, so a wrapper built from an
+    # unreleased or modified checkout reports that release rather than what it
+    # actually contains.
+    version = pkgs.lib.fileContents ../version.txt;
     platform = platform;
     out_name = outName;
     sandbox_path = sandboxPath;
