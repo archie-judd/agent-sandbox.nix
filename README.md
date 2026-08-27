@@ -42,6 +42,7 @@ Everything else is denied. `$HOME` is an ephemeral writable tmpfs that disappear
     * [Python with uv](#python-with-uv)
     * [Node.js with npm](#nodejs-with-npm)
 * [Troubleshooting](#troubleshooting)
+    * [Session directories](#session-directories)
     * [Filesystem access issues](#filesystem-access-issues)
     * [Network access issues](#network-access-issues)
     * [macOS: unexpected sandbox denials](#macos-unexpected-sandbox-denials)
@@ -185,7 +186,7 @@ To restrict internet access, set `allowedDomains` — the sandbox can then only 
 
 Domains are suffix-matched, so `"anthropic.com"` will capture all `*.anthropic.com` subdomains.
 
-When `allowedDomains` is set, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted. Blocked requests are logged to `/tmp/sandbox-proxy.log`.
+When `allowedDomains` is set, all HTTP/HTTPS traffic is routed through a filtering proxy that inspects requests by domain and HTTP method. The sandbox cannot bypass the proxy and DNS resolution is blocked. WebSocket connections are not permitted. Blocked requests are logged to `proxy.log` in the launch's [session directory](#session-directories).
 
 Known limitations when the proxy is active:
 
@@ -371,7 +372,31 @@ rwDirs = [ "$HOME/.npm" ]; # Allow npm cache
 
 ## Troubleshooting
 
-If you get stuck, or suspect the agent can't access a file or folder it should have access to by default, please raise an issue.
+If you get stuck, or suspect the agent can't access a file or folder it should have access to by default, please raise an issue. Attaching the session directory described below is the most useful thing you can include.
+
+### Session directories
+
+Every launch writes a directory recording what it did, under `$XDG_STATE_HOME/agent-sandbox`, or `~/.local/state/agent-sandbox` if that isn't set. Each is named `<timestamp>-<pid>-<outName>`, so the newest is last:
+
+```bash
+ls -t ~/.local/state/agent-sandbox | head
+```
+
+Start with `launch.log`. It records what the wrapper was asked for, what your declared paths expanded to on this machine, any warnings, and the status the sandbox exited with.
+
+The rest of the directory is the configuration the launch was assembled from, so it also answers what was actually allowed:
+
+| File | Platform | What it holds |
+|---|---|---|
+| `launch.log` | both | What was requested, what was decided, how it ended |
+| `proxy.log` | both | The filtering proxy's output, including blocked domains |
+| `seatbelt.sb` | macOS | The seatbelt profile `sandbox-exec` enforced |
+| `bwrap.args` | Linux | The bubblewrap arguments, including every bind |
+| `network.json` | Linux | The firewall rules and routing applied to the sandbox |
+
+Directories are kept for the newest 25 launches and pruned at the next launch. A session whose sandbox is still running is never pruned, however old it is.
+
+Nothing in a session directory is secret, so it is safe to attach to an issue. Values from `env` never reach it: they are resolved by the launcher's shell and passed straight to the sandbox, and only their names are recorded.
 
 ### Filesystem access issues
 
@@ -411,10 +436,10 @@ See [`debug/bash.shell.nix`](debug/bash.shell.nix) for a ready-to-use template (
 
 ### Network access issues
 
-If you've set `allowedDomains` and requests are failing, check which domains are being blocked:
+If you've set `allowedDomains` and requests are failing, check which domains are being blocked. The proxy's log is in the session directory for the run:
 
 ```bash
-tail -f /tmp/sandbox-proxy.log
+tail -f "$(ls -dt ~/.local/state/agent-sandbox/* | head -1)/proxy.log"
 ```
 
 You may need to add them to `allowedDomains`.

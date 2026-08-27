@@ -34,6 +34,7 @@ from launcher.lib.launch_config.linux.nftables import get_nft_rules
 from launcher.lib.launch_config.linux.seccomp import get_unix_deny_filter
 from launcher.lib.launch_config.shared import (
     SandboxLaunchConfig,
+    get_sessions_root_warnings,
     get_usable_git_state,
 )
 from launcher.lib.session_state import SessionState
@@ -244,6 +245,7 @@ def compute_launch_config(
     # is refused here and git disabled for the session. Everything below takes
     # the usable state, so nothing binds a root this rejected.
     git, warnings = get_usable_git_state(host)
+    warnings += get_sessions_root_warnings(host, session.session_dir)
     prefixes = get_bound_prefixes(spec, host, git)
     binds = get_declared_binds(host, prefixes)
     git_args, masked = get_git_binds(spec, git)

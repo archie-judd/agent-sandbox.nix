@@ -57,7 +57,7 @@ populate() {
 }
 
 launch() {
-	capture env HOME="$FAKE_HOME" AGENT_SANDBOX_LOG_DIR="$SESSIONS_ROOT" \
+	capture env HOME="$FAKE_HOME" AGENT_SANDBOX_SESSIONS_ROOT="$SESSIONS_ROOT" \
 		"$SHELL_BIN" -c 'echo ok'
 }
 

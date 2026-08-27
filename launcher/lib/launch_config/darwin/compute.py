@@ -12,7 +12,11 @@ from launcher.lib.build_spec import SandboxBuildSpecDarwin
 from launcher.lib.constants import CA_BUNDLE, CA_CERT, PASSWD, SEATBELT_PROFILE
 from launcher.lib.host_state import DeclaredDir, GitState, HostStateDarwin
 from launcher.lib.launch_config.darwin import seatbelt
-from launcher.lib.launch_config.shared import SandboxLaunchConfig, get_usable_git_state
+from launcher.lib.launch_config.shared import (
+    SandboxLaunchConfig,
+    get_sessions_root_warnings,
+    get_usable_git_state,
+)
 from launcher.lib.session_state import SessionStateDarwin
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
@@ -284,6 +288,7 @@ def compute_launch_config(
     session: SessionStateDarwin,
 ) -> SandboxLaunchConfigDarwin:
     git, warnings = get_usable_git_state(host)
+    warnings += get_sessions_root_warnings(host, session.session_dir)
 
     argv_before_env = [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)
     argv_after_env = [

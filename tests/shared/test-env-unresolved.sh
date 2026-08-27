@@ -24,7 +24,7 @@ trap 'rm -rf "$TESTDIR"' EXIT
 PROJECT="$TESTDIR/project"
 SESSIONS="$TESTDIR/sessions"
 mkdir -p "$PROJECT" "$SESSIONS"
-export AGENT_SANDBOX_LOG_DIR="$SESSIONS"
+export AGENT_SANDBOX_SESSIONS_ROOT="$SESSIONS"
 
 echo "=== Unresolvable env values (shared) ==="
 echo

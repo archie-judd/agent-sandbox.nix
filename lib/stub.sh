@@ -75,7 +75,12 @@ echo $$ >"$SESSION_DIR/stub.pid"
 
 # Armed only now: before this point there is no session to clean up, and
 # prepare tears down its own failures.
-trap '"@python@" -P -s -S -m launcher.cleanup "$SESSION_DIR"' EXIT
+#
+# $? is captured first because it is the sandbox's exit status, and every
+# command in the trap body overwrites it. Cleanup records it: this shell is the
+# only thing that sees it, since the process doing the recording is the one the
+# trap starts.
+trap 'STATUS=$?; "@python@" -P -s -S -m launcher.cleanup "$SESSION_DIR" "$STATUS"' EXIT
 
 mapfile -d '' ARGV_BEFORE_ENV < "$SESSION_DIR/argv-before-env"
 mapfile -d '' ARGV_AFTER_ENV < "$SESSION_DIR/argv-after-env"

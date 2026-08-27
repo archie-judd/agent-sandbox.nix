@@ -6,16 +6,18 @@ by the time this runs, and failing here would turn a successful run into a
 failed one for no gain.
 
 The session directory itself survives. It holds the computed configuration and
-the proxy log, which is the point of having it.
+both logs, which is the point of having it.
 """
 
 import os
 import shutil
 import signal
 import sys
+from datetime import datetime
 from pathlib import Path
 
-from launcher.lib.constants import CLEANUP, CLEANUP_IF_EMPTY, PROXY_PID
+from launcher.lib.constants import CLEANUP, CLEANUP_IF_EMPTY, LAUNCH_LOG, PROXY_PID
+from launcher.lib.launch_log import write_sandbox_exit
 
 
 def _read_nul(path: Path) -> list[Path]:
@@ -39,7 +41,17 @@ def _kill_proxy(session_dir: Path) -> None:
         pass
 
 
-def cleanup_launch(session_dir: Path) -> None:
+def cleanup_launch(session_dir: Path, exit_status: int | None, now: datetime) -> None:
+    """Tear the session down, and record what the sandbox exited with.
+
+    The status comes from the stub's EXIT trap, which is the only thing that
+    sees it: this process is started by the trap, so it cannot observe the
+    sandbox itself. None means nobody passed one, which is a cleanup run by
+    hand rather than by the trap.
+    """
+    if exit_status is not None:
+        write_sandbox_exit(session_dir / LAUNCH_LOG, exit_status, now)
+
     _kill_proxy(session_dir)
 
     for path in _read_nul(session_dir / CLEANUP):
@@ -61,7 +73,16 @@ def cleanup_launch(session_dir: Path) -> None:
 
 
 def main() -> None:
-    cleanup_launch(Path(sys.argv[1]))
+    # A status that is not a number is treated as absent rather than fatal:
+    # this runs from an EXIT trap, where raising would replace the sandbox's
+    # own exit status with a traceback.
+    exit_status = None
+    if len(sys.argv) > 2:
+        try:
+            exit_status = int(sys.argv[2])
+        except ValueError:
+            exit_status = None
+    cleanup_launch(Path(sys.argv[1]), exit_status, datetime.now())
 
 
 if __name__ == "__main__":

@@ -348,9 +348,10 @@ session. That is strictly better than the `--setenv` it replaced, where they sat
 on bubblewrap's cmdline for the entire run, but it is not absolute and a local
 attacker polling `/proc` could win the race.
 
-`startup.log`, once unit 3 adds it, records env keys without values, from the
-keys-only list the spec already carries. Building that list in Nix from the same
-attrset means it cannot be defeated by a value that looks like a flag.
+`launch.log` records env keys without values, from the keys-only list the spec
+already carries. Building that list in Nix from the same attrset means it cannot
+be defeated by a value that looks like a flag, and the launcher could not write a
+value if it tried: they are resolved by the stub and never enter Python.
 
 The session directory must stay safe to attach to a GitHub issue. That is the
 property the debug logging design is built around, and it is why proxy
@@ -379,6 +380,8 @@ manifest that would otherwise pass between Python and bash.
   bwrap.args        Linux, NUL-separated, for reading only. See unit 2.
   network.json      Linux: the nft ruleset, the sysctls, the route decision
   seatbelt.sb       macOS
+  seccomp.bpf       Linux, the compiled AF_UNIX denial, unless allowUnixSockets
+  launch.log        what was requested, what was decided, how it ended
   passwd
   ca-bundle.pem     restricted mode only
   ca-cert.pem       restricted mode only
@@ -406,18 +409,27 @@ changes what `(allow file-read* process-exec (subpath (param "HOME")))` grants.
 Everything holding paths is NUL-separated: both argv files, both cleanup lists
 and `bwrap.args`, because a path may contain a newline.
 
-Root resolution: `AGENT_SANDBOX_LOG_DIR`, else `$XDG_STATE_HOME`, else
+Root resolution: `AGENT_SANDBOX_SESSIONS_ROOT`, else `$XDG_STATE_HOME`, else
 `$HOME/.local/state`. Timestamp leads the name so `ls` sorts chronologically and
 pruning by name matches pruning by mtime. `outName` is in the name because
 several wrappers share one root.
 
+The override is deliberately undocumented, which is also what settled its name.
+`XDG_STATE_HOME` is the knob a user already has and it is honoured, so a second
+documented one would be a compatibility promise bought for a case the convention
+already covers; the suite needs the variable to point launches at a scratch
+root, so it exists. Undocumented means the name only has to be right for
+contributors, and `AGENT_SANDBOX_LOG_DIR` had stopped being right once the
+directory held the computed configuration as well.
+
 Created first thing, ahead of the bind-existence check, so a run refused for a
 missing bind or a declined home-directory launch still records why.
 
-The wrapper prints nothing about the directory on success or failure.
-Discoverability is the README's job.
+The wrapper prints nothing about the directory on a successful launch, and names
+it when it refuses one, which is the moment there is a reason to look. The rest
+of discoverability is the README's job.
 
-Unit 2 creates the directory and writes the artifacts. The startup log and the
+Unit 2 creates the directory and writes the artifacts. The launch log and the
 warning when a declared path covers the root are unit 3, which adds behaviour to
 a directory that already exists rather than relocating anything.
 
@@ -527,6 +539,51 @@ change is recorded in the commit message for the release notes.
 Acceptance: the suite passes, plus a new test that a `roFiles` entry declared
 under an `rwDirs` ancestor refuses at launch and leaves the real host file
 byte-identical.
+
+## AF_UNIX sockets
+
+Done in dbca506, behind an `allowUnixSockets` flag defaulting to false. It was
+deferred until after the port and landed straight after it, because computing
+the seatbelt profile and the bubblewrap arguments in Python is what made both
+halves cheap.
+
+A boolean rather than a list of directories, for the reason recorded when it was
+deferred: macOS can express any path scope with `subpath` rules, while Linux has
+two positions and no third, since classic BPF cannot dereference the
+`sockaddr_un`. A path list would have been enforced on macOS and unenforceable
+on Linux.
+
+On macOS the profile allows `network-bind` and `network-outbound` scoped by
+subpath to the working directory and the declared read-write directories,
+connect alone at the read-only paths and at the repository root, and denies bind
+again at read-only paths nested inside a read-write one. The rules are assembled
+after the network section so they outrank open mode's blanket
+`(deny network-outbound (remote unix-socket))` by last-match. `/tmp` stays out
+of scope deliberately, since per-user launchd listeners live there. The
+repository root is granted connect because it is visible on both platforms but
+declared by nobody, so a build server keeping its rendezvous socket there worked
+on Linux and failed on macOS, which is the platform-dependent failure this
+feature exists to remove.
+
+`(local unix-socket (subpath ...))` was the unverified fact. The SBPL compiler
+accepts it, so the macOS half needed no different shape.
+
+On Linux the flag being off is now enforced rather than assumed: a classic-BPF
+filter fails `socket(AF_UNIX, ...)` with EPERM, while `socketpair(2)` is a
+different syscall and passes untouched. EPERM rather than a kill, because
+callers probe for AF_UNIX services and fall back, and killing turns each probe
+into a crash. The program is computed at launch rather than built by Nix, so it
+lands in the session directory with the other artifacts and a denied `bind()`
+can be debugged by reading what was loaded; it depends on the machine's audit
+arch and syscall numbering, and a machine outside that table refuses the launch.
+The descriptor `--seccomp` needs is opened in the network entry point, the
+placement rejected for bubblewrap's own arguments under unit 2. There it was a
+choice; here nothing else survives pasta.
+
+The open decision is settled the strict way: `allowNix` requires
+`allowUnixSockets`, as an eval-time error on both platforms rather than an
+implication on Linux, so a configuration that builds on one platform builds on
+the other.
 
 ## Units
 
@@ -1024,35 +1081,84 @@ out inline in two places with a long comment each.
 
 ### 3. Session directory
 
-Partly done. Around 3 files left. 1 day.
+Done. 9 files. The log is `launch.log`, not `startup.log`: it records the whole
+launch rather than its start, and the name matches the vocabulary around it,
+`prepare_launch`, `launch_checks`, `SandboxLaunchConfig`.
 
-What the Session directory section above describes but unit 2 does not need in
-order to write its artifacts: the startup log and the warning when a declared
-path covers the root. What `startup.log` may hold, and why it is built in Nix,
-is under Secrets above.
+What the Session directory section above describes but unit 2 did not need in
+order to write its artifacts: the log, and the warning when a declared path
+covers the root. What the log may hold, and why the env keys come from Nix, is
+under Secrets above.
 
 Retention shipped with the port instead, for the reason recorded under Session
 directory. It is 25 directories, pruned at launch, as a constant in the Python
 source rather than a `mkSandbox` argument.
 
-Logging is best effort and never gates a launch. An unwritable root, a failed
-mkdir or a failed append must all leave the sandbox running normally. This
-inverts the convention in the surrounding code, where a missing bind exits 1,
-and needs a comment saying so.
+Logging is best effort and never gates a launch: a failed append leaves the
+sandbox running normally. This inverts the convention in the surrounding code,
+where a missing bind exits 1, and says so in `launch_log`.
+
+An unwritable root was listed here as the same kind of failure, and it is not.
+That sentence predates the port, when the directory held only debug artifacts.
+It now holds the argv the stub reads and the profile the kernel reads, so a
+launch cannot be assembled without it: `create_session_dir` refuses with a
+reason where it used to raise `PermissionError` through to a traceback. Best
+effort applies to the log, not to the directory.
 
 No toggle and no Nix argument. Everything logged is cheap, bounded and already
 computed. A toggle you must set before the failure means reproducing the failure
-first, which is the hard part of sandbox bugs.
+first, which is the hard part of sandbox bugs. No stdout option either: `prepare`
+prints the session directory on stdout and the stub reads it from there, so
+anything else written to it lands inside `$SESSION_DIR`.
 
-Warn at launch if a declared `rwDir` or `rwFile` covers the session directory
-root, since that would hand the agent write access to its own logs.
+Written in two goes rather than buffered and written at the end, because
+`prepare` has more than one exit. The request section lands before the host is
+read, so it survives whatever happens next; the second section lands at whichever
+exit is reached, and is the outcome, the refusals, or a traceback. The first two
+come from the same tuples that are printed to the terminal, so everything
+printed is also in the log and the log holds more. The one exit not covered is
+the proxy failing to report a port, which is already in `proxy.log`, named by
+every one of those messages.
+
+The traceback case was missed when this was designed, and is the one failure
+whose evidence existed nowhere but the terminal: a bug in the launcher, a host
+that could not be read, an interrupt during the confirmation prompt or the proxy
+wait. `prepare_launch` catches `Exception` and `KeyboardInterrupt` around the
+platform fold, writes the traceback and re-raises. Deliberately not
+`BaseException`: `SystemExit` carries the refusals, which have already written
+their own section, and catching it would record them twice. There is no
+regression test for this yet, because triggering it from a shell test means
+hand-mangling the spec out of a built wrapper; it belongs in unit 4's pytest
+tier, where `prepare_launch` can be called with a broken spec directly.
+
+The exit status is recorded by `cleanup`, from `$?` captured in the stub's EXIT
+trap. That is as far as capturing the run can go: the sandboxed process's own
+output is the user's terminal and holds their source and their prompts, so
+capturing it would need a pty and would cost the property that the directory is
+safe to attach to an issue.
+
+Warn at launch if a declared `rwDir` or `rwFile` covers the sessions root, since
+that hands the agent write access to the configuration and logs of every
+session, including the running one. A warning rather than a refusal: the root is
+relocatable and an `rwDir` on `$HOME/.local/state` is a plausible accident.
 
 Split out of unit 2 because unit 2's risk is concentrated entirely in bind
 ordering and seatbelt rule ordering, and this shares none of it. By the time it
-lands, the directory and the artifacts already exist, so nothing moves.
+landed, the directory and the artifacts already existed, so nothing moved.
 
-Acceptance: the suite passes, plus tests that an unwritable root still launches
-and that a declared path covering the root warns. Pruning is covered by
+Left over, and agreed rather than deferred: one `sandbox-readable/` subdirectory
+holding the three files the sandboxed process reads, `ca-bundle.pem`,
+`ca-cert.pem` and `passwd`. The split that earns a directory level is not
+runtime versus debug, which is twelve files against three, but what the sandbox
+can read: those three are granted by name on macOS specifically so a subpath
+grant would not also hand over `proxy.pid`, and bound individually on Linux, so a
+directory would make a by-convention rule structural and collapse three grants
+into one. It waits on the question unit 2 left open, whether the macOS passwd
+file has any reader at all, since the answer may drop a file from the set.
+
+Acceptance: the suite passes, plus `tests/shared/test-launch-log.sh` covering
+what is logged, what is not (declared env values), the refusal path, the
+covers-the-root warning and the unwritable root. Pruning is covered by
 `tests/shared/test-session-retention.sh`, which came with it.
 
 ### 4. Test tiers
@@ -1172,36 +1278,35 @@ remains in `prepare`.
 
 ## Totals
 
-Units 0, 1 and 2 are done, plus both security fixes and unit 3's retention. What
-remains is the rest of unit 3, the startup log and the covers-the-root warning;
-unit 4, the pytest tier and the CI checks; unit 5, the security backlog; and unit 6, the duplication left by the
-port. None of units 3, 4 and 5 depends on the other two, and unit 4 is the one
-that pays for itself fastest now that the pure layer exists to test. Unit 6 goes
-after unit 4, since the pytest tier is what makes collapsing the unions a
-checkable change rather than a hopeful one.
+Units 0, 1, 2 and 3 are done, plus both security fixes and AF_UNIX sockets. What
+remains is unit 4, the pytest tier and the CI checks; unit 5, the security
+backlog; and unit 6, the duplication left by the port. Neither of units 4 and 5
+depends on the other, and unit 4 is the one that pays for itself fastest now
+that the pure layer exists to test. Unit 6 goes after unit 4, since the pytest
+tier is what makes collapsing the unions a checkable change rather than a
+hopeful one. Unit 3 left one thing behind, the `sandbox-readable/`
+subdirectory, which is recorded there.
 
 ## Decisions still open
 
 Whether the pytest tier needs a nix devshell of its own, or rides on the
 existing one.
 
-What the root override variable is called. `AGENT_SANDBOX_LOG_DIR` was named
-when the directory held only logs, and it now holds the computed configuration
-as well.
-
 Nothing further on names. Modules follow one rule, one module per type family
 named for the type it owns, with `launch_checks`, `seatbelt` and `constants` as
 the exceptions that own no type. Types carry the `Sandbox` prefix and modules do
 not, since a module path is already `launcher.something`.
 
-Settled since: the fixtures' nixpkgs comes from `tests/pinned-nixpkgs.nix`,
+Settled since: what the root override variable is called, by deciding it stays
+undocumented, which is recorded under Session directory. The fixtures' nixpkgs
+comes from `tests/pinned-nixpkgs.nix`,
 which reads the revision and hash out of `flake.lock`, and fixtures default to
 it rather than taking it from the harness, so building one by hand is pinned
 too.
 
 ## Deferred
 
-A version string in `startup.log` for issue triage. There is no version in the
+A version string in `launch.log` for issue triage. There is no version in the
 Nix source today, only tags and `CHANGELOG.md`, so it needs its own change.
 
 Proxy allow-side URL logging, with its own opt-in. It is high volume and would
@@ -1210,40 +1315,3 @@ stop the session directory being safe to attach to an issue.
 Letting `rwDirs` and friends vary without a rebuild, now that the seatbelt
 profile is generated at runtime and nothing structural prevents it. This is a
 capability change, not a refactor, and the reasons not to want it are separate.
-
-AF_UNIX sockets, behind an `allowUnixSockets` flag. Seatbelt mediates
-`network-bind` and `network-outbound` on a unix socket as operations independent
-of the filesystem grants, so a tool whose client and server rendezvous over a
-socket inside a directory it can already write fails at `bind()` on macOS. Linux
-has no equivalent gate: a pathname socket is reachable exactly when its path is
-visible in the mount namespace, so `rwDirs` already grants it there and there is
-no seccomp filter in the way. PR #92 proposes allowing bind and connect scoped
-to the working directory and `rwDirs` on macOS, which closes the gap by matching
-what Linux already does.
-
-A boolean rather than a list of directories, because it is the only shape that
-means the same thing on both platforms. macOS can express any path scope with
-`subpath` rules, while Linux has two positions and no third: none, via a seccomp
-filter rejecting `socket(AF_UNIX, ...)` on the family argument, or everything
-visible, via the mounts. Classic BPF cannot dereference the `sockaddr_un` to
-filter by path, so an allowlist would be enforced on macOS and unenforceable on
-Linux at every value except empty and total.
-
-The Linux half carries the cost. The filter depends on nothing at runtime, so
-the BPF program is a build-time artifact, one per architecture. But bubblewrap's
-`--seccomp` takes a descriptor, and pasta does not pass an inherited one to its
-child, which is the constraint that put bubblewrap's own arguments inline under
-unit 2. The only process left to open it in is the network entry point, which is
-the placement that was rejected there. The filter also has to permit
-`socketpair(AF_UNIX, ...)`, which is anonymous and reaches nothing, or every
-runtime using it for internal IPC breaks.
-
-One decision is open and one fact is unverified. `allowNix` conflicts on Linux:
-`/nix/var` is bound so the daemon socket is present, reaching it is AF_UNIX, and
-a family-level filter cannot carve out one path, so either the combination is
-refused at eval time or `allowNix` implies the permission. macOS has no such
-problem, since `seatbelt.nix_support` grants the daemon socket by path. Whether
-`(local unix-socket (subpath ...))` is accepted by the SBPL compiler at all is
-untested: the profile only ever uses `path-literal` under `remote unix-socket`,
-and if `subpath` is invalid in that position the macOS half needs a different
-shape. Check that before anything else.

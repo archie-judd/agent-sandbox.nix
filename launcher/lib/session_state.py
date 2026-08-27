@@ -54,7 +54,11 @@ from launcher.lib.constants import (
     STUB_PID,
 )
 
-SESSIONS_ROOT_OVERRIDE = "AGENT_SANDBOX_LOG_DIR"
+# Deliberately undocumented, and used by the test suite to point a launch at a
+# scratch root. XDG_STATE_HOME below is the knob a user has, and honouring it is
+# what the convention asks for; a second documented one would be a compatibility
+# promise bought for a case that convention already covers.
+SESSIONS_ROOT_OVERRIDE = "AGENT_SANDBOX_SESSIONS_ROOT"
 SESSIONS_ROOT_NAME = "agent-sandbox"
 DEFAULT_STATE_HOME = ".local/state"
 SESSION_DIR_TIMESTAMP = "%Y%m%d-%H%M%S"
@@ -176,7 +180,18 @@ def create_session_dir(spec: SandboxBuildSpec, now: datetime) -> Path:
     # Ahead of the mkdir so this launch's own directory is never a candidate.
     _prune_sessions_root(root)
     session_dir = root / name
-    session_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        session_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        # Fatal, unlike the log this directory also holds. The stub reads its
+        # argv from here and the kernel reads the profile from here, so an
+        # unwritable root is a launch that cannot be assembled rather than a
+        # launch that goes unrecorded.
+        raise SystemExit(
+            f"{ERROR_PREFIX} could not create the session directory "
+            f"{session_dir}: {error}. It holds this launch's computed "
+            f"configuration, so the sandbox cannot start without it."
+        ) from error
     return Path(os.path.realpath(session_dir))
 
 

@@ -17,7 +17,7 @@ sandbox_profile_for_wrapper() {
 	local run
 	local profile
 	run=$(mktemp -d "$SESSIONS/run.XXXXXX")
-	AGENT_SANDBOX_LOG_DIR="$run" "$wrapper" -c true >/dev/null 2>&1 || true
+	AGENT_SANDBOX_SESSIONS_ROOT="$run" "$wrapper" -c true >/dev/null 2>&1 || true
 	profile=$(find "$run" -name seatbelt.sb | head -n 1)
 	# find succeeds with no output when nothing matches, so the caller's
 	# "profile not found" branch needs this to fail explicitly.

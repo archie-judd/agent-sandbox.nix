@@ -20,6 +20,7 @@ platform on the spec and the host state together, which is the thing this
 replaced.
 """
 
+import os
 import sys
 from contextlib import ExitStack
 from datetime import datetime
@@ -31,7 +32,7 @@ from launcher.lib.build_spec import (
     SandboxBuildSpecLinux,
     load_build_spec,
 )
-from launcher.lib.constants import ERROR_PREFIX
+from launcher.lib.constants import ERROR_PREFIX, LAUNCH_LOG
 from launcher.lib.host_state import read_host_state_darwin, read_host_state_linux
 from launcher.lib.launch_checks import get_launch_refusals
 from launcher.lib.launch_config.darwin import compute as darwin_compute
@@ -39,6 +40,12 @@ from launcher.lib.launch_config.linux import compute as linux_compute
 from launcher.lib.launch_config.write import (
     write_launch_config_darwin,
     write_launch_config_linux,
+)
+from launcher.lib.launch_log import (
+    write_launch_crash,
+    write_launch_outcome,
+    write_launch_refusals,
+    write_launch_request,
 )
 from launcher.lib.session_state import (
     SessionState,
@@ -51,12 +58,19 @@ from launcher.lib.session_state import (
 )
 
 
-def _refuse_launch(refusals: tuple[str, ...]) -> None:
-    """Report every reason and exit, or return and let the launch continue."""
+def _refuse_launch(session_dir: Path, refusals: tuple[str, ...]) -> None:
+    """Report every reason and exit, or return and let the launch continue.
+
+    The session directory is named on the way out. It is the one moment the
+    wrapper mentions it, and the moment someone has a reason to look: nothing
+    is printed about it on a successful launch.
+    """
     if not refusals:
         return
+    write_launch_refusals(session_dir / LAUNCH_LOG, refusals)
     for refusal in refusals:
         print(f"{ERROR_PREFIX} {refusal}", file=sys.stderr)
+    print(f"{ERROR_PREFIX} this launch was recorded in {session_dir}", file=sys.stderr)
     raise SystemExit(1)
 
 
@@ -67,7 +81,7 @@ def _print_warnings(warnings: tuple[str, ...]) -> None:
 
 def _prepare_launch_linux(spec: SandboxBuildSpecLinux, session_dir: Path) -> Path:
     host = read_host_state_linux(spec)
-    _refuse_launch(get_launch_refusals(spec, host))
+    _refuse_launch(session_dir, get_launch_refusals(spec, host))
 
     with ExitStack() as stack:
         proxy = create_proxy_state(spec, session_dir)
@@ -81,13 +95,14 @@ def _prepare_launch_linux(spec: SandboxBuildSpecLinux, session_dir: Path) -> Pat
         # directory.
         stack.pop_all()
 
+    write_launch_outcome(session_dir / LAUNCH_LOG, host, session, config.warnings)
     _print_warnings(config.warnings)
     return session_dir
 
 
 def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> Path:
     host = read_host_state_darwin(spec)
-    _refuse_launch(get_launch_refusals(spec, host))
+    _refuse_launch(session_dir, get_launch_refusals(spec, host))
 
     with ExitStack() as stack:
         sandbox_home = create_darwin_sandbox_home()
@@ -104,6 +119,7 @@ def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> P
         # it for removal at exit.
         stack.pop_all()
 
+    write_launch_outcome(session_dir / LAUNCH_LOG, host, session, config.warnings)
     _print_warnings(config.warnings)
     return session_dir
 
@@ -113,14 +129,27 @@ def prepare_launch(spec_path: Path, now: datetime) -> Path:
     # Ahead of the fold: it has to exist before anything can refuse the launch,
     # and its name is a function of fields both platforms share.
     session_dir = create_session_dir(spec, now)
+    log_file = session_dir / LAUNCH_LOG
+    # Ahead of the fold too, and of reading the host, so that whatever happens
+    # next has somewhere to be recorded against. os.getcwd() rather than
+    # host.cwd for the same reason: the host has not been read yet.
+    write_launch_request(log_file, session_dir, spec, Path(os.getcwd()), now)
 
-    match spec:
-        case SandboxBuildSpecLinux():
-            return _prepare_launch_linux(spec, session_dir)
-        case SandboxBuildSpecDarwin():
-            return _prepare_launch_darwin(spec, session_dir)
-        case _:
-            assert_never(spec)
+    # SystemExit passes through unrecorded on purpose: a refusal has already
+    # written its own section, and the proxy failures name proxy.log. What is
+    # left is a bug here, a host that could not be read, or an interrupt, none
+    # of which is recorded anywhere but the terminal.
+    try:
+        match spec:
+            case SandboxBuildSpecLinux():
+                return _prepare_launch_linux(spec, session_dir)
+            case SandboxBuildSpecDarwin():
+                return _prepare_launch_darwin(spec, session_dir)
+            case _:
+                assert_never(spec)
+    except (Exception, KeyboardInterrupt) as error:
+        write_launch_crash(log_file, error)
+        raise
 
 
 def main() -> None:

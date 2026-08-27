@@ -28,6 +28,9 @@ CA_BUNDLE = "ca-bundle.pem"
 CA_CERT = "ca-cert.pem"
 PROXY_PID = "proxy.pid"
 PROXY_LOG = "proxy.log"
+# What the launch recorded about itself. Separate from proxy.log, which is a
+# different process's stderr held open for the whole session; see launch_log.
+LAUNCH_LOG = "launch.log"
 CLEANUP = "cleanup"
 CLEANUP_IF_EMPTY = "cleanup-if-empty"
 STUB_PID = "stub.pid"

@@ -33,6 +33,40 @@ class SandboxLaunchConfig:
     warnings: tuple[str, ...]
 
 
+def get_sessions_root_warnings(host: HostState, session_dir: Path) -> list[str]:
+    """Whether a declared read-write path hands the agent its own session records.
+
+    The sessions root holds one directory per launch, each with the computed
+    profile or bind list, both logs and the cleanup lists. A declared rwDir or
+    rwFile above it makes all of that writable from inside the sandbox, so an
+    agent can edit the record of what it was allowed to do, and rewrite the
+    configuration a running session is still reading from.
+
+    A warning rather than a refusal: it is a plausible thing to have declared by
+    accident (an rwDir on $HOME/.local/state, or on the home itself), the
+    sessions root is relocatable, and refusing would break a launch over
+    something the user may have meant.
+
+    Only read-write paths, and only ancestors. A read-only declaration exposes
+    the records without endangering them, and a declared path below the root is
+    inside somebody else's session rather than above this one.
+    """
+    sessions_root = session_dir.parent
+    warnings = []
+    for declared in host.declared:
+        if declared.mode != "rw":
+            continue
+        if not sessions_root.is_relative_to(declared.expanded_path):
+            continue
+        warnings.append(
+            f"{WARN_PREFIX} {declared.expanded_path} is declared read-write and "
+            f"contains this sandbox's own session records ({sessions_root}), so "
+            f"the agent can read and rewrite the configuration and logs of every "
+            f"session, including this one."
+        )
+    return warnings
+
+
 def _is_git_root_the_home(host: HostState, git: GitState) -> bool:
     """Whether exposing this repository would expose the whole home directory.
 
