@@ -15,7 +15,14 @@ from launcher.lib.constants import (
     SECCOMP_FD,
     SECCOMP_FILTER,
 )
-from launcher.lib.host_state import GitState, HostStateLinux
+from launcher.lib.git_state import (
+    GitState,
+)
+from launcher.lib.host_state import (
+    HostStateLinux,
+    get_grantable_repo_root,
+    get_usable_git_state,
+)
 from launcher.lib.launch_config.linux.binds import (
     NIX_STORE,
     DeclaredBinds,
@@ -28,7 +35,6 @@ from launcher.lib.launch_config.linux.seccomp import get_unix_deny_filter
 from launcher.lib.launch_config.shared import (
     SandboxLaunchConfig,
     get_sessions_root_warnings,
-    get_usable_git_state,
 )
 from launcher.lib.session_state import SessionState
 
@@ -174,8 +180,12 @@ def _get_bwrap_args(
     args += ["--tmpfs", str(SANDBOX_TMPDIR)]
     args += ["--tmpfs", str(host.real_home)]
 
-    if git is not None:
-        args += ["--ro-bind", str(git.repo_root), str(git.repo_root)]
+    # Withheld at a work tree root, where the cwd bind below already covers the
+    # work tree. Must stay in step with get_bound_prefixes, which skips binds
+    # this one would have covered.
+    repo_root = get_grantable_repo_root(host, git)
+    if repo_root is not None:
+        args += ["--ro-bind", str(repo_root), str(repo_root)]
     args += ["--bind", str(host.cwd), str(host.cwd)]
 
     args += list(binds.dir_binds)

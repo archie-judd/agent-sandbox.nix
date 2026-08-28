@@ -5,17 +5,17 @@ either is matched, so an unresolved name would match nothing."""
 
 import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Mapping, Sequence, TypedDict, assert_never
+from typing import Literal, Sequence, TypedDict, assert_never
 
 from launcher.lib.build_spec import (
     SandboxBuildSpecDarwin,
     SandboxBuildSpecLinux,
 )
-from launcher.lib.constants import ERROR_PREFIX
+from launcher.lib.constants import ERROR_PREFIX, WARN_PREFIX
+from launcher.lib.git_state import GitState, read_git_state
 from launcher.lib.symlinks import ResolvedPath, Symlink, resolve_path
 
 SYSTEMD_RESOLV_CONF = Path("/run/systemd/resolve/resolv.conf")
@@ -44,17 +44,6 @@ class DeclaredFile(DeclaredPath):
 @dataclass(frozen=True, kw_only=True)
 class DeclaredDir(DeclaredPath):
     inner_symlinks: tuple[ResolvedPath, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class GitState:
-    common_dir: Path
-    repo_root: Path
-    protected_dirs: tuple[Path, ...]
-    # Each protected file, mapped to whether it exists on the host: a
-    # missing one still has to be made read-only rather than merely
-    # creatable, so the backends bind an empty file over it.
-    protected_files: Mapping[Path, bool]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -213,146 +202,6 @@ def _get_declared_paths(
     return paths
 
 
-def _run_git_command(git: Path, *args: str, cwd: Path | None = None) -> str | None:
-    try:
-        result = subprocess.run(
-            [str(git), *args],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
-
-
-def _get_all_gitdirs(common_dir: Path) -> list[Path]:
-    owned = [common_dir]
-    modules = common_dir / "modules"
-    if not modules.is_dir():
-        return owned
-    walker = os.walk(modules)
-    for parent, directories, _ in walker:
-        directories.sort()
-        for name in directories:
-            candidate = Path(parent) / name
-            if (candidate / "HEAD").is_file() and (candidate / "config").is_file():
-                owned.append(candidate)
-    return owned
-
-
-def _is_worktree_config_enabled(git: Path, config: Path) -> bool:
-    # Read per gitdir, because submodules carry their own setting.
-    value = _run_git_command(
-        git, "config", "--file", str(config), "--get", "extensions.worktreeConfig"
-    )
-    return value == "true"
-
-
-def _get_worktree_pointer_files(
-    gitdir: Path, worktree_config_enabled: bool
-) -> list[Path]:
-    # commondir sends the host's git at a different gitdir entirely, so
-    # protecting the config without the pointers to it closes nothing.
-    worktrees = gitdir / "worktrees"
-    if not worktrees.is_dir():
-        return []
-
-    pointers: list[Path] = []
-    for worktree in sorted(worktrees.iterdir()):
-        if not worktree.is_dir():
-            continue
-        pointers.append(worktree / "commondir")
-        if worktree_config_enabled:
-            pointers.append(worktree / "config.worktree")
-    return pointers
-
-
-def _get_submodule_dot_git(git: Path, gitdir: Path) -> Path | None:
-    # core.worktree is set only for submodules and is relative to the gitdir.
-    # Left writable, the .git file it points at would redirect the host's
-    # git past the hooks and config protected alongside it.
-    submodule_worktree = _run_git_command(
-        git, "config", "--file", str(gitdir / "config"), "--get", "core.worktree"
-    )
-    if not submodule_worktree:
-        return None
-
-    dot_git = gitdir / submodule_worktree / ".git"
-    if not dot_git.is_file():
-        return None
-    return Path(os.path.realpath(dot_git))
-
-
-def _get_protected_files_in_gitdir(git: Path, gitdir: Path) -> list[Path]:
-    config = gitdir / "config"
-    protected: list[Path] = []
-    if config.is_file():
-        protected.append(config)
-
-    worktree_config_enabled = _is_worktree_config_enabled(git, config)
-    if worktree_config_enabled:
-        protected.append(gitdir / "config.worktree")
-
-    protected += _get_worktree_pointer_files(gitdir, worktree_config_enabled)
-
-    submodule_dot_git = _get_submodule_dot_git(git, gitdir)
-    if submodule_dot_git is not None:
-        protected.append(submodule_dot_git)
-
-    return protected
-
-
-def _get_worktree_dot_git_files(git: Path, cwd: Path) -> list[Path]:
-    # Only worktrees at or under cwd are ever reachable from inside the
-    # sandbox; the rest are never bound.
-    listing = _run_git_command(git, "worktree", "list", "--porcelain", cwd=cwd)
-    if listing is None:
-        return []
-
-    dot_git_files: list[Path] = []
-    for line in listing.splitlines():
-        if not line.startswith("worktree "):
-            continue
-        worktree_path = Path(line[len("worktree ") :])
-        under_cwd = worktree_path == cwd or cwd in worktree_path.parents
-        if under_cwd and (worktree_path / ".git").is_file():
-            dot_git_files.append(worktree_path / ".git")
-    return dot_git_files
-
-
-def _read_git_state(git: Path, cwd: Path) -> GitState | None:
-    common = _run_git_command(
-        git, "rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd
-    )
-    if not common:
-        return None
-    common_dir = Path(common)
-
-    protected_dirs: list[Path] = []
-    protected_files: dict[Path, bool] = {}
-
-    for gitdir in _get_all_gitdirs(common_dir):
-        hooks = gitdir / "hooks"
-        if hooks.is_dir():
-            protected_dirs.append(hooks)
-        for path in _get_protected_files_in_gitdir(git, gitdir):
-            protected_files[path] = _path_exists(path)
-
-    for path in _get_worktree_dot_git_files(git, cwd):
-        protected_files[path] = _path_exists(path)
-
-    return GitState(
-        common_dir=common_dir,
-        repo_root=common_dir.parent,
-        protected_dirs=tuple(protected_dirs),
-        protected_files=protected_files,
-    )
-
-
 def _has_controlling_terminal() -> bool:
     # /dev/tty rather than stdin, so a piped stdin does not look like an
     # absent terminal.
@@ -447,10 +296,46 @@ def _common_host_state(
         term=os.environ.get("TERM"),
         has_controlling_terminal=_has_controlling_terminal(),
         declared=tuple(declared_paths),
-        git=_read_git_state(spec.dependencies.git, cwd),
+        git=read_git_state(spec.dependencies.git, cwd),
         closure_paths=_read_closure_paths(spec.closure_paths_file),
         nix_daemon_socket=nix_daemon_socket,
     )
+
+
+def _is_git_root_the_home(host: HostState, git: GitState) -> bool:
+    # A home-rooted repo's object store holds the history of tracked
+    # dotfiles. Launching from the home directory itself is the exception:
+    # the user has already confirmed that the whole home is exposed.
+    if host.real_home == git.repo_root:
+        return host.cwd != host.real_home
+    return git.repo_root in host.real_home.parents
+
+
+def get_usable_git_state(host: HostState) -> tuple[GitState | None, list[str]]:
+    if host.git is None:
+        return None, []
+    if _is_git_root_the_home(host, host.git):
+        return None, [
+            f"{WARN_PREFIX} git root resolves to your home directory "
+            f"({host.real_home}), which the sandbox will not expose. "
+            f"git is disabled for this session."
+        ]
+    return host.git, []
+
+
+def get_grantable_repo_root(host: HostState, git: GitState | None) -> Path | None:
+    # The work tree root, when granting it adds access the launch directory
+    # does not already have. Below a work tree root it is what lets git report
+    # on files above the launch directory, so withholding it would make git
+    # status and git diff call them deleted rather than fail.
+    #
+    # `git` is what get_usable_git_state returned, not host.git: a home-rooted
+    # repo has git disabled, and nothing should be granted on its behalf.
+    if git is None:
+        return None
+    if git.work_tree_root == host.cwd:
+        return None
+    return git.work_tree_root
 
 
 def read_host_state_linux(spec: SandboxBuildSpecLinux) -> HostStateLinux:

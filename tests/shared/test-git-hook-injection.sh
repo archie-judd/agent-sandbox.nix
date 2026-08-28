@@ -10,8 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(build_fixture expose-repo-root.nix)
-SHELL_BIN="$SANDBOXED/bin/sandboxed-bash"
+SANDBOXED=$(build_fixture git-topologies.nix)
+SHELL_BIN="$SANDBOXED/bin/sandboxed-bash-git-topologies"
 
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from launcher.lib.constants import WARN_PREFIX
-from launcher.lib.host_state import GitState, HostState
+from launcher.lib.host_state import HostState
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -35,24 +35,3 @@ def get_sessions_root_warnings(host: HostState, session_dir: Path) -> list[str]:
             f"contains this sandbox's own session records ({sessions_root})."
         )
     return warnings
-
-
-def _is_git_root_the_home(host: HostState, git: GitState) -> bool:
-    # A home-rooted repo's object store holds the history of tracked
-    # dotfiles. Launching from the home directory itself is the exception:
-    # the user has already confirmed that the whole home is exposed.
-    if host.real_home == git.repo_root:
-        return host.cwd != host.real_home
-    return git.repo_root in host.real_home.parents
-
-
-def get_usable_git_state(host: HostState) -> tuple[GitState | None, list[str]]:
-    if host.git is None:
-        return None, []
-    if _is_git_root_the_home(host, host.git):
-        return None, [
-            f"{WARN_PREFIX} git root resolves to your home directory "
-            f"({host.real_home}), which the sandbox will not expose. "
-            f"git is disabled for this session."
-        ]
-    return host.git, []

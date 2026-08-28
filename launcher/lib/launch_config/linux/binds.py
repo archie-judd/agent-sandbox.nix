@@ -13,11 +13,12 @@ from typing import Sequence
 
 from launcher.lib.build_spec import SandboxBuildSpecLinux
 from launcher.lib.constants import WARN_PREFIX
+from launcher.lib.git_state import GitState
 from launcher.lib.host_state import (
     DeclaredDir,
     DeclaredPath,
-    GitState,
     HostStateLinux,
+    get_grantable_repo_root,
 )
 from launcher.lib.symlinks import Symlink
 
@@ -66,8 +67,12 @@ def get_bound_prefixes(
     ]
     prefixes.append(host.cwd)
     prefixes += list(ETC_PREFIXES)
+    # The repo root only when compute.py actually binds it: listing a prefix
+    # nothing binds would skip a declared path that then has no bind at all.
+    repo_root = get_grantable_repo_root(host, git)
+    if repo_root is not None:
+        prefixes.append(repo_root)
     if git is not None:
-        prefixes.append(git.repo_root)
         prefixes.append(git.common_dir)
     return prefixes
 

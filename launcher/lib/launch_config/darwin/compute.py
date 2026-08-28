@@ -7,12 +7,19 @@ from pathlib import Path
 
 from launcher.lib.build_spec import SandboxBuildSpecDarwin
 from launcher.lib.constants import CA_BUNDLE, CA_CERT, PASSWD, SEATBELT_PROFILE
-from launcher.lib.host_state import DeclaredDir, GitState, HostStateDarwin
+from launcher.lib.git_state import (
+    GitState,
+)
+from launcher.lib.host_state import (
+    DeclaredDir,
+    HostStateDarwin,
+    get_grantable_repo_root,
+    get_usable_git_state,
+)
 from launcher.lib.launch_config.darwin import seatbelt
 from launcher.lib.launch_config.shared import (
     SandboxLaunchConfig,
     get_sessions_root_warnings,
-    get_usable_git_state,
 )
 from launcher.lib.session_state import SessionStateDarwin
 
@@ -41,8 +48,13 @@ def _get_ancestors(start: Path, stop: Path) -> list[Path]:
 def _get_traversal_ancestors(
     host: HostStateDarwin, session: SessionStateDarwin, git: GitState | None
 ) -> list[Path]:
-    walk_from = git.repo_root if git is not None else host.cwd
-    ancestors = _get_ancestors(walk_from, host.real_home)
+    # From the launch directory and from the common git dir, not from
+    # repo_root: the repo_root grant is withheld at a work tree root, and it
+    # was what supplied the steps down to the git dir. Metadata only, so this
+    # permits the walk without exposing anything along it.
+    ancestors = _get_ancestors(host.cwd, host.real_home)
+    if git is not None:
+        ancestors += _get_ancestors(git.common_dir, host.real_home)
     for declared in host.declared:
         ancestors += _get_ancestors(declared.expanded_path, host.real_home)
 
@@ -92,7 +104,9 @@ def _get_unix_socket_scope(
 ) -> _UnixSocketScope:
     # The repository root joins the connect set: build servers keep their
     # rendezvous sockets at the build root (.bsp, .bloop, nailgun), not the
-    # module directory the agent was launched in.
+    # module directory the agent was launched in. It arrives already gated by
+    # get_grantable_repo_root, so at a work tree root there is nothing to add:
+    # the build root is the launch directory, which is in `writable` below.
     writable = [host.cwd]
     for declared in host.declared:
         if isinstance(declared, DeclaredDir) and declared.mode == "rw":
@@ -173,7 +187,7 @@ def _get_profile_lines(
 ) -> list[str]:
     repo_root_parent = git.repo_root.parent if git is not None else None
     git_dir = git.common_dir if git is not None else None
-    repo_root = git.repo_root if git is not None else None
+    repo_root = get_grantable_repo_root(host, git)
 
     lines: list[str] = []
     lines += seatbelt.HEADER

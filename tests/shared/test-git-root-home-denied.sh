@@ -9,12 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(build_fixture expose-repo-root.nix)
-SHELL="$SANDBOXED/bin/sandboxed-bash"
+SANDBOXED=$(build_fixture git-topologies.nix)
+SHELL="$SANDBOXED/bin/sandboxed-bash-git-topologies"
 
 # The fake HOME must NOT be under /tmp, which each platform treats as a
 # special case — that would mask the assertion. Use the gitignored .tmp-test
-# dir inside this repo, matching test-expose-repo-root.sh.
+# dir inside this repo, matching test-git-topologies.sh.
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
 FAKE_HOME=$(mktemp -d "$TESTDIR_ROOT/git-root-home.XXXXXX")
