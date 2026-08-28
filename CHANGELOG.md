@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.2](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.1...v4.1.2) (2026-08-28)
+
+
+### Bug Fixes
+
+* **darwin:** write $HOME and $TMPDIR to session state dir ([#103](https://github.com/archie-judd/agent-sandbox.nix/issues/103)) ([0f7647a](https://github.com/archie-judd/agent-sandbox.nix/commit/0f7647aacf3bf4a9a45b227edcd9192f426590d9))
+
 ## [4.1.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.0...v4.1.1) (2026-08-28)
 
 
