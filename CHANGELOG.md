@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.0...v4.1.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **launch log:** make bwrap.args readable ([ffd47e0](https://github.com/archie-judd/agent-sandbox.nix/commit/ffd47e0db1b4b4443fef8727f02213932f1bdb86))
+
 ## [4.1.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.0.0...v4.1.0) (2026-08-27)
 
 
