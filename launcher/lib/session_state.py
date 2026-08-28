@@ -4,7 +4,6 @@ import select
 import shutil
 import signal
 import subprocess
-import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -30,10 +29,11 @@ SESSION_DIR_TIMESTAMP = "%Y%m%d-%H%M%S"
 # Must stay in step with the name create_session_dir builds: it is what stops
 # the prune from touching anything else in a shared root.
 SESSION_DIR_NAME = re.compile(r"\d{8}-\d{6}-\d+-.+")
-SANDBOX_HOME_PREFIX = "sandbox-home."
-# Deliberately not under the real home: a sandbox HOME there would change
-# what the seatbelt HOME subpath rules grant.
-DARWIN_SANDBOX_HOME_PARENT = Path("/private/tmp")
+# Inside the session directory, and 0700: under a shared temp root one
+# session could write into a concurrent session's HOME, which the seatbelt
+# profile grants process-exec on.
+SANDBOX_HOME_NAME = "home"
+SANDBOX_TMPDIR_NAME = "tmp"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -51,6 +51,7 @@ class SessionState:
 @dataclass(frozen=True, kw_only=True)
 class SessionStateDarwin(SessionState):
     sandbox_home: Path
+    sandbox_tmpdir: Path
 
 
 def _get_sessions_root() -> Path:
@@ -122,15 +123,27 @@ def create_session_dir(spec: SandboxBuildSpec, now: datetime) -> Path:
     return Path(os.path.realpath(session_dir))
 
 
-def create_darwin_sandbox_home() -> Path:
-    created = tempfile.mkdtemp(
-        prefix=SANDBOX_HOME_PREFIX, dir=str(DARWIN_SANDBOX_HOME_PARENT)
-    )
-    return Path(os.path.realpath(created))
+def _create_sandbox_dir(session_dir: Path, name: str) -> Path:
+    directory = session_dir / name
+    try:
+        directory.mkdir(mode=0o700)
+    except OSError as error:
+        raise SystemExit(
+            f"{ERROR_PREFIX} could not create {directory}: {error}"
+        ) from error
+    return Path(os.path.realpath(directory))
 
 
-def remove_darwin_sandbox_home(sandbox_home: Path) -> None:
-    shutil.rmtree(sandbox_home, ignore_errors=True)
+def create_darwin_sandbox_home(session_dir: Path) -> Path:
+    return _create_sandbox_dir(session_dir, SANDBOX_HOME_NAME)
+
+
+def create_darwin_sandbox_tmpdir(session_dir: Path) -> Path:
+    return _create_sandbox_dir(session_dir, SANDBOX_TMPDIR_NAME)
+
+
+def remove_darwin_sandbox_dir(directory: Path) -> None:
+    shutil.rmtree(directory, ignore_errors=True)
 
 
 def _start_proxy(proxy: ProxySpec, session_dir: Path) -> subprocess.Popen[str]:

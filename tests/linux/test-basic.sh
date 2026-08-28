@@ -28,6 +28,13 @@ echo
 expect_ok run "/etc is writable tmpfs (ephemeral)" "touch /etc/test && rm /etc/test"
 expect_fail run "cannot read host /etc/shadow" "cat /etc/shadow"
 
+# /tmp is its own tmpfs inside the mount namespace, so it is writable and is
+# not the host's. Darwin has no mount namespace and denies it instead.
+expect_ok run "/tmp is a writable tmpfs" "touch /tmp/sandbox-test && rm /tmp/sandbox-test"
+HOST_TMP_CANARY=$(mktemp /tmp/sandbox-host-canary.XXXXXX)
+trap 'rm -rf "$TESTDIR"; rm -f "$HOST_TMP_CANARY"' EXIT
+expect_fail run "host /tmp is not visible" "test -e '$HOST_TMP_CANARY'"
+
 # --- No host env leak via /proc/1/environ ---
 # PID 1 in the sandbox is bubblewrap's own init process, which it keeps so it
 # can reap; the sandboxed program is PID 2. Its environ is not empty: the

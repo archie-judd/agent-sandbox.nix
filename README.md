@@ -438,7 +438,7 @@ bash-sandboxed = sandbox.mkSandbox {
 `bash-sandboxed` starts a shell with exactly the same filesystem view and the same restrictions as your agent. Try these commands:
 
 ```bash
-touch /tmp/test && rm /tmp/test   # /tmp should be writable
+touch "$TMPDIR/test" && rm "$TMPDIR/test"   # $TMPDIR should be writable
 curl https://example.com          # depends on your allowedDomains setting
 which git                         # allowedPackages should be on PATH
 ls /some/other/path               # should fail, confirming the sandbox is active
@@ -519,7 +519,6 @@ The sandbox refuses a launch directory above `$HOME` (`/`, `/home`, `/Users`) ou
 - A launch from `$HOME` turns off home masking entirely. See [Launching from your home directory](#launching-from-your-home-directory). Everything below assumes that you launch from a project directory.
 - Your username and home directory path are visible to the agent. This is unavoidable, because the agent needs to know where `$HOME/.claude` resolves to. If your username is itself sensitive, this is not the right tool.
 - All of `/nix/store` is readable, not only your allowed packages. The allowlist restricts execution only. The Nix store is normally world-readable on any system, so this matches existing behavior, but it does mean that the agent can list every package you have built.
-- `/tmp` is shared with the host. The agent can see the sockets and files that other programs leave there, but it cannot connect to them. Do not put secrets in `/tmp` while the sandbox runs.
 - A launch from a subdirectory does not limit reads to that subdirectory. The agent can read the whole repo. From a worktree, it can also read the main checkout. See [What the sandbox exposes](#what-the-sandbox-exposes).
 - The agent can read all of the git directory. This includes every branch, stash and reflog entry, also content that is no longer in the working tree.
 

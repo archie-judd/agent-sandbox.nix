@@ -32,7 +32,7 @@ expect_fail run "cannot read /root" "ls /root"
 
 # --- Basic access ---
 expect_ok run "can write to CWD" "touch ./sandbox-test-file && rm ./sandbox-test-file"
-expect_ok run "can write to /tmp" "touch /tmp/sandbox-test && rm /tmp/sandbox-test"
+expect_ok run "can write to \$TMPDIR" "touch \$TMPDIR/sandbox-test && rm \$TMPDIR/sandbox-test"
 expect_ok run "can read /etc/resolv.conf" "cat /etc/resolv.conf > /dev/null"
 expect_ok run "can run allowed binaries" "ls / > /dev/null"
 

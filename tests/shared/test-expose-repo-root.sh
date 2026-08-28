@@ -9,10 +9,10 @@ SANDBOXED=$(build_fixture expose-repo-root.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash"
 
 # Set up a git repo with a subdirectory.
-# IMPORTANT: the repo must NOT be under /tmp, because the sandbox allows
-# full read-write access to /tmp. Using a gitignored directory inside this
-# repo ensures the sandbox rules for REPO_ROOT (read-only) and CWD
-# (read-write) are actually exercised.
+# IMPORTANT: the repo must NOT be under /tmp, which each platform treats as a
+# special case: Linux replaces it with a tmpfs, darwin denies it. Using a
+# gitignored directory inside this repo ensures the sandbox rules for
+# REPO_ROOT (read-only) and CWD (read-write) are actually exercised.
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$REPO_DIR"
 REPO=$(mktemp -d "$REPO_DIR/bind-test.XXXXXX")

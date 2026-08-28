@@ -180,15 +180,14 @@ def dns_tls(
 
 
 def temp_dirs(tmpdir: Path) -> list[str]:
-    # /private/var/folders is deliberately absent: it holds 0400/0600 user
-    # secrets reachable via the host UID. Tools must respect $TMPDIR.
+    # The host temp roots are deliberately absent. /tmp and /private/tmp are
+    # shared with every other user of the machine, and /private/var/folders
+    # holds 0400/0600 user secrets reachable via the host UID. Tools must
+    # respect $TMPDIR.
     return [
         "",
-        ";; Temp directories",
-        "(allow file-read* file-write*",
-        '  (subpath "/tmp")',
-        '  (subpath "/private/tmp")',
-        f'  (subpath "{tmpdir}"))',
+        ";; Temp directory",
+        f'(allow file-read* file-write* (subpath "{tmpdir}"))',
     ]
 
 
@@ -235,7 +234,7 @@ def sandbox_home(home: Path) -> list[str]:
     return [
         "",
         ";; Sandbox HOME",
-        f'(allow file-read* process-exec (subpath "{home}"))',
+        f'(allow file-read* file-write* process-exec (subpath "{home}"))',
     ]
 
 
@@ -315,12 +314,10 @@ def unix_sockets(
     nested_ro_dirs: Sequence[Path],
     nested_ro_files: Sequence[Path],
 ) -> list[str]:
-    # Deliberately not extended to /tmp and /private/tmp, which hold host
-    # sockets (per-user launchd listeners among them). The nested-ro denies
-    # exist because the enclosing writable subpath allow would otherwise let
-    # the sandbox bind inside a directory declared read-only; only the
-    # nested paths get them, so a writable dir inside a read-only one keeps
-    # its grant.
+    # The nested-ro denies exist because the enclosing writable subpath allow
+    # would otherwise let the sandbox bind inside a directory declared
+    # read-only; only the nested paths get them, so a writable dir inside a
+    # read-only one keeps its grant.
     if not writable_dirs:
         return []
     lines = ["", ";; AF_UNIX sockets — rw grants bind+connect (allowUnixSockets)"]

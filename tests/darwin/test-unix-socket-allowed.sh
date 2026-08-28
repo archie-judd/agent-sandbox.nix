@@ -136,10 +136,11 @@ signal.pause()
 	return 1
 }
 
-# Host listener OUTSIDE the writable-dir scope. /private/tmp is deliberate:
-# its directory is in the seatbelt file allow set (file-read/write for
-# /private/tmp) but not in the unix-socket scope, so a successful connect()
-# would mean the socket rules leak beyond CWD + rwDirs.
+# Host listener OUTSIDE the writable-dir scope, in a directory the profile
+# grants nothing on. A successful connect() would mean the socket rules leak
+# beyond CWD + rwDirs. The listeners under the launch directory and at the
+# repo root carry the sharper form of this: those paths are readable, so a
+# denial there can only come from the socket scope.
 SOCK_DIR=$(mktemp -d "/private/tmp/sandbox-unix-allowed.XXXXXX")
 SOCK_PATH="$SOCK_DIR/listener.sock"
 start_listener "$SOCK_PATH" "$TESTDIR/listener-outside.log"

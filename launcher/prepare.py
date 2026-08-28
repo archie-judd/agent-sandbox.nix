@@ -32,10 +32,11 @@ from launcher.lib.session_state import (
     SessionState,
     SessionStateDarwin,
     create_darwin_sandbox_home,
+    create_darwin_sandbox_tmpdir,
     create_proxy_state,
     create_session_dir,
     kill_proxy,
-    remove_darwin_sandbox_home,
+    remove_darwin_sandbox_dir,
 )
 
 
@@ -79,13 +80,18 @@ def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> P
     _refuse_launch(session_dir, get_launch_refusals(spec, host))
 
     with ExitStack() as stack:
-        sandbox_home = create_darwin_sandbox_home()
-        stack.callback(remove_darwin_sandbox_home, sandbox_home)
+        sandbox_home = create_darwin_sandbox_home(session_dir)
+        stack.callback(remove_darwin_sandbox_dir, sandbox_home)
+        sandbox_tmpdir = create_darwin_sandbox_tmpdir(session_dir)
+        stack.callback(remove_darwin_sandbox_dir, sandbox_tmpdir)
         proxy = create_proxy_state(spec, session_dir)
         stack.callback(kill_proxy, proxy)
 
         session = SessionStateDarwin(
-            session_dir=session_dir, proxy=proxy, sandbox_home=sandbox_home
+            session_dir=session_dir,
+            proxy=proxy,
+            sandbox_home=sandbox_home,
+            sandbox_tmpdir=sandbox_tmpdir,
         )
         config = darwin_compute.compute_launch_config(spec, host, session)
         write_launch_config_darwin(config, session)

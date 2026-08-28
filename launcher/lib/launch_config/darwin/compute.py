@@ -18,7 +18,6 @@ from launcher.lib.session_state import SessionStateDarwin
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_ENV = Path("/usr/bin/env")
-SANDBOX_TMPDIR = Path("/tmp")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -39,11 +38,20 @@ def _get_ancestors(start: Path, stop: Path) -> list[Path]:
     return ancestors
 
 
-def _get_traversal_ancestors(host: HostStateDarwin, git: GitState | None) -> list[Path]:
+def _get_traversal_ancestors(
+    host: HostStateDarwin, session: SessionStateDarwin, git: GitState | None
+) -> list[Path]:
     walk_from = git.repo_root if git is not None else host.cwd
     ancestors = _get_ancestors(walk_from, host.real_home)
     for declared in host.declared:
         ancestors += _get_ancestors(declared.expanded_path, host.real_home)
+
+    # The sandbox HOME and TMPDIR sit inside the session directory, so the
+    # walk down to them has to be stat-able the whole way. It runs to "/"
+    # rather than stopping at the real home: the sessions root is
+    # relocatable, and may not be under the home at all.
+    ancestors.append(session.session_dir)
+    ancestors += _get_ancestors(session.session_dir, Path("/"))
 
     seen: set[Path] = set()
     unique: list[Path] = []
@@ -127,7 +135,7 @@ def _get_computed_env(
         f"SHELL={spec.shell}",
         f"PATH={spec.sandbox_path}",
         f"SSL_CERT_DIR={spec.cacert_dir}",
-        f"TMPDIR={SANDBOX_TMPDIR}",
+        f"TMPDIR={session.sandbox_tmpdir}",
         "GIT_CONFIG_COUNT=1",
         "GIT_CONFIG_KEY_0=user.useConfigOnly",
         "GIT_CONFIG_VALUE_0=true",
@@ -206,7 +214,7 @@ def _get_profile_lines(
         ca_cert = session.session_dir / CA_CERT
     lines += seatbelt.dns_tls(session.session_dir / PASSWD, ca_bundle, ca_cert)
     lines += seatbelt.KEYCHAINS
-    lines += seatbelt.temp_dirs(SANDBOX_TMPDIR)
+    lines += seatbelt.temp_dirs(session.sandbox_tmpdir)
     lines += seatbelt.NIX_STORE
     lines += seatbelt.traversal(host.real_home, session.sandbox_home, repo_root_parent)
     lines += seatbelt.sandbox_home(session.sandbox_home)
@@ -214,7 +222,7 @@ def _get_profile_lines(
     lines += seatbelt.TIMEZONE
     lines += seatbelt.declared_paths(host.declared)
     lines += seatbelt.closure(host.closure_paths)
-    lines += seatbelt.ancestor_metadata(_get_traversal_ancestors(host, git))
+    lines += seatbelt.ancestor_metadata(_get_traversal_ancestors(host, session, git))
 
     # Last, so they outrank every allow above, including a declared rwDir
     # that happens to contain the gitdir.
@@ -253,7 +261,7 @@ def compute_launch_config(
         argv_after_env=tuple(argv_after_env),
         passwd=_get_passwd(host),
         ca_bundle=ca_bundle,
-        cleanup=(session.sandbox_home,),
+        cleanup=(session.sandbox_home, session.sandbox_tmpdir),
         cleanup_if_empty=(),
         warnings=tuple(warnings),
         seatbelt_profile_lines=tuple(_get_profile_lines(spec, host, session, git)),

@@ -12,8 +12,8 @@ source "$SCRIPT_DIR/../lib.sh"
 SANDBOXED=$(build_fixture expose-repo-root.nix)
 SHELL="$SANDBOXED/bin/sandboxed-bash"
 
-# The fake HOME must NOT be under /tmp, which the sandbox always exposes
-# read-write — that would mask the assertion. Use the gitignored .tmp-test
+# The fake HOME must NOT be under /tmp, which each platform treats as a
+# special case — that would mask the assertion. Use the gitignored .tmp-test
 # dir inside this repo, matching test-expose-repo-root.sh.
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"

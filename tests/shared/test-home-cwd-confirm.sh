@@ -16,8 +16,8 @@ SHELL="$SANDBOXED/bin/sandboxed-bash"
 HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
 STORE_GITCONFIG=$(build_host_pkg 'writeText "test-home-cwd-gitconfig" "[user]\n\tname = Test\n\temail = test@test.com\n"')
 
-# The fake HOME must NOT be under /tmp, which the sandbox always exposes
-# read-write — that would mask the assertions below.
+# The fake HOME must NOT be under /tmp, which each platform treats as a
+# special case — that would mask the assertions below.
 TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
 FAKE_HOME=$(mktemp -d "$TESTDIR_ROOT/home-cwd.XXXXXX")

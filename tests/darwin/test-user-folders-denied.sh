@@ -41,8 +41,9 @@ expect_fail run "cannot list DARWIN_USER_CACHE_DIR" "ls '$USER_CACHE/'"
 expect_fail run "cannot stat /private/var/folders" "test -d /private/var/folders"
 expect_fail run "cannot enumerate /private/var/folders" "ls /private/var/folders/"
 
-# Sanity: legitimate temp use via /tmp still works.
-expect_ok run "can write to /tmp" "touch /tmp/sandbox-user-folders-test && rm /tmp/sandbox-user-folders-test"
+# Sanity: legitimate temp use via $TMPDIR still works. The host temp roots
+# are all denied, so $TMPDIR is the only one left.
+expect_ok run "can write to \$TMPDIR" "touch \$TMPDIR/sandbox-user-folders-test && rm \$TMPDIR/sandbox-user-folders-test"
 
 print_results
 exit_status

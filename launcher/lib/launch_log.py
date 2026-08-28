@@ -129,6 +129,7 @@ def write_launch_outcome(
 
     if isinstance(session, SessionStateDarwin):
         lines.append(_field("sandbox home", str(session.sandbox_home)))
+        lines.append(_field("sandbox tmpdir", str(session.sandbox_tmpdir)))
 
     lines.append(_field("declared paths", _NONE if not host.declared else ""))
     for declared in host.declared:

@@ -50,9 +50,9 @@ expect_fail run "cannot list contents of 1st ancestor" "ls '$PARENT1/'"
 # path to force kernel path resolution through each ancestor.
 expect_ok run "can stat the deep repo root via absolute path" "test -d '$DEEP_DIR'"
 
-# Verify the sandbox still works normally (reads CWD, writes /tmp).
+# Verify the sandbox still works normally (reads CWD, writes $TMPDIR).
 expect_ok run "can write a file in the deep CWD" "touch '$DEEP_DIR/sandbox-test' && rm '$DEEP_DIR/sandbox-test'"
-expect_ok run "can write to /tmp from deep CWD" "touch /tmp/sandbox-deep-test && rm /tmp/sandbox-deep-test"
+expect_ok run "can write to \$TMPDIR from deep CWD" "touch \$TMPDIR/sandbox-deep-test && rm \$TMPDIR/sandbox-deep-test"
 
 print_results
 exit_status

@@ -36,14 +36,15 @@ TCP4_PORT=18931
 TCP6_PORT=18932
 INSIDE_PORT=18936
 
-# Place the UNIX socket under /private/tmp so its directory is in the
-# seatbelt allow set — isolates the deny to the network rule, not filesystem
-# reachability.
-SOCK_DIR=$(mktemp -d "/private/tmp/sandbox-open-loopback.XXXXXX")
-SOCK_PATH="$SOCK_DIR/listener.sock"
-
 TESTDIR_ROOT="$TEST_CWD/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
+
+# Place the UNIX socket inside the launch directory, which the sandbox has
+# file-read/write on — isolates the deny to the network rule, not filesystem
+# reachability. The names are short because sun_path holds only 104 bytes.
+SOCK_DIR=$(mktemp -d "$TESTDIR_ROOT/uxs.XXXXXX")
+SOCK_PATH="$SOCK_DIR/l.sock"
+
 TESTDIR=$(mktemp -d "$TESTDIR_ROOT/localhost-denied-unrestricted.XXXXXX")
 
 LISTENER_PID=""

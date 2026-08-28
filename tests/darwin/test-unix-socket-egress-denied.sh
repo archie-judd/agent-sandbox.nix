@@ -4,6 +4,7 @@
 # test-localhost-denied-unrestricted.sh.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TEST_CWD="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
@@ -15,18 +16,19 @@ SHELL="$SANDBOXED/bin/sandboxed-bash"
 # to depend on in CI; nix-provided python3 is reproducible.
 HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
 
-run() { "$SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
+# The launch directory, so the socket below is one the sandbox can reach.
+run() { (cd "$TEST_CWD" && "$SHELL" --norc --noprofile -c "$1") >/dev/null 2>&1; }
 
-TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
+TESTDIR_ROOT="$TEST_CWD/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
 TESTDIR=$(mktemp -d "$TESTDIR_ROOT/unix-socket-egress-denied.XXXXXX")
 
-# Place the socket under /private/tmp so its directory is in the
-# seatbelt allow set (file-read/write for /private/tmp). This isolates
-# the assertion: if connect() is denied, it's the network-outbound rule
-# (now absent) doing it, not filesystem reachability.
-SOCK_DIR=$(mktemp -d "/private/tmp/sandbox-unix-egress.XXXXXX")
-SOCK_PATH="$SOCK_DIR/listener.sock"
+# Place the socket inside the launch directory, which the sandbox has
+# file-read/write on. This isolates the assertion: if connect() is denied,
+# it is the network-outbound rule (now absent) doing it, not filesystem
+# reachability. The names are short because sun_path holds only 104 bytes.
+SOCK_DIR=$(mktemp -d "$TESTDIR_ROOT/uxs.XXXXXX")
+SOCK_PATH="$SOCK_DIR/l.sock"
 
 LISTENER_PID=""
 cleanup() {
