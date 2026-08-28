@@ -1,17 +1,12 @@
 { pkgs }:
 let
   shared = import ./lib/shared.nix { pkgs = pkgs; };
-  mkLinuxSandbox = import ./lib/linux.nix {
-    pkgs = pkgs;
-    shared = shared;
-  };
-  mkDarwinSandbox = import ./lib/darwin.nix {
-    pkgs = pkgs;
-    shared = shared;
-  };
 in
 {
-  mkSandbox = if pkgs.stdenv.isDarwin then mkDarwinSandbox else mkLinuxSandbox;
+  mkSandbox = import ./lib/sandbox.nix {
+    pkgs = pkgs;
+    shared = shared;
+  };
   commonTools = [
     pkgs.coreutils
     pkgs.which

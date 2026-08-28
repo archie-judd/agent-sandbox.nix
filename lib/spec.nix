@@ -19,11 +19,15 @@
   preEntryScript,
   allowedDomains,
   _proxyRedirects ? { },
-  # Linux only.
-  hostsFile ? null,
-  emptyFile ? null,
 }:
 let
+  emptyFile = pkgs.writeText "sandbox-empty" "";
+
+  hostsFile = pkgs.writeText "sandbox-hosts" ''
+    127.0.0.1 localhost
+    ::1       localhost
+  '';
+
   dependencies =
     if platform == "linux" then
       {

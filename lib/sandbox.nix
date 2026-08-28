@@ -1,4 +1,4 @@
-# mkDarwinSandbox. Everything about the sandbox itself lives in launcher/.
+# mkSandbox. Everything about the sandbox itself lives in launcher/.
 { pkgs, shared }:
 {
   pkg,
@@ -24,6 +24,8 @@
   stateFiles ? null,
 }:
 let
+  platform = if pkgs.stdenv.isDarwin then "darwin" else "linux";
+
   implicitPackages = shared.mkImplicitPackages allowNix;
 
   pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
@@ -31,10 +33,11 @@ let
   closurePathsFile = pkgs.writeClosure (
     allowedPackages
     ++ implicitPackages
-    ++ [
-      pkg
-      shared.preEntryScript
-    ]
+    ++ [ pkg ]
+    # coreutils supplies the /usr/bin/env symlink target, and is deliberately
+    # not in implicitPackages so it does not leak into PATH.
+    ++ (if platform == "linux" then [ pkgs.coreutils ] else [ ])
+    ++ [ shared.preEntryScript ]
   );
 
   validatedAllowedLocalPorts = shared.validateAllowedLocalPorts allowedLocalPorts;
@@ -50,7 +53,7 @@ let
       shared = shared;
     }
     {
-      platform = "darwin";
+      platform = platform;
       outName = outName;
       pkg = pkg;
       binName = binName;
