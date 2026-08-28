@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.3](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.2...v4.1.3) (2026-08-28)
+
+
+### Bug Fixes
+
+* **git:** grant the work tree root rather than the common git dir's parent ([#102](https://github.com/archie-judd/agent-sandbox.nix/issues/102)) ([bd7a87a](https://github.com/archie-judd/agent-sandbox.nix/commit/bd7a87a5189011adb64ab694ae1014c99ad84b03))
+
 ## [4.1.2](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.1...v4.1.2) (2026-08-28)
 
 
