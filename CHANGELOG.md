@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.4](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.3...v4.1.4) (2026-09-02)
+
+
+### Bug Fixes
+
+* **darwin:** set CLAUDE_CODE_TMPDIR ([#118](https://github.com/archie-judd/agent-sandbox.nix/issues/118)) ([6e517f5](https://github.com/archie-judd/agent-sandbox.nix/commit/6e517f5e2181bcf227675642456560365cccf47d))
+
 ## [4.1.3](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.2...v4.1.3) (2026-08-28)
 
 
