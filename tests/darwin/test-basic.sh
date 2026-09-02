@@ -60,6 +60,10 @@ expect_ok on_host "TMPDIR is inside the sessions root" \
 	"case '$SANDBOX_TMPDIR' in '$SESSIONS_ROOT_REAL'/*) ;; *) exit 1 ;; esac"
 expect_ok run "TMPDIR is writable" "touch \$TMPDIR/sandbox-test && rm \$TMPDIR/sandbox-test"
 
+# Claude Code reads CLAUDE_CODE_TMPDIR and falls back to a hardcoded /tmp,
+# which is denied here, so it has to be pointed at the session tmpdir too.
+expect_ok run "CLAUDE_CODE_TMPDIR matches TMPDIR" "test \"\$CLAUDE_CODE_TMPDIR\" = \"\$TMPDIR\""
+
 SANDBOX_HOME=$(run_output 'echo $HOME')
 expect_ok on_host "HOME is inside the sessions root" \
 	"case '$SANDBOX_HOME' in '$SESSIONS_ROOT_REAL'/*) ;; *) exit 1 ;; esac"

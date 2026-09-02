@@ -150,6 +150,7 @@ def _get_computed_env(
         f"PATH={spec.sandbox_path}",
         f"SSL_CERT_DIR={spec.cacert_dir}",
         f"TMPDIR={session.sandbox_tmpdir}",
+        f"CLAUDE_CODE_TMPDIR={session.sandbox_tmpdir}",
         "GIT_CONFIG_COUNT=1",
         "GIT_CONFIG_KEY_0=user.useConfigOnly",
         "GIT_CONFIG_VALUE_0=true",
