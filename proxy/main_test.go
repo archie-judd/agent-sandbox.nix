@@ -2,11 +2,15 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // readRequest parses a raw HTTP/1.1 request the way the proxy does, so tests
@@ -182,10 +186,16 @@ func TestApplyFilters(t *testing.T) {
 			status: http.StatusForbidden,
 		},
 		{
-			name:   "WebSocket upgrade refused",
+			name:   "WebSocket upgrade refused under a method policy",
 			cfg:    getOnlyPolicy,
 			raw:    "GET /thing HTTP/1.1\r\nHost: example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
 			status: http.StatusForbidden,
+		},
+		{
+			name:   "WebSocket upgrade allowed under a wildcard policy",
+			cfg:    wildcardPolicy,
+			raw:    "GET /thing HTTP/1.1\r\nHost: example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
+			status: 0,
 		},
 	}
 
@@ -217,6 +227,99 @@ func TestHasRequestBody(t *testing.T) {
 				t.Errorf("hasRequestBody = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+func TestWebSocketTunnel(t *testing.T) {
+	upstream, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen upstream: %v", err)
+	}
+	defer upstream.Close()
+	go func() {
+		conn, err := upstream.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		br := bufio.NewReader(conn)
+		req, err := http.ReadRequest(br)
+		if err != nil {
+			return
+		}
+		if !isWebSocketUpgrade(req) {
+			fmt.Fprintf(conn, "HTTP/1.1 400 Bad Request\r\n\r\n")
+			return
+		}
+		fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+		io.Copy(conn, br)
+	}()
+
+	ca, err := newCertAuthority()
+	if err != nil {
+		t.Fatalf("new cert authority: %v", err)
+	}
+	proxyLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen proxy: %v", err)
+	}
+	defer proxyLn.Close()
+	redirects := Redirects{"example.com": upstream.Addr().String()}
+	go func() {
+		conn, err := proxyLn.Accept()
+		if err != nil {
+			return
+		}
+		handle(conn, wildcardPolicy, ca, redirects)
+	}()
+
+	conn, err := net.Dial("tcp", proxyLn.Addr().String())
+	if err != nil {
+		t.Fatalf("dial proxy: %v", err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	fmt.Fprintf(conn, "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
+	br := bufio.NewReader(conn)
+	status, err := br.ReadString('\n')
+	if err != nil || !strings.HasPrefix(status, "HTTP/1.1 200") {
+		t.Fatalf("CONNECT response = %q, err = %v", status, err)
+	}
+	if _, err := br.ReadString('\n'); err != nil {
+		t.Fatalf("read CONNECT header terminator: %v", err)
+	}
+
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: "example.com", InsecureSkipVerify: true})
+	if err := tlsConn.Handshake(); err != nil {
+		t.Fatalf("TLS handshake: %v", err)
+	}
+
+	fmt.Fprintf(tlsConn, "GET /ws HTTP/1.1\r\nHost: example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+	tlsBr := bufio.NewReader(tlsConn)
+	status, err = tlsBr.ReadString('\n')
+	if err != nil || !strings.HasPrefix(status, "HTTP/1.1 101") {
+		t.Fatalf("upgrade response = %q, err = %v", status, err)
+	}
+	for {
+		line, err := tlsBr.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read upgrade headers: %v", err)
+		}
+		if line == "\r\n" {
+			break
+		}
+	}
+
+	if _, err := tlsConn.Write([]byte("ping")); err != nil {
+		t.Fatalf("write through tunnel: %v", err)
+	}
+	echo := make([]byte, 4)
+	if _, err := io.ReadFull(tlsBr, echo); err != nil {
+		t.Fatalf("read echo: %v", err)
+	}
+	if string(echo) != "ping" {
+		t.Errorf("echo = %q, want %q", echo, "ping")
 	}
 }
 
