@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.1.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.0.0...v5.1.0) (2026-09-05)
+
+
+### Features
+
+* **proxy:** websockets ([#127](https://github.com/archie-judd/agent-sandbox.nix/issues/127)) ([4f1b185](https://github.com/archie-judd/agent-sandbox.nix/commit/4f1b1854f3048c8e0145a8b3c3e847af98214d55))
+
+
+### Bug Fixes
+
+* **proxy:** write the 101 handshake in a single write ([#129](https://github.com/archie-judd/agent-sandbox.nix/issues/129)) ([e9176ab](https://github.com/archie-judd/agent-sandbox.nix/commit/e9176ab0299d29eb92f6ea5d526088c8bc7f9f90))
+
 ## [5.0.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.2.0...v5.0.0) (2026-09-05)
 
 
