@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -333,5 +334,49 @@ func TestFirstContact(t *testing.T) {
 	}
 	if !firstContact("other." + host) {
 		t.Errorf("firstContact of an unseen host = false, want true")
+	}
+}
+
+type countingWriter struct {
+	writes int
+	buf    bytes.Buffer
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.writes++
+	return c.buf.Write(p)
+}
+
+func TestWriteSwitchingProtocolsSingleWrite(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusSwitchingProtocols,
+		Header: http.Header{
+			"Upgrade":                {"websocket"},
+			"Connection":             {"Upgrade"},
+			"Sec-Websocket-Accept":   {"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="},
+			"Sec-Websocket-Protocol": {"chat"},
+			"Date":                   {"Fri, 05 Sep 2026 12:46:33 GMT"},
+			"Server":                 {"cloudflare"},
+			"Cf-Ray":                 {"deadbeefcafe-LHR"},
+		},
+	}
+	var w countingWriter
+	if err := writeSwitchingProtocols(&w, resp); err != nil {
+		t.Fatalf("writeSwitchingProtocols: %v", err)
+	}
+	if w.writes != 1 {
+		t.Errorf("writes = %d, want 1: a TLS conn emits a record per write, and clients reject a drip-fed handshake", w.writes)
+	}
+	got := w.buf.String()
+	if !strings.HasPrefix(got, "HTTP/1.1 101 Switching Protocols\r\n") {
+		t.Errorf("status line = %q", got)
+	}
+	if !strings.HasSuffix(got, "\r\n\r\n") {
+		t.Errorf("header block not terminated: %q", got)
+	}
+	for _, want := range []string{"Upgrade: websocket", "Sec-Websocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo="} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
 	}
 }

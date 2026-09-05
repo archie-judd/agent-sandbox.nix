@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -334,14 +335,17 @@ func applyFilters(req *http.Request, host string, cfg Config) (int, string) {
 	return 0, ""
 }
 
+// Assembled before writing because w is a TLS connection, which emits a record
+// per Write, and Header.Write issues four per header. Clients that count small
+// reads to spot a slow-drip attack reject a handshake split that finely.
 func writeSwitchingProtocols(w io.Writer, resp *http.Response) error {
-	if _, err := fmt.Fprintf(w, "HTTP/1.1 %d %s\r\n", resp.StatusCode, http.StatusText(resp.StatusCode)); err != nil {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "HTTP/1.1 %d %s\r\n", resp.StatusCode, http.StatusText(resp.StatusCode))
+	if err := resp.Header.Write(&buf); err != nil {
 		return err
 	}
-	if err := resp.Header.Write(w); err != nil {
-		return err
-	}
-	_, err := io.WriteString(w, "\r\n")
+	buf.WriteString("\r\n")
+	_, err := w.Write(buf.Bytes())
 	return err
 }
 
