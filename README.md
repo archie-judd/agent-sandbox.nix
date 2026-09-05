@@ -167,7 +167,7 @@ To restrict internet access, set `allowedDomains`. The sandbox can then reach on
 
 The sandbox matches domains by suffix, so `"anthropic.com"` also matches all `*.anthropic.com` subdomains. The key `"*"` is a default policy, applied to any domain no other entry matches. `{ "*" = "*"; }` therefore allows every domain while still routing through the proxy, which is useful for [deriving an allowlist](#deriving-an-allowlist) but is not a restriction.
 
-When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. The proxy inspects each request by domain and HTTP method. The sandbox cannot avoid the proxy, and DNS resolution is blocked. WebSocket connections are not permitted. The proxy records each host on first contact, and every blocked request, in `proxy.log`, in the launch's [session directory](#session-directories).
+When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. The proxy inspects each request by domain and HTTP method. The sandbox cannot avoid the proxy, and DNS resolution is blocked. WebSocket connections are permitted only to a domain whose policy is `"*"` (a plain list entry means the same). A domain limited to specific methods refuses the upgrade, because an established WebSocket is a two-way stream the proxy cannot filter by method. The proxy records each host on first contact, and every blocked request, in `proxy.log`, in the launch's [session directory](#session-directories).
 
 Known limitations when the proxy is active:
 
@@ -405,7 +405,7 @@ allowedDomains = { "*" = "*"; };
 
 The agent works normally, and the log names each host on first contact. Replace the `"*"` entry with what you saw, then run again and confirm nothing is blocked.
 
-Keep the methods as narrow as the agent allows. Use `[ "GET" "HEAD" ]` for anything it only reads from. Leaving `allowedDomains` unset is not a discovery mode: with no domains to enforce, the sandbox runs no proxy at all and writes no `proxy.log`.
+Keep the methods as narrow as the agent allows. Use `[ "GET" "HEAD" ]` for anything it only reads from. An agent that uses WebSockets (Codex does) needs `"*"` for that domain.
 
 ## Troubleshooting
 

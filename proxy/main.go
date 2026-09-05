@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -325,9 +326,36 @@ func applyFilters(req *http.Request, host string, cfg Config) (int, string) {
 		return http.StatusForbidden, "body not allowed on this method"
 	}
 	if isWebSocketUpgrade(req) {
-		return http.StatusForbidden, "WebSocket not allowed"
+		policy, _ := lookupPolicy(host, cfg)
+		if !policy.AllowAll {
+			return http.StatusForbidden, "WebSocket not allowed"
+		}
 	}
 	return 0, ""
+}
+
+func writeSwitchingProtocols(w io.Writer, resp *http.Response) error {
+	if _, err := fmt.Fprintf(w, "HTTP/1.1 %d %s\r\n", resp.StatusCode, http.StatusText(resp.StatusCode)); err != nil {
+		return err
+	}
+	if err := resp.Header.Write(w); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, "\r\n")
+	return err
+}
+
+func tunnel(clientR io.Reader, clientW io.Writer, upstreamR io.Reader, upstreamW io.Writer) {
+	done := make(chan struct{}, 2)
+	go func() {
+		io.Copy(upstreamW, clientR)
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(clientW, upstreamR)
+		done <- struct{}{}
+	}()
+	<-done
 }
 
 // errBlockedAddress marks a policy refusal to dial, as distinct from a dial
@@ -522,6 +550,18 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 			return
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusSwitchingProtocols && isWebSocketUpgrade(req) {
+			rw, ok := resp.Body.(io.ReadWriteCloser)
+			if !ok {
+				fmt.Fprintf(conn, "HTTP/1.1 502 Bad Gateway\r\n\r\n")
+				return
+			}
+			if err := writeSwitchingProtocols(conn, resp); err != nil {
+				return
+			}
+			tunnel(br, conn, rw, rw)
+			return
+		}
 		resp.Write(conn)
 	}
 }
@@ -633,6 +673,14 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		resp, err := http.ReadResponse(upstreamBuf, req)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s upstream read error for %s: %v\n", time.Now().Format(time.RFC3339), host, err)
+			return
+		}
+		if resp.StatusCode == http.StatusSwitchingProtocols && isWebSocketUpgrade(req) {
+			resp.Body.Close()
+			if err := writeSwitchingProtocols(clientTLS, resp); err != nil {
+				return
+			}
+			tunnel(clientBuf, clientTLS, upstreamBuf, upstreamConn)
 			return
 		}
 		if err := resp.Write(clientTLS); err != nil {
