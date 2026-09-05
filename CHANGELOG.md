@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.0.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.2.0...v5.0.0) (2026-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename allowedLocalPorts -> allowedHostPorts
+
+### Features
+
+* allowedInboundPorts — host-to-sandbox TCP port forwards ([#116](https://github.com/archie-judd/agent-sandbox.nix/issues/116)) ([c84478a](https://github.com/archie-judd/agent-sandbox.nix/commit/c84478ae3ccd0f6fbbc790ef2ce6907e9e4390db))
+* rename allowedLocalPorts -&gt; allowedHostPorts ([99b75c8](https://github.com/archie-judd/agent-sandbox.nix/commit/99b75c820c9a2b6055250f4de6eb78a7641f855b))
+
 ## [4.2.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.4...v4.2.0) (2026-09-05)
 
 
