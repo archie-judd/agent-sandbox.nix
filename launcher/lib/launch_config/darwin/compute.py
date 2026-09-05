@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from launcher.lib.build_spec import SandboxBuildSpecDarwin
-from launcher.lib.constants import CA_BUNDLE, CA_CERT, PASSWD, SEATBELT_PROFILE
+from launcher.lib.constants import (
+    CA_BUNDLE,
+    CA_CERT,
+    NO_PROXY_HOSTS,
+    PASSWD,
+    SEATBELT_PROFILE,
+)
 from launcher.lib.git_state import (
     GitState,
 )
@@ -172,7 +178,7 @@ def _get_computed_env(
     bundle = session.session_dir / CA_BUNDLE
     cert = session.session_dir / CA_CERT
     proxy_url = f"http://127.0.0.1:{session.proxy.port}"
-    return pairs + [
+    pairs += [
         f"SSL_CERT_FILE={bundle}",
         f"NIX_SSL_CERT_FILE={bundle}",
         f"NODE_EXTRA_CA_CERTS={cert}",
@@ -182,6 +188,15 @@ def _get_computed_env(
         f"http_proxy={proxy_url}",
         f"https_proxy={proxy_url}",
     ]
+    # Only when a port is actually open: with none, a loopback request is
+    # better refused by the proxy, which says so in proxy.log, than dropped
+    # by the seatbelt, which says nothing.
+    if spec.allowed_local_ports is None or spec.allowed_local_ports:
+        pairs += [
+            f"NO_PROXY={NO_PROXY_HOSTS}",
+            f"no_proxy={NO_PROXY_HOSTS}",
+        ]
+    return pairs
 
 
 def _get_profile_lines(

@@ -21,6 +21,11 @@ CLEANUP_IF_EMPTY = "cleanup-if-empty"
 STUB_PID = "stub.pid"
 
 PROXY_LISTEN_HOST = "127.0.0.1"
+# The proxy runs on the host, so it refuses every loopback address: honouring
+# one would reach host services allowedLocalPorts exists to gate. A client that
+# obeys HTTP_PROXY would hand it those requests anyway and get a 403, never
+# taking the direct path allowedLocalPorts opened. These send it there instead.
+NO_PROXY_HOSTS = "localhost,127.0.0.1,::1"
 PROXY_STARTUP_TIMEOUT_SECONDS = 5.0
 SESSION_RETENTION = 25
 

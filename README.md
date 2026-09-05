@@ -165,9 +165,9 @@ To restrict internet access, set `allowedDomains`. The sandbox can then reach on
 - Attrset (recommended): map each domain to `"*"` (all HTTP methods allowed) or to a list of permitted methods (for example `[ "GET" "HEAD" ]`).
 - List: `[ "anthropic.com" "sentry.io" ]`. This allows all methods for each domain.
 
-The sandbox matches domains by suffix, so `"anthropic.com"` also matches all `*.anthropic.com` subdomains. The key `"*"` is a default policy, applied to any domain no other entry matches. `{ "*" = "*"; }` therefore allows every domain while still routing through the proxy, which is useful for [deriving an allowlist](#deriving-an-allowlist) but is not a restriction.
+The sandbox matches domains by suffix, so `"anthropic.com"` also matches all `*.anthropic.com` subdomains.
 
-When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. The proxy inspects each request by domain and HTTP method. The sandbox cannot avoid the proxy, and DNS resolution is blocked. WebSocket connections are not permitted. The proxy records each host on first contact, and every blocked request, in `proxy.log`, in the launch's [session directory](#session-directories).
+When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. The proxy inspects each request by domain and HTTP method. The sandbox cannot avoid the proxy, and DNS resolution is blocked. WebSocket connections are not permitted. The proxy records blocked requests in `proxy.log`, in the launch's [session directory](#session-directories).
 
 Known limitations when the proxy is active:
 
@@ -389,6 +389,8 @@ allowedPackages = [ pkgs.nodejs pkgs.npm ];
 rwDirs = [ "$HOME/.npm" ]; # Allow npm cache
 ```
 
+\<<\<<\<<< HEAD
+
 ### Deriving an allowlist
 
 The proxy logs the hosts it allows and everything it blocks, so you can build an allowlist from a real session rather than by guesswork. Watch the log while you use the agent:
@@ -406,6 +408,10 @@ allowedDomains = { "*" = "*"; };
 The agent works normally, and the log names each host on first contact. Replace the `"*"` entry with what you saw, then run again and confirm nothing is blocked.
 
 Keep the methods as narrow as the agent allows. Use `[ "GET" "HEAD" ]` for anything it only reads from. Leaving `allowedDomains` unset is not a discovery mode: with no domains to enforce, the sandbox runs no proxy at all and writes no `proxy.log`.
+
+\=======
+
+> > > > > > > e69f5dd (feat(launcher): set NO_PROXY when a local port is open)
 
 ## Troubleshooting
 
@@ -426,7 +432,7 @@ The other files hold the configuration that the launch was assembled from, so th
 | File | Platform | What it holds |
 |---|---|---|
 | `launch.log` | both | What was requested, what was decided, how it ended |
-| `proxy.log` | both | The filtering proxy's output: the hosts it allowed, and everything it blocked |
+| `proxy.log` | both | The filtering proxy's output, including blocked domains |
 | `seatbelt.sb` | macOS | The seatbelt profile that `sandbox-exec` enforced |
 | `bwrap.args` | Linux | The bubblewrap arguments, including every bind |
 | `network.json` | Linux | The firewall rules and the routing applied to the sandbox |
