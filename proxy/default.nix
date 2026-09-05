@@ -1,7 +1,7 @@
 { pkgs }:
 pkgs.buildGoModule {
   pname = "sandbox-proxy";
-  version = "0.1.0";
+  version = pkgs.lib.fileContents ../version.txt;
   src = ./.;
   vendorHash = null;
 }
