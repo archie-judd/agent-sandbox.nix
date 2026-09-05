@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# allowedLocalPorts is emitted as host-local TCP port rules in the Darwin
+# allowedHostPorts is emitted as host-local TCP port rules in the Darwin
 # Seatbelt profile.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -13,7 +13,7 @@ SESSIONS=$(mktemp -d)
 trap 'rm -rf "$SESSIONS"' EXIT
 
 sandbox_profile_for_wrapper() {
-	local wrapper="$1/bin/sandboxed-bash-allowed-local-ports"
+	local wrapper="$1/bin/sandboxed-bash-allowed-host-ports"
 	local run
 	local profile
 	run=$(mktemp -d "$SESSIONS/run.XXXXXX")
@@ -29,7 +29,7 @@ expect_rule_count() {
 	local desc="$1" ports="$2" rule="$3" count="$4"
 	local build_log out profile actual
 	build_log=$(mktemp)
-	if ! out=$(build_fixture allowed-local-ports.nix --arg ports "$ports" 2>"$build_log"); then
+	if ! out=$(build_fixture allowed-host-ports.nix --arg ports "$ports" 2>"$build_log"); then
 		echo "FAIL: $desc (build failed)"
 		sed 's/^/    /' "$build_log"
 		rm -f "$build_log"
@@ -52,7 +52,7 @@ expect_rule_count() {
 	fi
 }
 
-echo "=== allowedLocalPorts Seatbelt rules (Darwin) ==="
+echo "=== allowedHostPorts Seatbelt rules (Darwin) ==="
 echo
 
 expect_rule_count "integer port emits one localhost rule" \

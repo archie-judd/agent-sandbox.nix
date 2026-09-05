@@ -30,12 +30,21 @@ class ProxySpec:
 
 
 @dataclass(frozen=True, kw_only=True)
+class PublishedPort:
+    port: int
+    bind_addr: str
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        return cls(port=int(data["port"]), bind_addr=str(data["bind_addr"]))
+
+
+@dataclass(frozen=True, kw_only=True)
 class DependenciesLinux:
     git: Path
     bwrap: Path
     pasta: Path
     nft: Path
-    ip: Path
     env: Path
     python: Path
 
@@ -45,12 +54,9 @@ class DependenciesLinux:
         bwrap = Path(data["bwrap"])
         pasta = Path(data["pasta"])
         nft = Path(data["nft"])
-        ip = Path(data["ip"])
         env = Path(data["env"])
         python = Path(data["python"])
-        return cls(
-            git=git, bwrap=bwrap, pasta=pasta, nft=nft, ip=ip, env=env, python=python
-        )
+        return cls(git=git, bwrap=bwrap, pasta=pasta, nft=nft, env=env, python=python)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -82,7 +88,8 @@ class SandboxBuildSpec:
     # never enter this process.
     env_keys: tuple[str, ...]
     # None means every host-local TCP port; the empty tuple means none.
-    allowed_local_ports: tuple[int, ...] | None
+    allowed_host_ports: tuple[int, ...] | None
+    published_ports: tuple[PublishedPort, ...]
     closure_paths_file: Path
     cacert_dir: Path
     cacert_bundle: Path
@@ -119,7 +126,8 @@ class _CommonBuildSpec(TypedDict):
     ro_dirs: tuple[str, ...]
     ro_files: tuple[str, ...]
     env_keys: tuple[str, ...]
-    allowed_local_ports: tuple[int, ...] | None
+    allowed_host_ports: tuple[int, ...] | None
+    published_ports: tuple[PublishedPort, ...]
     closure_paths_file: Path
     cacert_dir: Path
     cacert_bundle: Path
@@ -130,11 +138,15 @@ class _CommonBuildSpec(TypedDict):
 
 
 def _common_build_spec(data: Mapping[str, Any]) -> _CommonBuildSpec:
-    ports = data["allowed_local_ports"]
+    ports = data["allowed_host_ports"]
     if ports is None:
-        allowed_local_ports = None
+        allowed_host_ports = None
     else:
-        allowed_local_ports = tuple(ports)
+        allowed_host_ports = tuple(ports)
+
+    published_ports = tuple(
+        PublishedPort.from_dict(entry) for entry in data["published_ports"]
+    )
 
     proxy_data = data.get("proxy")
     if proxy_data is None:
@@ -153,7 +165,8 @@ def _common_build_spec(data: Mapping[str, Any]) -> _CommonBuildSpec:
         ro_dirs=tuple(data["ro_dirs"]),
         ro_files=tuple(data["ro_files"]),
         env_keys=tuple(data["env_keys"]),
-        allowed_local_ports=allowed_local_ports,
+        allowed_host_ports=allowed_host_ports,
+        published_ports=published_ports,
         closure_paths_file=Path(data["closure_paths_file"]),
         cacert_dir=Path(data["cacert_dir"]),
         cacert_bundle=Path(data["cacert_bundle"]),

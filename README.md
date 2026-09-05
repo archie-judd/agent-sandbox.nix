@@ -11,7 +11,7 @@ The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux
 - **Project directory**: read/write access to the directory you launch the agent from.
 - **Declared state**: read/write access to anything you list in `rwDirs` / `rwFiles`, or read-only access through `roDirs` / `roFiles`.
 - **Allowed packages**: the binaries you list in `allowedPackages` are on the agent's PATH, together with `bash` and `cacert`.
-- **Network**: open internet access by default, with host-local services blocked. Set `allowedDomains` to limit the internet domains. Set `allowedLocalPorts` to permit specific host-local TCP ports.
+- **Network**: open internet access by default, with host-local services blocked. Set `allowedDomains` to limit the internet domains. Set `allowedHostPorts` to permit specific host-local TCP ports.
 - **Environment**: only the variables you pass through `env` reach the agent. The sandbox clears the rest of the host environment.
 - **Git**: read/write access to the git directory, and read-only access to the working tree you launched in. See [Git](#git).
 - **Nix**: disabled by default. You can let the agent run nix commands.
@@ -27,7 +27,8 @@ The sandbox denies everything else. `$HOME` is an ephemeral writable tmpfs that 
     * [Arguments](#arguments)
     * [Network restrictions](#network-restrictions)
         * [Domain and internet access](#domain-and-internet-access)
-        * [Host-local ports](#host-local-ports)
+        * [Host ports](#host-ports)
+        * [Published ports](#published-ports)
     * [UNIX-domain sockets](#unix-domain-sockets)
     * [Supported agents](#supported-agents)
 * [Authentication](#authentication)
@@ -80,7 +81,7 @@ V1.x renames some arguments and removes `restrictNetwork`. If you use an old nam
 
 `allowedDomains` now controls network access on its own. Leave it unset for open internet. List the domains you want to allow. Set it to `[ ]` to block everything.
 
-**If you relied on host loopback reachability:** in V0.x, an unset `restrictNetwork` let the agent reach host-local services (Ollama, a local database, a local MCP server, and similar). This no longer works by default. The sandbox blocks host loopback unless you permit ports with `allowedLocalPorts`.
+**If you relied on host loopback reachability:** in V0.x, an unset `restrictNetwork` let the agent reach host-local services (Ollama, a local database, a local MCP server, and similar). This no longer works by default. The sandbox blocks host loopback unless you permit ports with `allowedHostPorts`.
 
 </details>
 
@@ -129,7 +130,8 @@ To keep the original command name as the alias, change the `outName` value, for 
 | `env` | no | Additional environment variables, as an attrset |
 | `allowedDomains` | no | Limits the domains the sandbox can reach. Leave it unset for open internet. Accepts a list of domains (all methods allowed), or an attrset that maps each domain to `"*"` or to a list of HTTP methods. `[ ]` blocks all internet access. |
 | `allowUnixSockets` | no | If `true`, the agent can create and connect to UNIX-domain (AF_UNIX) sockets. It can connect in directories it can read, and bind in directories it can write. Defaults to `false`. See [UNIX-domain sockets](#unix-domain-sockets). |
-| `allowedLocalPorts` | no | Host-local TCP ports the sandbox can reach. Defaults to `[ ]`. Set it to `null` to allow all host-local TCP ports. Otherwise, entries must be integers from `1` to `65535`. |
+| `allowedHostPorts` | no | Host-local TCP ports the sandbox can reach. Defaults to `[ ]`. Set it to `null` to allow all host-local TCP ports. Otherwise, entries must be integers from `1` to `65535`. |
+| `publishedPorts` | no | Host TCP ports forwarded INTO the sandbox, so services the agent runs are reachable from outside. Defaults to `[ ]`. Entries are an integer port (bound to `127.0.0.1`) or `{ port = <int>; bindAddr = "<ipv4>"; }`. There is no `null` form. See [Published ports](#published-ports). |
 | `allowNix` | no | If `true`, the sandbox exposes the host's `nix-daemon` socket and the full Nix store, so the agent can run `nix build`, `nix run`, `nix develop`, and similar commands. The sandbox adds `pkgs.nix` to PATH. Requires `allowUnixSockets = true`. Defaults to `false`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox). |
 
 The sandbox adds `bash` and `cacert` to `allowedPackages` by default. The sandbox needs a shell to run, and `cacert` is necessary for HTTPS. The library also exports `commonTools`, a list of standard CLI tools. See [`default.nix`](default.nix) for the full list.
@@ -173,7 +175,7 @@ The example sets `CLAUDE_CONFIG_DIR` to `$HOME/.claude` so that Claude writes `~
 
 ### Network restrictions
 
-The sandbox controls network access with two independent settings. `allowedDomains` controls outbound internet access. `allowedLocalPorts` controls access to host-local TCP services, such as databases and dev servers. The two settings do not interact. An allowed domain never gives loopback access, and an allowed local port never gives internet access. By default, internet access is open and all host-local services are blocked.
+The sandbox controls network access with three independent settings. `allowedDomains` controls outbound internet access. `allowedHostPorts` controls access to host-local TCP services, such as databases and dev servers. `publishedPorts` controls which sandbox-hosted TCP services are reachable from outside. The settings do not interact. An allowed domain never gives loopback access, an allowed local port never gives internet access, and neither makes anything inside the sandbox reachable — only `publishedPorts` does that. By default, internet access is open, all host-local services are blocked, and nothing inside the sandbox is reachable from outside.
 
 #### Domain and internet access
 
@@ -193,17 +195,30 @@ Known limitations when the proxy is active:
 - SSH-based git remotes: see [Git](#git).
 - On macOS, `gh` and some other tools cannot connect through the proxy: see [Caveats](#caveats).
 
-#### Host-local ports
+#### Host ports
 
-Host-local services (databases, dev servers, the SSH agent, the Docker socket, and similar) are blocked by default. They stay blocked when you set `allowedDomains`. Use `allowedLocalPorts` to permit access to specific ports:
+Host-local services (databases, dev servers, the SSH agent, the Docker socket, and similar) are blocked by default. They stay blocked when you set `allowedDomains`. Use `allowedHostPorts` to permit access to specific ports:
 
 ```nix
-allowedLocalPorts = [ 3000 5432 ];
+allowedHostPorts = [ 3000 5432 ];
 ```
 
-Set `allowedLocalPorts = null;` to allow all host-local TCP ports. Keep explicit port lists as short as possible. Broad access can expose host-local services.
+Set `allowedHostPorts = null;` to allow all host-local TCP ports. Keep explicit port lists as short as possible. Broad access can expose host-local services.
 
 On macOS, a service started inside the sandbox also needs its port listed here, because `sandbox-exec` shares localhost with the host and cannot tell the two apart. See [Linux vs macOS](#linux-vs-macos).
+
+#### Published ports
+
+When something outside must call INTO the sandbox — an integration-test suite that hosts a callback server, a dev server you want to open in the host browser — declare the ports with `publishedPorts`:
+
+```nix
+publishedPorts = [
+  3000                                      # host 127.0.0.1:3000 → sandbox :3000
+  { port = 8000; bindAddr = "0.0.0.0"; }    # reachable from anything that can reach the host
+];
+```
+
+The `bindAddr` is the exposure decision: the `127.0.0.1` default is reachable from host processes only, anything wider exposes whatever the agent runs on that port to everything that can reach that address. Prefer the narrowest `bindAddr` that serves the caller.
 
 ### UNIX-domain sockets
 
@@ -483,7 +498,7 @@ The agent can do something it should not do. It can run a bad prompt, process a 
 - The agent cannot read your SSH keys, browser sessions, password manager, the source code of other projects, or anything else in your home directory outside the paths you expose explicitly. This assumes that you launch the agent from a project directory. A launch from your home directory exposes all of it, and the sandbox says so before it starts.
 - The agent cannot delete or modify files outside the project directory and your declared `rwDirs` and `rwFiles`.
 - The agent cannot reach internet domains outside the ones you allow, when you set `allowedDomains`.
-- The agent cannot talk to local services on your laptop (databases, dev servers, the SSH agent, other terminal windows, and similar), unless you allow host-local TCP ports explicitly with `allowedLocalPorts`.
+- The agent cannot talk to local services on your laptop (databases, dev servers, the SSH agent, other terminal windows, and similar), unless you allow host-local TCP ports explicitly with `allowedHostPorts`.
 - The agent cannot leave code behind that runs on your host at your next git command. A writable git directory would permit that: a file in `hooks/`, a `core.hooksPath` or `alias.*` entry in a config file, or a pointer file aimed at a git directory the agent controls. Those paths are read-only for the repo you launch in.
 - The agent can run only the tools you list in `allowedPackages`, unless you set `allowNix = true`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox).
 - The agent cannot see your other running programs, read the environment variables they have set, or interfere with your other open terminals.
@@ -518,7 +533,7 @@ The sandbox refuses a launch directory above `$HOME` (`/`, `/home`, `/Users`) ou
 
 ### Linux vs macOS
 
-Both platforms enforce the same default protections. The one practical difference is localhost. On Linux, bubblewrap gives the sandbox its own network namespace, so services started inside the sandbox can reach each other freely on any localhost port. On macOS, `sandbox-exec` shares localhost with the host. Localhost communication inside the sandbox therefore needs the port in `allowedLocalPorts`, or all host-local ports allowed with `allowedLocalPorts = null;`. The same access also opens those host-local ports.
+Both platforms enforce the same default protections. The one practical difference is localhost. On Linux, bubblewrap gives the sandbox its own network namespace, so services started inside the sandbox can reach each other freely on any localhost port. On macOS, `sandbox-exec` shares localhost with the host. Localhost communication inside the sandbox therefore needs the port in `allowedHostPorts`, or all host-local ports allowed with `allowedHostPorts = null;`. The same access also opens those host-local ports.
 
 ### Is this the right tool for me?
 

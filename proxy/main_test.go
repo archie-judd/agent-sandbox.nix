@@ -41,7 +41,7 @@ func TestIsBlockedAddr(t *testing.T) {
 		{"::ffff:169.254.169.254", true},
 		{"fe80::1", true},
 		// Private ranges stay dialable: allowlisting an internal company
-		// server is legitimate, and allowedLocalPorts cannot express it.
+		// server is legitimate, and allowedHostPorts cannot express it.
 		{"10.0.0.5", false},
 		{"172.16.0.1", false},
 		{"192.168.1.1", false},
@@ -62,7 +62,7 @@ func TestIsBlockedAddr(t *testing.T) {
 
 // An allowlisted name whose address is loopback must be refused: the proxy
 // runs on the host, so dialing it would reach the host services that
-// allowedLocalPorts exists to gate.
+// allowedHostPorts exists to gate.
 func TestResolveVettedRefusesLoopback(t *testing.T) {
 	for _, host := range []string{"127.0.0.1", "::1", "localhost", "169.254.169.254"} {
 		addr, err := resolveVetted(host, "443")

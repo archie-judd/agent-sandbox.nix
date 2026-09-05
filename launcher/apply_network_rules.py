@@ -1,6 +1,6 @@
 """Configure pasta's network namespace, then exec onwards. Every failure is
-fatal: the ruleset and the dropped default route are security controls, so
-nothing may fall through to the exec below.
+fatal: the ruleset is a security control, so nothing may fall through to the
+exec below.
 
 Importing launcher.lib.constants imports launcher/__init__.py and
 launcher/lib/__init__.py on the way, which is why both are kept empty.
@@ -37,12 +37,6 @@ def main() -> None:
             raise SystemExit(
                 f"{ERROR_PREFIX} could not write {path}: {error}"
             ) from error
-
-    if network["delete_default_route"]:
-        _run(
-            [network["ip"], "route", "del", "default"],
-            "could not remove default route",
-        )
 
     _run(
         [network["nft"], "-f", "-"],

@@ -2,7 +2,8 @@
 # Legacy-argument migration errors (shared across platforms).
 #
 # Each removed/renamed mkSandbox argument (extraEnv, stateDirs, stateFiles,
-# restrictNetwork) must fail at *eval* time with the migration message from
+# restrictNetwork, allowedLocalPorts) must fail at *eval* time with the
+# migration message from
 # shared.assertNoLegacyArgs — never silently build under the old name.
 #
 # We force the wrapper to WHNF with `builtins.seq wrapper "ok"`, which fires
@@ -76,6 +77,8 @@ expect_legacy_throw "stateFiles is rejected with migration hint" \
 	'stateFiles = [ ];' "Use 'rwFiles' instead."
 expect_legacy_throw "restrictNetwork is rejected with migration hint" \
 	'restrictNetwork = true;' "'restrictNetwork' argument is deprecated"
+expect_legacy_throw "allowedLocalPorts is rejected with migration hint" \
+	'allowedLocalPorts = [ ];' "Use 'allowedHostPorts' instead."
 
 print_results
 exit_status

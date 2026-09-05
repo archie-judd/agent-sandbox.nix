@@ -14,7 +14,8 @@
   roDirs,
   roFiles,
   env,
-  allowedLocalPorts,
+  allowedHostPorts,
+  publishedPorts,
   closurePathsFile,
   preEntryScript,
   allowedDomains,
@@ -35,7 +36,6 @@ let
         bwrap = "${pkgs.bubblewrap}/bin/bwrap";
         pasta = "${pkgs.passt}/bin/pasta";
         nft = "${pkgs.nftables}/bin/nft";
-        ip = "${pkgs.iproute2}/bin/ip";
         env = "${pkgs.coreutils}/bin/env";
         python = "${pkgs.python3}/bin/python3";
       }
@@ -84,7 +84,11 @@ let
     # Keys only. The values are runtime shell expressions, emitted as a
     # fragment the stub sources; they never reach Python.
     env_keys = builtins.attrNames env;
-    allowed_local_ports = allowedLocalPorts;
+    allowed_host_ports = allowedHostPorts;
+    published_ports = map (entry: {
+      port = entry.port;
+      bind_addr = entry.bindAddr;
+    }) publishedPorts;
     closure_paths_file = "${closurePathsFile}";
     cacert_dir = "${pkgs.cacert}/etc/ssl/certs";
     cacert_bundle = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";

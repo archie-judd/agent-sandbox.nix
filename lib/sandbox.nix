@@ -13,7 +13,8 @@
   roFiles ? [ ],
   env ? { },
   allowedDomains ? null,
-  allowedLocalPorts ? [ ],
+  allowedHostPorts ? [ ],
+  publishedPorts ? [ ],
   # Internal, for the test harness: maps "host" to "addr:port" so the proxy
   # dials a local address instead of resolving the original.
   _proxyRedirects ? { },
@@ -22,6 +23,7 @@
   extraEnv ? null,
   stateDirs ? null,
   stateFiles ? null,
+  allowedLocalPorts ? null,
 }:
 let
   platform = if pkgs.stdenv.isDarwin then "darwin" else "linux";
@@ -40,7 +42,9 @@ let
     ++ [ shared.preEntryScript ]
   );
 
-  validatedAllowedLocalPorts = shared.validateAllowedLocalPorts allowedLocalPorts;
+  validatedAllowedHostPorts = shared.validateAllowedHostPorts allowedHostPorts;
+
+  validatedPublishedPorts = shared.validatePublishedPorts publishedPorts;
 
   validatedAllowUnixSockets = shared.validateAllowUnixSockets {
     allowNix = allowNix;
@@ -64,7 +68,8 @@ let
       roDirs = roDirs;
       roFiles = roFiles;
       env = env;
-      allowedLocalPorts = validatedAllowedLocalPorts;
+      allowedHostPorts = validatedAllowedHostPorts;
+      publishedPorts = validatedPublishedPorts;
       allowUnixSockets = validatedAllowUnixSockets;
       closurePathsFile = closurePathsFile;
       preEntryScript = shared.preEntryScript;
@@ -92,7 +97,9 @@ shared.mkWrapper {
     extraEnv = extraEnv;
     stateDirs = stateDirs;
     stateFiles = stateFiles;
+    allowedLocalPorts = allowedLocalPorts;
   };
-  allowedLocalPorts = validatedAllowedLocalPorts;
+  allowedHostPorts = validatedAllowedHostPorts;
+  publishedPorts = validatedPublishedPorts;
   allowUnixSockets = validatedAllowUnixSockets;
 }

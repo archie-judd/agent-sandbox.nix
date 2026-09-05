@@ -4,17 +4,21 @@ from typing import Sequence
 
 
 def get_nft_rules(
-    gateway_ip: str, proxy_port: int | None, allowed_local_ports: Sequence[int] | None
+    gateway_ip: str,
+    proxy_port: int | None,
+    allowed_host_ports: Sequence[int] | None,
+    published_ports: Sequence[int] = (),
 ) -> list[str]:
     """Restricted mode drops everything by default and permits only
     in-namespace loopback and TCP to the proxy. Open mode drops only traffic
     addressed to the pasta gateway, which blocks host loopback services
-    without touching internet traffic."""
-    if allowed_local_ports is None:
+    without touching internet traffic. published_ports are the pasta -t
+    forwards' in-namespace ports."""
+    if allowed_host_ports is None:
         # TCP-only; null means every host-local TCP port.
         matches = ["meta l4proto tcp"]
     else:
-        matches = [f"tcp dport {port}" for port in allowed_local_ports]
+        matches = [f"tcp dport {port}" for port in allowed_host_ports]
 
     rules = ["add table ip sandbox_filter"]
     if proxy_port is None:
@@ -28,6 +32,17 @@ def get_nft_rules(
             "{ type filter hook output priority 0 ; policy drop ; }"
         )
         rules.append("add rule ip sandbox_filter output oif lo accept")
+        # Reply traffic of inbound forwards: a non-local peer is delivered
+        # over the tap device (not the spliced loopback), so the server's
+        # replies leave via the tap and need their own accept. `ct state
+        # established` keeps this from widening egress: an outbound flow
+        # sourced from a granted port never reaches established, because its
+        # initial SYN is dropped here.
+        rules += [
+            f"add rule ip sandbox_filter output tcp sport {port} "
+            "ct state established accept"
+            for port in sorted(set(published_ports))
+        ]
 
     if matches:
         # The DNAT'd flow needs SNAT so pasta sees it as coming from the

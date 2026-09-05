@@ -4,6 +4,7 @@ owns the order, which is load-bearing: seatbelt is last-match-wins."""
 from pathlib import Path
 from typing import Sequence
 
+from launcher.lib.build_spec import PublishedPort
 from launcher.lib.host_state import DeclaredDir, DeclaredPath
 
 HEADER = (
@@ -347,35 +348,58 @@ def unix_sockets(
     return lines
 
 
-def _local_port_rules(allowed_local_ports: Sequence[int] | None) -> list[str]:
+def _host_port_rules(allowed_host_ports: Sequence[int] | None) -> list[str]:
     # TCP-only; None means every host-local TCP port.
-    if allowed_local_ports is None:
+    if allowed_host_ports is None:
         return ['(allow network-outbound (remote ip "localhost:*"))']
     return [
         f'(allow network-outbound (remote ip "localhost:{port}"))'
-        for port in allowed_local_ports
+        for port in allowed_host_ports
     ]
 
 
+def _published_port_rules(published_ports: Sequence[PublishedPort]) -> list[str]:
+    # Darwin has no network namespace: the grant IS the bind + accept
+    # allowance, nothing is forwarded. A non-loopback bindAddr becomes the
+    # wildcard, because Seatbelt's ip filter only knows localhost vs *.
+    rules: list[str] = []
+    for forward in published_ports:
+        local = (
+            f"localhost:{forward.port}"
+            if forward.bind_addr == "127.0.0.1"
+            else f"*:{forward.port}"
+        )
+        rules.append(f'(allow network-bind (local ip "{local}"))')
+        rules.append(f'(allow network-inbound (local ip "{local}"))')
+    return rules
+
+
 def network_restricted(
-    proxy_port: int, allowed_local_ports: Sequence[int] | None
+    proxy_port: int,
+    allowed_host_ports: Sequence[int] | None,
+    published_ports: Sequence[PublishedPort],
 ) -> list[str]:
     # Pinned to the proxy port so other loopback services cannot be reached
     # directly, bypassing the proxy's filtering. UNIX-socket egress is
     # deliberately absent: it would reach any host socket the UID can
     # (terminal IPC, ssh-agent), and the proxy speaks TCP.
-    return [
-        "",
-        ";; Network — localhost only, pinned to the proxy port",
-        '(allow network-bind (local ip "localhost:*"))',
-        "(allow system-socket)",
-        f'(allow network-outbound (remote ip "localhost:{proxy_port}"))',
-    ] + _local_port_rules(allowed_local_ports)
+    return (
+        [
+            "",
+            ";; Network — localhost only, pinned to the proxy port",
+            '(allow network-bind (local ip "localhost:*"))',
+            "(allow system-socket)",
+            f'(allow network-outbound (remote ip "localhost:{proxy_port}"))',
+        ]
+        + _host_port_rules(allowed_host_ports)
+        + _published_port_rules(published_ports)
+    )
 
 
-def network_open(allowed_local_ports: Sequence[int] | None) -> list[str]:
+def network_open(allowed_host_ports: Sequence[int] | None) -> list[str]:
     # system-socket gates socket(PF_SYSTEM, ...), meaning kernel-control
-    # sockets and utun, not AF_UNIX.
+    # sockets and utun, not AF_UNIX. No _published_port_rules here: the blanket
+    # (allow network*) already covers bind and inbound in open mode.
     return [
         "",
         ";; Network — open, with loopback and AF_UNIX denied",
@@ -386,4 +410,4 @@ def network_open(allowed_local_ports: Sequence[int] | None) -> list[str]:
         ";; Required for DNS: getaddrinfo() resolves over this socket.",
         "(allow network-outbound",
         '  (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))',
-    ] + _local_port_rules(allowed_local_ports)
+    ] + _host_port_rules(allowed_host_ports)

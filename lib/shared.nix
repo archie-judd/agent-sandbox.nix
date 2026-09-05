@@ -35,21 +35,61 @@ let
           allowedDomains;
     in
     pkgs.writeText "sandbox-allowlist.json" (builtins.toJSON attrset);
-  validateAllowedLocalPorts =
-    allowedLocalPorts:
-    if allowedLocalPorts == null then
+  # Shared by the host-port and published-port validators.
+  validPort = port: builtins.isInt port && port >= 1 && port <= 65535;
+  validateAllowedHostPorts =
+    allowedHostPorts:
+    if allowedHostPorts == null then
       null
-    else if !(builtins.isList allowedLocalPorts) then
-      builtins.throw "${errorPrefix} allowedLocalPorts must be null or a list of integers from 1 to 65535"
+    else if !(builtins.isList allowedHostPorts) then
+      builtins.throw "${errorPrefix} allowedHostPorts must be null or a list of integers from 1 to 65535"
     else
       let
-        validPort = port: builtins.isInt port && port >= 1 && port <= 65535;
-        invalidPorts = builtins.filter (port: !validPort port) allowedLocalPorts;
+        invalidPorts = builtins.filter (port: !validPort port) allowedHostPorts;
       in
       if invalidPorts != [ ] then
-        builtins.throw "${errorPrefix} allowedLocalPorts must only contain integers from 1 to 65535 (null allows all). Invalid: ${builtins.toJSON invalidPorts}"
+        builtins.throw "${errorPrefix} allowedHostPorts must only contain integers from 1 to 65535 (null allows all). Invalid: ${builtins.toJSON invalidPorts}"
       else
-        pkgs.lib.unique allowedLocalPorts;
+        pkgs.lib.unique allowedHostPorts;
+  # Deliberately no null form: "every port, reachable from the host" is
+  # never the intended published surface, unlike allowedHostPorts' null.
+  validatePublishedPorts =
+    publishedPorts:
+    if !(builtins.isList publishedPorts) then
+      builtins.throw "${errorPrefix} publishedPorts must be a list whose entries are integers from 1 to 65535 or { port = <int>; bindAddr = \"<ipv4>\"; }"
+    else
+      let
+        validAddr =
+          addr:
+          builtins.isString addr
+          && builtins.match "([0-9]{1,3}\\.){3}[0-9]{1,3}" addr != null
+          && builtins.all (octet: pkgs.lib.toInt octet <= 255) (
+            builtins.filter builtins.isString (builtins.split "\\." addr)
+          );
+        normalize =
+          entry:
+          if builtins.isInt entry then
+            {
+              port = entry;
+              bindAddr = "127.0.0.1";
+            }
+          else if builtins.isAttrs entry then
+            {
+              port = entry.port or null;
+              bindAddr = entry.bindAddr or "127.0.0.1";
+            }
+          else
+            {
+              port = null;
+              bindAddr = null;
+            };
+        normalized = map normalize publishedPorts;
+        invalid = builtins.filter (entry: !(validPort entry.port) || !(validAddr entry.bindAddr)) normalized;
+      in
+      if invalid != [ ] then
+        builtins.throw "${errorPrefix} publishedPorts entries must be integers from 1 to 65535 or { port = <1-65535>; bindAddr = \"<ipv4>\"; }. Invalid: ${builtins.toJSON invalid}"
+      else
+        pkgs.lib.unique normalized;
   # Raised on macOS too, where the combination would technically work, so
   # the two platforms accept the same configurations.
   validateAllowUnixSockets =
@@ -66,9 +106,15 @@ let
       extraEnv,
       stateDirs,
       stateFiles,
+      allowedLocalPorts,
     }:
     let
       legacyArgHints = {
+        allowedLocalPorts =
+          if allowedLocalPorts != null then
+            "- The 'allowedLocalPorts' argument is deprecated. Use 'allowedHostPorts' instead."
+          else
+            null;
         restrictNetwork =
           if restrictNetwork != null then
             "- The 'restrictNetwork' argument is deprecated. Network access is controlled by 'allowedDomains': omit it for open internet, set a list/attrset to filter, or [] to block all."
@@ -92,7 +138,13 @@ let
       );
       throwMsg = "${errorPrefix} Deprecated arguments:\n\n${throwMsgHints}\n\nMigration guide: https://github.com/archie-judd/agent-sandbox.nix/blob/main/README.md#v0x-to-v1x-migration-guide";
     in
-    if restrictNetwork != null || extraEnv != null || stateDirs != null || stateFiles != null then
+    if
+      restrictNetwork != null
+      || extraEnv != null
+      || stateDirs != null
+      || stateFiles != null
+      || allowedLocalPorts != null
+    then
       builtins.throw throwMsg
     else
       null;
@@ -150,19 +202,22 @@ let
       stub,
       buildSpec,
       legacyArgs,
-      allowedLocalPorts,
+      allowedHostPorts,
+      publishedPorts,
       allowUnixSockets,
     }:
     builtins.seq (assertNoLegacyArgs legacyArgs) (
-      builtins.seq allowedLocalPorts (
-        builtins.seq allowUnixSockets (
-          pkgs.runCommand outName { } ''
-            mkdir -p $out/bin
-            install -m755 ${stub} $out/bin/${outName}
-          ''
-          // {
-            buildSpec = buildSpec;
-          }
+      builtins.seq allowedHostPorts (
+        builtins.seq publishedPorts (
+          builtins.seq allowUnixSockets (
+            pkgs.runCommand outName { } ''
+              mkdir -p $out/bin
+              install -m755 ${stub} $out/bin/${outName}
+            ''
+            // {
+              buildSpec = buildSpec;
+            }
+          )
         )
       )
     );
@@ -172,7 +227,8 @@ in
   mkAllowlistFile = mkAllowlistFile;
   sandboxProxy = sandboxProxy;
   assertNoLegacyArgs = assertNoLegacyArgs;
-  validateAllowedLocalPorts = validateAllowedLocalPorts;
+  validateAllowedHostPorts = validateAllowedHostPorts;
+  validatePublishedPorts = validatePublishedPorts;
   validateAllowUnixSockets = validateAllowUnixSockets;
   preEntryScript = preEntryScript;
   launcherPackage = launcherPackage;

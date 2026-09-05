@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Test: allowedLocalPorts = null allows all host-local TCP ports on Linux.
+# Test: allowedHostPorts = null allows all host-local TCP ports on Linux.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEST_CWD="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$SCRIPT_DIR/../lib.sh"
 
-SANDBOXED=$(build_fixture allowed-local-ports.nix --arg ports null)
-SHELL="$SANDBOXED/bin/sandboxed-bash-allowed-local-ports"
+SANDBOXED=$(build_fixture allowed-host-ports.nix --arg ports null)
+SHELL="$SANDBOXED/bin/sandboxed-bash-allowed-host-ports"
 
 HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
 
@@ -18,7 +18,7 @@ PORT_B=18938
 
 TESTDIR_ROOT="$TEST_CWD/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
-TESTDIR=$(mktemp -d "$TESTDIR_ROOT/allowed-local-ports-null-linux.XXXXXX")
+TESTDIR=$(mktemp -d "$TESTDIR_ROOT/allowed-host-ports-null-linux.XXXXXX")
 
 SERVER_PID=""
 cleanup() {
@@ -37,7 +37,7 @@ for port in "$PORT_A" "$PORT_B"; do
 	fi
 done
 
-echo "=== allowedLocalPorts = null (Linux) ==="
+echo "=== allowedHostPorts = null (Linux) ==="
 echo "PORT_A=$PORT_A PORT_B=$PORT_B"
 echo
 

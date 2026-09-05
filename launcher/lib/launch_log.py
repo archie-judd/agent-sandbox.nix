@@ -53,12 +53,20 @@ def write_launch_request(
     now: datetime,
 ) -> None:
     """Written before the host is read, so it survives everything after it."""
-    if spec.allowed_local_ports is None:
-        local_ports = "all host-local TCP ports"
-    elif spec.allowed_local_ports:
-        local_ports = ", ".join(str(port) for port in spec.allowed_local_ports)
+    if spec.allowed_host_ports is None:
+        host_ports = "all host-local TCP ports"
+    elif spec.allowed_host_ports:
+        host_ports = ", ".join(str(port) for port in spec.allowed_host_ports)
     else:
-        local_ports = _NONE
+        host_ports = _NONE
+
+    if spec.published_ports:
+        published_ports = ", ".join(
+            f"{forward.bind_addr}/{forward.port}"
+            for forward in spec.published_ports
+        )
+    else:
+        published_ports = _NONE
 
     if spec.proxy is None:
         network = "unrestricted"
@@ -76,7 +84,8 @@ def write_launch_request(
             _field("network", network),
             _field("allowNix", str(spec.allow_nix).lower()),
             _field("allowUnixSockets", str(spec.allow_unix_sockets).lower()),
-            _field("allowedLocalPorts", local_ports),
+            _field("allowedHostPorts", host_ports),
+            _field("publishedPorts", published_ports),
             # Keys only. The values must never land here: keeping them out is
             # what makes a session directory safe to attach to an issue.
             _list_field("env keys", spec.env_keys),

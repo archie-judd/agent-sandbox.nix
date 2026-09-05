@@ -48,7 +48,10 @@ trap cleanup EXIT
 # start_listener <socket-path> <logfile> — a host-side listener that actually
 # accept()s. Refuses over-long paths loudly: past sun_path, bind() fails no
 # matter what the sandbox allows, and an expect_fail against the socket would
-# pass for the wrong reason.
+# pass for the wrong reason. Drains each connection to EOF before closing,
+# same as the darwin twin: the assertions here connect() without writing, but
+# any future byte-sending client would race an immediate close — on Linux a
+# close with unread data resets the connection, failing the client every time.
 start_listener() {
 	local sock_path="$1" logfile="$2"
 	if [ "${#sock_path}" -gt 100 ]; then
@@ -65,6 +68,8 @@ def loop():
     while True:
         try:
             c, _ = s.accept()
+            while c.recv(4096):
+                pass
             c.close()
         except Exception:
             break

@@ -4,7 +4,7 @@ let
 in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;
   binName = "bash";
-  outName = "sandboxed-bash-allowed-local-ports";
+  outName = "sandboxed-bash-allowed-host-ports";
   allowedPackages = [ pkgs.coreutils pkgs.curl pkgs.python3Minimal ];
-  allowedLocalPorts = ports;
+  allowedHostPorts = ports;
 }

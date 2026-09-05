@@ -130,7 +130,10 @@ trap cleanup EXIT
 
 # start_listener <socket-path> <logfile> — a host-side (unsandboxed)
 # UNIX-socket listener that actually accept()s, so a successful connect()
-# would observably complete, not just queue in the kernel backlog.
+# would observably complete, not just queue in the kernel backlog. It
+# drains each connection to EOF before closing: an immediate close races
+# the socat client's write of its probe byte, and losing that race fails
+# the client (EPIPE) — an assertion FAIL with the sandbox rules working.
 start_listener() {
 	local sock_path="$1" logfile="$2"
 	# Fail loudly instead of mysteriously: past this length bind() fails with
@@ -150,6 +153,8 @@ def loop():
     while True:
         try:
             c, _ = s.accept()
+            while c.recv(4096):
+                pass
             c.close()
         except Exception:
             break
