@@ -22,41 +22,41 @@ The sandbox denies everything else. `$HOME` is an ephemeral writable tmpfs that 
 
 <!-- vim-markdown-toc GFM -->
 
-- [Usage and configuration](#usage-and-configuration)
-  - [Templates](#templates)
-  - [Arguments](#arguments)
-  - [Network restrictions](#network-restrictions)
-    - [Domain and internet access](#domain-and-internet-access)
-    - [Host ports](#host-ports)
-    - [Published ports](#published-ports)
-  - [UNIX-domain sockets](#unix-domain-sockets)
-  - [Supported agents](#supported-agents)
-- [Authentication](#authentication)
-  - [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
-  - [Credential files via `rwDirs`](#credential-files-via-rwdirs)
-- [Git](#git)
-  - [What the sandbox exposes](#what-the-sandbox-exposes)
-  - [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
-  - [Git identity](#git-identity)
-  - [Read-only paths in the git directory](#read-only-paths-in-the-git-directory)
-- [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
-- [Common patterns / recipes](#common-patterns--recipes)
-  - [Python with uv](#python-with-uv)
-  - [Node.js with npm](#nodejs-with-npm)
-  - [Deriving an allowlist](#deriving-an-allowlist)
-- [Troubleshooting](#troubleshooting)
-  - [Session directories](#session-directories)
-  - [Reproduce it interactively](#reproduce-it-interactively)
-  - [macOS: system denial log](#macos-system-denial-log)
-- [Security](#security)
-  - [What it protects against](#what-it-protects-against)
-  - [What it doesn't protect against](#what-it-doesnt-protect-against)
-  - [Launching from your home directory](#launching-from-your-home-directory)
-  - [Specific things worth being aware of](#specific-things-worth-being-aware-of)
-  - [Linux vs macOS](#linux-vs-macos)
-  - [Is this the right tool for me?](#is-this-the-right-tool-for-me)
-- [Caveats](#caveats)
-- [Similar projects](#similar-projects)
+* [Usage and configuration](#usage-and-configuration)
+    * [Templates](#templates)
+    * [Arguments](#arguments)
+    * [Network restrictions](#network-restrictions)
+        * [Domain and internet access](#domain-and-internet-access)
+        * [Host ports](#host-ports)
+        * [Published ports](#published-ports)
+    * [UNIX-domain sockets](#unix-domain-sockets)
+    * [Supported agents](#supported-agents)
+* [Authentication](#authentication)
+    * [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
+    * [Credential files via `rwDirs`](#credential-files-via-rwdirs)
+* [Git](#git)
+    * [What the sandbox exposes](#what-the-sandbox-exposes)
+    * [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
+    * [Git identity](#git-identity)
+    * [Read-only paths in the git directory](#read-only-paths-in-the-git-directory)
+* [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
+* [Common patterns / recipes](#common-patterns--recipes)
+    * [Python with uv](#python-with-uv)
+    * [Node.js with npm](#nodejs-with-npm)
+    * [Deriving an allowlist](#deriving-an-allowlist)
+* [Troubleshooting](#troubleshooting)
+    * [Session directories](#session-directories)
+    * [Reproduce it interactively](#reproduce-it-interactively)
+    * [macOS: system denial log](#macos-system-denial-log)
+* [Security](#security)
+    * [What it protects against](#what-it-protects-against)
+    * [What it doesn't protect against](#what-it-doesnt-protect-against)
+    * [Launching from your home directory](#launching-from-your-home-directory)
+    * [Specific things worth being aware of](#specific-things-worth-being-aware-of)
+    * [Linux vs macOS](#linux-vs-macos)
+    * [Is this the right tool for me?](#is-this-the-right-tool-for-me)
+* [Caveats](#caveats)
+* [Similar projects](#similar-projects)
 
 <!-- vim-markdown-toc -->
 
@@ -167,7 +167,7 @@ To restrict internet access, set `allowedDomains`. The sandbox can then reach on
 
 The sandbox matches domains by suffix, so `"anthropic.com"` also matches all `*.anthropic.com` subdomains.
 
-When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. The proxy inspects each request by domain and HTTP method. The sandbox cannot avoid the proxy, and DNS resolution is blocked. WebSocket connections are not permitted. The proxy records blocked requests in `proxy.log`, in the launch's [session directory](#session-directories).
+When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. The proxy inspects each request by domain and HTTP method. The sandbox cannot avoid the proxy, and DNS resolution is blocked. WebSocket connections are not permitted. The proxy records each host on first contact, and every blocked request, in `proxy.log`, in the launch's [session directory](#session-directories).
 
 Known limitations when the proxy is active:
 
@@ -240,7 +240,7 @@ If you store your secret in a file instead (for example with sops), you can set 
 env = {
   CLAUDE_CODE_OAUTH_TOKEN = "$(${pkgs.coreutils}/bin/cat /run/secrets/claude-code-oauth-token)";
   ...
-;
+};
 ```
 
 ### Credential files via `rwDirs`
@@ -389,8 +389,6 @@ allowedPackages = [ pkgs.nodejs pkgs.npm ];
 rwDirs = [ "$HOME/.npm" ]; # Allow npm cache
 ```
 
-\<<\<<\<<< HEAD
-
 ### Deriving an allowlist
 
 The proxy logs the hosts it allows and everything it blocks, so you can build an allowlist from a real session rather than by guesswork. Watch the log while you use the agent:
@@ -408,10 +406,6 @@ allowedDomains = { "*" = "*"; };
 The agent works normally, and the log names each host on first contact. Replace the `"*"` entry with what you saw, then run again and confirm nothing is blocked.
 
 Keep the methods as narrow as the agent allows. Use `[ "GET" "HEAD" ]` for anything it only reads from. Leaving `allowedDomains` unset is not a discovery mode: with no domains to enforce, the sandbox runs no proxy at all and writes no `proxy.log`.
-
-\=======
-
-> > > > > > > e69f5dd (feat(launcher): set NO_PROXY when a local port is open)
 
 ## Troubleshooting
 
@@ -432,7 +426,7 @@ The other files hold the configuration that the launch was assembled from, so th
 | File | Platform | What it holds |
 |---|---|---|
 | `launch.log` | both | What was requested, what was decided, how it ended |
-| `proxy.log` | both | The filtering proxy's output, including blocked domains |
+| `proxy.log` | both | The filtering proxy's output: the hosts it allowed, and everything it blocked |
 | `seatbelt.sb` | macOS | The seatbelt profile that `sandbox-exec` enforced |
 | `bwrap.args` | Linux | The bubblewrap arguments, including every bind |
 | `network.json` | Linux | The firewall rules and the routing applied to the sandbox |

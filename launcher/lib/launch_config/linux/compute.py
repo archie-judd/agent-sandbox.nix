@@ -152,7 +152,7 @@ def _get_computed_env(
     # Only when a port is actually open: with none, a loopback request is
     # better refused by the proxy, which says so in proxy.log, than dropped
     # by the firewall, which says nothing.
-    if spec.allowed_local_ports is None or spec.allowed_local_ports:
+    if spec.allowed_host_ports is None or spec.allowed_host_ports:
         pairs += [
             f"NO_PROXY={NO_PROXY_HOSTS}",
             f"no_proxy={NO_PROXY_HOSTS}",
