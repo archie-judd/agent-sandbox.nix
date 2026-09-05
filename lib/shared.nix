@@ -84,7 +84,9 @@ let
               bindAddr = null;
             };
         normalized = map normalize publishedPorts;
-        invalid = builtins.filter (entry: !(validPort entry.port) || !(validAddr entry.bindAddr)) normalized;
+        invalid = builtins.filter (
+          entry: !(validPort entry.port) || !(validAddr entry.bindAddr)
+        ) normalized;
       in
       if invalid != [ ] then
         builtins.throw "${errorPrefix} publishedPorts entries must be integers from 1 to 65535 or { port = <1-65535>; bindAddr = \"<ipv4>\"; }. Invalid: ${builtins.toJSON invalid}"
@@ -136,7 +138,7 @@ let
       throwMsgHints = builtins.concatStringsSep "\n" (
         builtins.attrValues (pkgs.lib.filterAttrs (_: v: v != null) legacyArgHints)
       );
-      throwMsg = "${errorPrefix} Deprecated arguments:\n\n${throwMsgHints}\n\nMigration guide: https://github.com/archie-judd/agent-sandbox.nix/blob/main/README.md#v0x-to-v1x-migration-guide";
+      throwMsg = "${errorPrefix} Deprecated arguments:\n\n${throwMsgHints}";
     in
     if
       restrictNetwork != null
