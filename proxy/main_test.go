@@ -219,3 +219,16 @@ func TestHasRequestBody(t *testing.T) {
 		})
 	}
 }
+
+func TestFirstContact(t *testing.T) {
+	host := "first-contact.test"
+	if !firstContact(host) {
+		t.Errorf("firstContact(%q) = false on first call, want true", host)
+	}
+	if firstContact(host) {
+		t.Errorf("firstContact(%q) = true on repeat call, want false", host)
+	}
+	if !firstContact("other." + host) {
+		t.Errorf("firstContact of an unseen host = false, want true")
+	}
+}

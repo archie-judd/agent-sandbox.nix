@@ -42,6 +42,7 @@ The sandbox denies everything else. `$HOME` is an ephemeral writable tmpfs that 
 * [Common patterns / recipes](#common-patterns--recipes)
     * [Python with uv](#python-with-uv)
     * [Node.js with npm](#nodejs-with-npm)
+    * [Deriving an allowlist](#deriving-an-allowlist)
 * [Troubleshooting](#troubleshooting)
     * [Session directories](#session-directories)
     * [Reproduce it interactively](#reproduce-it-interactively)
@@ -185,7 +186,7 @@ To restrict internet access, set `allowedDomains`. The sandbox can then reach on
 
 The sandbox matches domains by suffix, so `"anthropic.com"` also matches all `*.anthropic.com` subdomains.
 
-When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. The proxy inspects each request by domain and HTTP method. The sandbox cannot avoid the proxy, and DNS resolution is blocked. WebSocket connections are not permitted. The proxy records blocked requests in `proxy.log`, in the launch's [session directory](#session-directories).
+When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. The proxy inspects each request by domain and HTTP method. The sandbox cannot avoid the proxy, and DNS resolution is blocked. WebSocket connections are not permitted. The proxy records each host on first contact, and every blocked request, in `proxy.log`, in the launch's [session directory](#session-directories).
 
 Known limitations when the proxy is active:
 
@@ -394,6 +395,24 @@ allowedPackages = [ pkgs.nodejs pkgs.npm ];
 rwDirs = [ "$HOME/.npm" ]; # Allow npm cache
 ```
 
+### Deriving an allowlist
+
+The proxy logs the hosts it allows and everything it blocks, so you can build an allowlist from a real session rather than by guesswork. Watch the log while you use the agent:
+
+```bash
+tail -f "$(ls -dt ~/.local/state/agent-sandbox/* | head -1)/proxy.log"
+```
+
+The quickest way to see the whole picture is one permissive run. `"*"` is a default policy that matches any domain the other entries do not:
+
+```nix
+allowedDomains = { "*" = "*"; };
+```
+
+The agent works normally, and the log names each host on first contact. Replace the `"*"` entry with what you saw, then run again and confirm nothing is blocked.
+
+Keep the methods as narrow as the agent allows. Use `[ "GET" "HEAD" ]` for anything it only reads from. Leaving `allowedDomains` unset is not a discovery mode: with no domains to enforce, the sandbox runs no proxy at all and writes no `proxy.log`.
+
 ## Troubleshooting
 
 If you have a problem, or you think the agent cannot access a file or folder that the defaults should permit, please raise an issue. The most useful attachment is the session directory described below.
@@ -413,7 +432,7 @@ The other files hold the configuration that the launch was assembled from, so th
 | File | Platform | What it holds |
 |---|---|---|
 | `launch.log` | both | What was requested, what was decided, how it ended |
-| `proxy.log` | both | The filtering proxy's output, including blocked domains |
+| `proxy.log` | both | The filtering proxy's output: the hosts it allowed, and everything it blocked |
 | `seatbelt.sb` | macOS | The seatbelt profile that `sandbox-exec` enforced |
 | `bwrap.args` | Linux | The bubblewrap arguments, including every bind |
 | `network.json` | Linux | The firewall rules and the routing applied to the sandbox |

@@ -334,6 +334,25 @@ func applyFilters(req *http.Request, host string, cfg Config) (int, string) {
 // that was attempted and failed, so callers answer 403 rather than 502.
 var errBlockedAddress = errors.New("host resolves to a blocked address")
 
+// Hosts already recorded as allowed. A session touches few hosts but makes
+// many requests, so the log records first contact per host: a line per
+// request would bury the denials it sits beside.
+var allowedHosts sync.Map
+
+// firstContact reports whether host has not been allowed before, and marks it
+// allowed. It is called only after a request has passed the filters, so a host
+// whose every request is refused never appears as allowed.
+func firstContact(host string) bool {
+	_, seen := allowedHosts.LoadOrStore(host, struct{}{})
+	return !seen
+}
+
+func logAllowed(host string) {
+	if firstContact(host) {
+		fmt.Fprintf(os.Stderr, "%s allowed: %s\n", time.Now().Format(time.RFC3339), host)
+	}
+}
+
 // isBlockedAddr reports whether ip is an address the proxy must never dial.
 // The allowlist matches names, and the address behind a name is chosen by
 // whoever controls its DNS: an allowlisted name pointed at 127.0.0.1 would
@@ -466,6 +485,7 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 			fmt.Fprintf(conn, "HTTP/1.1 %d %s\r\n\r\n", code, http.StatusText(code))
 			return
 		}
+		logAllowed(host)
 		if req.URL.Host == "" {
 			req.URL.Host = req.Host
 		}
@@ -585,6 +605,7 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 			resp.Write(clientTLS)
 			return
 		}
+		logAllowed(host)
 
 		if err := dialUpstream(); err != nil {
 			fmt.Fprintf(os.Stderr, "%s upstream dial error for %s: %v\n", time.Now().Format(time.RFC3339), hostPort, err)
