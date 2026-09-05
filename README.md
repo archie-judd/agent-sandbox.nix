@@ -64,27 +64,6 @@ The sandbox denies everything else. `$HOME` is an ephemeral writable tmpfs that 
 
 The quickest way to start is with a flake template. If you prefer a `shell.nix`, see [`shells/`](shells/) for examples you can use directly. For authentication, see [Authentication](#authentication).
 
-<details id="v0x-to-v1x-migration-guide">
-<summary><strong>V0.x to V1.x migration guide</strong></summary>
-<br>
-
-V1.x renames some arguments and removes `restrictNetwork`. If you use an old name, you get an error that tells you the new name. Update your config as follows:
-
-| Old | New |
-|---|---|
-| `extraEnv = { … }` | `env = { … }` |
-| `stateDirs = [ … ]` | `rwDirs = [ … ]` |
-| `stateFiles = [ … ]` | `rwFiles = [ … ]` |
-| `restrictNetwork = true; allowedDomains = …` | `allowedDomains = …` |
-| `restrictNetwork = true; allowedDomains = [ ]` | `allowedDomains = [ ]` |
-| `restrictNetwork = false` | remove it, and do not set `allowedDomains` |
-
-`allowedDomains` now controls network access on its own. Leave it unset for open internet. List the domains you want to allow. Set it to `[ ]` to block everything.
-
-**If you relied on host loopback reachability:** in V0.x, an unset `restrictNetwork` let the agent reach host-local services (Ollama, a local database, a local MCP server, and similar). This no longer works by default. The sandbox blocks host loopback unless you permit ports with `allowedHostPorts`.
-
-</details>
-
 ### Templates
 
 The repository provides flake templates for Claude Code and GitHub Copilot CLI for quick project setup. You can change either template to work with another CLI tool.
