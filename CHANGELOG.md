@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.2.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.4...v4.2.0) (2026-09-05)
+
+
+### Features
+
+* **proxy:** log each allowed host on first contact ([#123](https://github.com/archie-judd/agent-sandbox.nix/issues/123)) ([a69b1ee](https://github.com/archie-judd/agent-sandbox.nix/commit/a69b1eed7e15cede8ba52f90e80df2c6e355ff7c))
+
+
+### Bug Fixes
+
+* **darwin:** add the session tmpdir to the AF_UNIX socket scope ([#121](https://github.com/archie-judd/agent-sandbox.nix/issues/121)) ([b8c1e45](https://github.com/archie-judd/agent-sandbox.nix/commit/b8c1e459dc9b4765f403e4e1437797a335f0bc1f))
+
 ## [4.1.4](https://github.com/archie-judd/agent-sandbox.nix/compare/v4.1.3...v4.1.4) (2026-09-02)
 
 
