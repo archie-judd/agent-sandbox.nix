@@ -11,6 +11,7 @@ from launcher.lib.constants import (
     CA_BUNDLE,
     CA_CERT,
     NETWORK,
+    NO_PROXY_HOSTS,
     PASSWD,
     SECCOMP_FD,
     SECCOMP_FILTER,
@@ -138,7 +139,7 @@ def _get_computed_env(
         ]
 
     proxy_url = f"http://{PASTA_GATEWAY_IP}:{session.proxy.port}"
-    return pairs + [
+    pairs += [
         f"SSL_CERT_FILE={SANDBOX_CA_BUNDLE}",
         f"NIX_SSL_CERT_FILE={SANDBOX_CA_BUNDLE}",
         f"NODE_EXTRA_CA_CERTS={SANDBOX_CA_CERT}",
@@ -148,6 +149,15 @@ def _get_computed_env(
         f"http_proxy={proxy_url}",
         f"https_proxy={proxy_url}",
     ]
+    # Only when a port is actually open: with none, a loopback request is
+    # better refused by the proxy, which says so in proxy.log, than dropped
+    # by the firewall, which says nothing.
+    if spec.allowed_host_ports is None or spec.allowed_host_ports:
+        pairs += [
+            f"NO_PROXY={NO_PROXY_HOSTS}",
+            f"no_proxy={NO_PROXY_HOSTS}",
+        ]
+    return pairs
 
 
 def _get_bwrap_args(
