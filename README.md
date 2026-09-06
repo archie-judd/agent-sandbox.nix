@@ -104,8 +104,20 @@ Most agents need nothing beyond their template. This table details agent-specifi
 
 | Agent | Note |
 | --- | --- |
+| Claude Code | Set `CLAUDE_CONFIG_DIR` to the `rwDir` that holds Claude's state, rather than declaring `~/.claude.json` as an `rwFile`. See the note below the table. |
 | Codex | Codex sandboxes itself, and the two sandboxes cannot nest. Run `codex-sandboxed -s danger-full-access` and let this sandbox do the work. Without it, every command fails with `Failed to create unified exec process: Operation not permitted`. |
-| OpenCode | Authenticates with `ANTHROPIC_API_KEY` from console.anthropic.com. A `CLAUDE_CODE_OAUTH_TOKEN` will not work: it is scoped to Claude Code, and a Claude subscription does not include API credit. |
+
+<details>
+<summary><strong>Why set <code>CLAUDE_CONFIG_DIR</code> and not add <code>~/.claude.json</code> as a <code>rwFile</code>?</strong></summary>
+<br>
+
+Set `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `~/.claude.json` inside the read/write `rwDir`. If you add `~/.claude.json` as a `rwFile` instead, Claude writes temporary files to the ephemeral home root when it updates its configuration. Claude then tries to rename these files to `~/.claude.json`. The rename can fail, or behave in an unexpected way, because the temporary files land outside every declared `rwDir` and `rwFile`. This can sometimes corrupt the `~/.claude.json` file.
+<br>
+<br>
+
+> **Note:** If you also run Claude outside the sandbox, set `CLAUDE_CONFIG_DIR=$HOME/.claude` globally too. Otherwise the two use different config locations and diverge.
+
+</details>
 
 The sandbox is tested with Claude Code, Codex, GitHub Copilot CLI and OpenCode. The Gemini and Pi templates are provided but untested.
 
@@ -155,17 +167,7 @@ mkSandbox {
 }
 ```
 
-<details>
-<summary><strong>Why set <code>CLAUDE_CONFIG_DIR</code> and not add <code>~/.claude.json</code> as a <code>rwFile</code>?</strong></summary>
-<br>
-
-The example sets `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `~/.claude.json` inside the read/write `rwDir`. If you add `~/.claude.json` as a `rwFile` instead, Claude writes temporary files to the ephemeral home root when it updates its configuration. Claude then tries to rename these files to `~/.claude.json`. The rename can fail, or behave in an unexpected way, because the temporary files land outside every declared `rwDir` and `rwFile`. This can sometimes corrupt the `~/.claude.json` file.
-<br>
-<br>
-
-> **Note:** If you also run Claude outside the sandbox, set `CLAUDE_CONFIG_DIR=$HOME/.claude` globally too. Otherwise the two use different config locations and diverge.
-
-</details>
+Why the example sets `CLAUDE_CONFIG_DIR` is explained in [Agent notes](#agent-notes).
 
 ## NixOS, Nix Darwin, or Home Manager
 
