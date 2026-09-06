@@ -9,6 +9,7 @@ in
   };
   commonTools = [
     pkgs.coreutils
+    pkgs.curl
     pkgs.which
     pkgs.git
     pkgs.ripgrep
