@@ -1,6 +1,6 @@
 # Changelog
 
-## [5.1.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.0.0...v5.1.0) (2026-09-06)
+## [5.1.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.0.0...v5.1.0) (2026-09-05)
 
 
 ### Features
