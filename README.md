@@ -110,7 +110,7 @@ Templates are the happy path: one per agent, ready to scaffold a project with. T
 | [`claude-docker.shell.nix`](shells/claude-docker.shell.nix) | `publishedPorts`: a docker container on the host drives a dev server the agent runs |
 | [`claude-nix.shell.nix`](shells/claude-nix.shell.nix) | `allowNix` and `allowUnixSockets`: letting the agent run nix inside the sandbox |
 | [`claude-uv.shell.nix`](shells/claude-uv.shell.nix) | uv and Python: the cache directories and library paths uv needs |
-| [`opencode-ollama.shell.nix`](shells/opencode-ollama.shell.nix) | `allowedLocalPorts` with no internet access: the agent reaches only Ollama on the host |
+| [`opencode-ollama.shell.nix`](shells/opencode-ollama.shell.nix) | `allowedHostPorts` with no internet access: the agent reaches only Ollama on the host |
 
 Run one with `nix-shell shells/<file>`.
 
