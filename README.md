@@ -119,8 +119,6 @@ Set `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `~/.claude.jso
 
 </details>
 
-The sandbox is tested with Claude Code, Codex, GitHub Copilot CLI and OpenCode. The Gemini and Pi templates are provided but untested.
-
 ## Arguments
 
 `mkSandbox`, the library's entrypoint, accepts the following arguments:
