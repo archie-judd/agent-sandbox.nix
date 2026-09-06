@@ -47,12 +47,13 @@ Everything else is denied. Only changes to the launch directory and declared rwD
     * [Probe the sandbox interactively](#probe-the-sandbox-interactively)
     * [Deriving a network allowlist](#deriving-a-network-allowlist)
     * [macOS: system denial log](#macos-system-denial-log)
+    * [macOS: gh and other Go tools](#macos-gh-and-other-go-tools)
 * [Security](#security)
     * [What it protects against](#what-it-protects-against)
     * [What it doesn't protect against](#what-it-doesnt-protect-against)
     * [Linux vs macOS](#linux-vs-macos)
     * [Is this the right tool for me?](#is-this-the-right-tool-for-me)
-* [Caveats](#caveats)
+* [Limitations](#limitations)
 * [Similar projects](#similar-projects)
 
 <!-- vim-markdown-toc -->
@@ -461,6 +462,10 @@ log show --predicate 'eventMessage CONTAINS "deny"' --last 1m
 
 Nothing in the session directory records this, so pair the log with `seatbelt.sb` when something your config should allow is blocked.
 
+### macOS: gh and other Go tools
+
+On macOS, when you set `allowedDomains`, `gh` (the GitHub CLI) fails HTTPS requests with a certificate error. The filtering proxy uses its own certificate. `git` accepts this certificate, but `gh` and other Go tools reject it on macOS. Linux is unaffected. The workaround is to use curl instead - most agents will figure this out themselves.
+
 ## Security
 
 This section describes what the sandbox protects against, and what it does not protect against, so that you can decide whether it fits your situation. It assumes that you launch the agent from a project directory. A launch from `$HOME` turns off home masking entirely, and the sandbox asks for your permission first.
@@ -476,6 +481,7 @@ The agent can do something it should not do. It can run a bad prompt, process a 
 - The agent cannot leave code behind that runs on your host at your next git command. A writable git directory would permit that: a file in `hooks/`, a `core.hooksPath` or `alias.*` entry in a config file, or a pointer file aimed at a git directory the agent controls. Those paths are read-only for the repo you launch in.
 - The agent can run only the tools you list in `allowedPackages`, unless you set `allowNix = true`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox).
 - The agent cannot see your other running programs, read the environment variables they have set, or interfere with your other open terminals.
+- The agent cannot widen its own sandbox by planting a symlink in a path you declared. See [Arguments](#arguments).
 
 ### What it doesn't protect against
 
@@ -501,11 +507,9 @@ If your threat model is *"I want my AI agent to not accidentally destroy my work
 
 If your threat model is *"I assume the agent is actively malicious and need it to be unable to identify my specific machine or my real user account,"* you want a VM with a throwaway user account, or a separate machine.
 
-## Caveats
+## Limitations
 
 - `sandbox-exec` is deprecated on macOS. It remains the only native unprivileged sandboxing mechanism. It currently works on macOS 26 (Tahoe) and older, but a future release may break it.
-- The sandbox follows a symlink inside `rwDirs`, `rwFiles`, `roDirs`, or `roFiles` only to an already-permitted path. A symlink is usable only if its target is the Nix store, the working directory, the Git directory, or another declared bind. Everything else is blocked. This prevents an agent from planting a symlink during a session to expand its own sandbox at the next startup (for example `~/.claude/evil -> /etc/shadow`). To expose a path that is not permitted, and that a symlink currently reaches, declare the path explicitly as a `rwDir`, `rwFile`, `roDir`, or `roFile`. A symlink into the Nix store is read-only.
-- On macOS, when you set `allowedDomains`, `gh` (the GitHub CLI) fails HTTPS requests with a certificate error. The filtering proxy uses its own certificate. `git` accepts this certificate, but `gh` and other Go tools reject it on macOS. Linux is unaffected.
 - The sandbox is tested on x86_64-linux and aarch64-darwin. Other architectures should work, but they are untested.
 
 ## Similar projects
