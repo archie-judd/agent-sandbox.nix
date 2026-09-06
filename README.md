@@ -26,7 +26,7 @@ Everything else is denied. Only changes to the launch directory and declared rwD
 
 * [Usage and configuration](#usage-and-configuration)
     * [Templates](#templates)
-    * [Example shells](#example-shells)
+    * [Agent notes](#agent-notes)
     * [Arguments](#arguments)
     * [Network restrictions](#network-restrictions)
         * [Domain and internet access](#domain-and-internet-access)
@@ -44,7 +44,7 @@ Everything else is denied. Only changes to the launch directory and declared rwD
 * [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
 * [Troubleshooting](#troubleshooting)
     * [Session directories](#session-directories)
-    * [Reproduce it interactively](#reproduce-it-interactively)
+    * [Probe the sandbox interactively](#probe-the-sandbox-interactively)
     * [Deriving a network allowlist](#deriving-a-network-allowlist)
     * [macOS: system denial log](#macos-system-denial-log)
 * [Security](#security)
@@ -59,7 +59,7 @@ Everything else is denied. Only changes to the launch directory and declared rwD
 
 ## Usage and configuration
 
-To get started quickly, use a flake template. If you do not use flakes, there are `shell.nix` examples you can adapt in `shells/`.
+To get started quickly, use a flake template. If you do not use flakes, [`shells/claude.shell.nix`](shells/claude.shell.nix) is the same setup written as a plain `shell.nix`. The rest of [`shells/`](shells/) holds worked examples for narrower setups, linked from the sections they illustrate.
 
 ### Templates
 
@@ -96,19 +96,16 @@ If your preferred agent does not have a template, please adapt one to your needs
 1. Register it under `templates` in [`flake.nix`](flake.nix).
 1. Open a pull request.
 
-### Example shells
+### Agent notes
 
-Along with a minimal claude-code shell, the [`shells/`](shells/) directory holds shells that demonstrate more niche capabilities. You can adapt one to your needs:
+Most agents need nothing beyond their template. This table details agent-specific gotchas.
 
-| Shell | Demonstrates |
+| Agent | Note |
 | --- | --- |
-| [`claude.shell.nix`](shells/claude.shell.nix) | The `claude` template written as a plain `shell.nix`, for projects that do not use flakes |
-| [`claude-docker.shell.nix`](shells/claude-docker.shell.nix) | `publishedPorts`: a docker container on the host drives a dev server the agent runs |
-| [`claude-nix.shell.nix`](shells/claude-nix.shell.nix) | `allowNix` and `allowUnixSockets`: letting the agent run nix inside the sandbox |
-| [`claude-uv.shell.nix`](shells/claude-uv.shell.nix) | uv and Python: the cache directories and library paths uv needs |
-| [`opencode-ollama.shell.nix`](shells/opencode-ollama.shell.nix) | Local LLM usage |
+| Codex | Codex sandboxes itself, and the two sandboxes cannot nest. Run `codex-sandboxed -s danger-full-access` and let this sandbox do the work. Without it, every command fails with `Failed to create unified exec process: Operation not permitted`. |
+| OpenCode | Authenticates with `ANTHROPIC_API_KEY` from console.anthropic.com. A `CLAUDE_CODE_OAUTH_TOKEN` will not work: it is scoped to Claude Code, and a Claude subscription does not include API credit. |
 
-Run one with `nix-shell shells/<file>`.
+The sandbox is tested with Claude Code, Codex, GitHub Copilot CLI and OpenCode. The Gemini and Pi templates are provided but untested.
 
 ### Arguments
 
@@ -120,7 +117,7 @@ Run one with `nix-shell shells/<file>`.
 | `binName` | yes | Name of the binary inside `pkg/bin/` |
 | `outName` | yes | Name of the wrapped binary, and the command that runs it |
 | `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH. See the note below the table |
-| `rwDirs` | no | Directories the agent can read and write (for example `~/.config/claude`) |
+| `rwDirs` | no | Directories the agent can read and write (for example `~/.config/claude`, or a package manager's cache: see [`shells/claude-uv.shell.nix`](shells/claude-uv.shell.nix)) |
 | `rwFiles` | no | Individual files the agent can read and write |
 | `roDirs` | no | Directories the agent can read but not write (for example signed binaries, reference source trees, secret stores) |
 | `roFiles` | no | Individual files the agent can read but not write (for example `~/.config/git/config` for the git identity, see [Setting your git identity](#setting-your-git-identity) |
@@ -198,6 +195,8 @@ allowedHostPorts = [ 3000 5432 ];
 ```
 
 Set `allowedHostPorts = null;` to allow all host-local TCP ports.
+
+For a worked example, see [`shells/opencode-ollama.shell.nix`](shells/opencode-ollama.shell.nix), where the agent has no internet access at all and reaches only Ollama running on the host.
 
 On macOS, a service started inside the sandbox also needs its port listed here, because `sandbox-exec` shares localhost with the host and cannot tell the two apart. See [Linux vs macOS](#linux-vs-macos).
 
@@ -419,7 +418,7 @@ tail -f "$(ls -dt ~/.local/state/agent-sandbox/* | head -1)/proxy.log"
 
 A session directory holds no secrets, so it is safe to attach to an issue.
 
-### Reproduce it interactively
+### Probe the sandbox interactively
 
 `launch.log` records what the sandbox was configured to allow. To see what a process actually hits, wrap `bash` itself with the same config as your agent, and explore. [`debug/bash.shell.nix`](debug/bash.shell.nix) is a template you can use directly. Copy your agent's `rwDirs`, `rwFiles`, `allowedPackages`, and `allowedDomains` into it, then run `nix-shell debug/bash.shell.nix`.
 

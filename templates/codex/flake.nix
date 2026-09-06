@@ -18,8 +18,11 @@
         let
           pkgs = import nixpkgs { system = system; };
           sbx = agent-sandbox.lib.${system};
-          # Codex sandboxes itself too. Run it with `-s danger-full-access` in
-          # here and let this sandbox do the work. See the README.
+          # Codex sandboxes itself too, and the two cannot nest: without
+          # `-s danger-full-access` every command fails with "Failed to create
+          # unified exec process: Operation not permitted". Run it with that
+          # flag and let this sandbox do the work. See "Agent notes" in the
+          # README.
           codex-sandboxed = sbx.mkSandbox {
             pkg = pkgs.codex;
             binName = "codex";

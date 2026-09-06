@@ -1,6 +1,6 @@
 # Example: a dev shell with a sandboxed opencode that talks to Ollama running
 # on the host. The agent has no internet access at all: allowedDomains = [ ]
-# blocks every domain, and allowedLocalPorts opens only the Ollama port.
+# blocks every domain, and allowedHostPorts opens only the Ollama port.
 #
 # Ollama runs on the host, not in the sandbox, so it keeps its GPU access.
 #
@@ -39,7 +39,7 @@ let
     # at startup, so if it will not start, allow that one domain:
     #   allowedDomains = { "models.dev" = [ "GET" "HEAD" ]; };
     allowedDomains = [ ];
-    allowedLocalPorts = [ ollamaPort ];
+    allowedHostPorts = [ ollamaPort ];
   };
 in
 pkgs.mkShell { packages = [ opencode-sandboxed ]; }
