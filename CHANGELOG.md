@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.1.0...v5.2.0) (2026-09-06)
+
+
+### Features
+
+* **commonTools:** add curl ([e9cd55d](https://github.com/archie-judd/agent-sandbox.nix/commit/e9cd55db3bef751f41de02ea43a16bb3bebbd909))
+
 ## [5.1.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.0.0...v5.1.0) (2026-09-05)
 
 
