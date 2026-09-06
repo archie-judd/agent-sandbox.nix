@@ -4,3 +4,4 @@
 shell.nix
 __pycache__/
 .mypy_cache/
+templates/**/flake.lock
