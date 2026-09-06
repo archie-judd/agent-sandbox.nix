@@ -28,6 +28,7 @@ Everything else is denied. Only changes to the launch directory and declared rwD
     * [Templates](#templates)
     * [Agent notes](#agent-notes)
 * [Arguments](#arguments)
+* [NixOS, Nix Darwin, or Home Manager](#nixos-nix-darwin-or-home-manager)
 * [Network restrictions](#network-restrictions)
     * [Domain and internet access](#domain-and-internet-access)
     * [Host ports](#host-ports)
@@ -165,6 +166,45 @@ The example sets `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `
 > **Note:** If you also run Claude outside the sandbox, set `CLAUDE_CONFIG_DIR=$HOME/.claude` globally too. Otherwise the two use different config locations and diverge.
 
 </details>
+
+## NixOS, Nix Darwin, or Home Manager
+
+A template dev shell configures the sandbox per project. To have one sandboxed agent everywhere instead, build the wrapper in your NixOS, Nix Darwin or Home Manager configuration and install it into your profile. The sandbox scopes itself to the directory you launch it in, so a single wrapper serves every project. The tradeoff is one configuration for all of them: `rwDirs`, `allowedPackages` and `allowedDomains` no longer vary by project.
+
+Add the flake as an input:
+
+```nix
+inputs.agent-sandbox.url = "github:archie-judd/agent-sandbox.nix";
+```
+
+Pass `inputs` to your modules (`specialArgs` for NixOS and Nix Darwin, `extraSpecialArgs` for Home Manager), then build the wrapper and install it:
+
+```nix
+{ pkgs, inputs, ... }:
+let
+  mkSandbox = inputs.agent-sandbox.lib.${pkgs.system}.mkSandbox;
+  commonTools = inputs.agent-sandbox.lib.${pkgs.system}.commonTools;
+  claude-sandboxed = mkSandbox {
+    pkg = pkgs.claude-code;
+    binName = "claude";
+    outName = "claude-sandboxed";
+    allowedPackages = commonTools;
+    rwDirs = [ "$HOME/.claude" ];
+    roFiles = [ "$HOME/.config/git/config" ];
+    env = {
+      CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
+      CLAUDE_CONFIG_DIR = "$HOME/.claude";
+    };
+  };
+in
+{
+  home.packages = [ claude-sandboxed ];
+}
+```
+
+On NixOS and Nix Darwin, use `environment.systemPackages` in place of `home.packages`. See [Arguments](#arguments) for the full argument list.
+
+Values in `env` are shell expressions that expand when the wrapper launches, so `$CLAUDE_CODE_OAUTH_TOKEN` has to be set in the shell you run `claude-sandboxed` from. There is no dev shell to set it here, so export it from your shell profile, or read the secret at runtime as described in [Authentication](#environment-variable-tokens-recommended).
 
 ## Network restrictions
 
