@@ -24,15 +24,15 @@ Everything else is denied. Only changes to the launch directory and declared rwD
 
 <!-- vim-markdown-toc GFM -->
 
-* [Usage and configuration](#usage-and-configuration)
+* [Quick start](#quick-start)
     * [Templates](#templates)
     * [Agent notes](#agent-notes)
-    * [Arguments](#arguments)
-    * [Network restrictions](#network-restrictions)
-        * [Domain and internet access](#domain-and-internet-access)
-        * [Host ports](#host-ports)
-        * [Published ports](#published-ports)
-    * [UNIX-domain sockets](#unix-domain-sockets)
+* [Arguments](#arguments)
+* [Network restrictions](#network-restrictions)
+    * [Domain and internet access](#domain-and-internet-access)
+    * [Host ports](#host-ports)
+    * [Published ports](#published-ports)
+* [UNIX-domain sockets](#unix-domain-sockets)
 * [Authentication](#authentication)
     * [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
     * [Credential files via `rwDirs`](#credential-files-via-rwdirs)
@@ -58,7 +58,7 @@ Everything else is denied. Only changes to the launch directory and declared rwD
 
 <!-- vim-markdown-toc -->
 
-## Usage and configuration
+## Quick start
 
 To get started quickly, use a flake template. If you do not use flakes, [`shells/claude.shell.nix`](shells/claude.shell.nix) is the same setup written as a plain `shell.nix`. The rest of [`shells/`](shells/) holds worked examples for narrower setups, linked from the sections they illustrate.
 
@@ -108,7 +108,7 @@ Most agents need nothing beyond their template. This table details agent-specifi
 
 The sandbox is tested with Claude Code, Codex, GitHub Copilot CLI and OpenCode. The Gemini and Pi templates are provided but untested.
 
-### Arguments
+## Arguments
 
 `mkSandbox`, the library's entrypoint, accepts the following arguments:
 
@@ -166,13 +166,13 @@ The example sets `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `
 
 </details>
 
-### Network restrictions
+## Network restrictions
 
 The sandbox controls network access with three independent settings. `allowedDomains` controls outbound internet access. `allowedHostPorts` controls access to host-local TCP services, such as databases and dev servers. `publishedPorts` controls which sandbox-hosted TCP services are reachable from outside.
 
 By default, internet access is open, all host-local services are blocked, and nothing inside the sandbox is reachable from outside.
 
-#### Domain and internet access
+### Domain and internet access
 
 To restrict internet access, set `allowedDomains`. The sandbox can then reach only the domains you list. Leave it unset for open internet, or set it to `[ ]` to block all internet access.
 
@@ -187,7 +187,7 @@ When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic thr
 
 The proxy logs each allowed or denied host contact to `proxy.log` in the sandbox's [session directory](#session-directories). Only the first allow is logged to reduce noise.
 
-#### Host ports
+### Host ports
 
 Host-local services (databases, dev servers, the SSH agent, the Docker socket, and similar) are blocked by default. Use `allowedHostPorts` to permit access to specific ports:
 
@@ -201,7 +201,7 @@ For a worked example, see [`shells/opencode-ollama.shell.nix`](shells/opencode-o
 
 On macOS, a service started inside the sandbox also needs its port listed here, because `sandbox-exec` shares localhost with the host and cannot tell the two apart. See [Linux vs macOS](#linux-vs-macos).
 
-#### Published ports
+### Published ports
 
 Sometimes something outside the sandbox must call INTO it. For example, an integration-test suite that hosts a callback server needs this, and so does a dev server you want to open in the host browser. Declare the ports with `publishedPorts`:
 
@@ -216,7 +216,7 @@ The default `bindAddr` is `127.0.0.1` which is reachable from host processes onl
 
 For a worked example, see [`shells/claude-docker.shell.nix`](shells/claude-docker.shell.nix), where a docker container on the host reaches a dev server running in the sandbox.
 
-### UNIX-domain sockets
+## UNIX-domain sockets
 
 UNIX-domain sockets are denied by default, because a sandboxed process could use host sockets to reach your SSH agent or other per-user services. Set `allowUnixSockets = true` to permit them. Build tools that communicate over a domain socket (sbt/BSP, metals, nailgun) need this setting.
 
