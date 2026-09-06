@@ -153,9 +153,7 @@ def device_nodes(tty: Path | None) -> list[str]:
     return lines
 
 
-def dns_tls(
-    passwd: Path, ca_bundle: Path | None, ca_cert: Path | None
-) -> list[str]:
+def dns_tls(passwd: Path, ca_bundle: Path | None, ca_cert: Path | None) -> list[str]:
     # Session directory files are granted by name, never by subpath: the
     # directory also holds proxy.pid, and a readable pid file reconstructs
     # the process enumeration the kern.proc.* denies exist to prevent.
@@ -208,6 +206,8 @@ def traversal(
         '  (literal "/etc")',
         '  (literal "/private/etc")',
         '  (literal "/private/var/db")',
+        '  (literal "/private/var/select/developer_dir")',
+        '  (literal "/private/var/db/xcode_select_link")',
         '  (literal "/Users")',
         f'  (literal "{real_home}")',
         f'  (literal "{sandbox_home / ".local"}")',
