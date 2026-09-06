@@ -2,7 +2,7 @@
 
 Lightweight and declarative sandboxing for AI agents on Linux and macOS.
 
-Prevent your agents in YOLO mode from deleting your $HOME, force pushing to main, or publishing your ssh keys on reddit. The sandbox works with any CLI-based AI agent. It is tested with Claude Code and GitHub Copilot CLI (see [Supported agents](#supported-agents)).
+Prevent your agents in YOLO mode from deleting your $HOME, force pushing to main, or publishing your ssh keys on reddit. The sandbox works with any CLI-based AI agent. Templates are provided for six of them (see [Templates](#templates)), and it is tested with Claude Code, Codex, GitHub Copilot CLI and OpenCode (see [Supported agents](#supported-agents)).
 
 The sandbox uses [bubblewrap](https://github.com/containers/bubblewrap) on Linux and sandbox-exec on macOS. See [Security](#security) for the threat model and the known limits.
 
@@ -22,61 +22,69 @@ The sandbox denies everything else. `$HOME` is an ephemeral writable tmpfs that 
 
 <!-- vim-markdown-toc GFM -->
 
-- [Usage and configuration](#usage-and-configuration)
-  - [Templates](#templates)
-  - [Arguments](#arguments)
-  - [Network restrictions](#network-restrictions)
-    - [Domain and internet access](#domain-and-internet-access)
-    - [Host ports](#host-ports)
-    - [Published ports](#published-ports)
-  - [UNIX-domain sockets](#unix-domain-sockets)
-  - [Supported agents](#supported-agents)
-- [Authentication](#authentication)
-  - [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
-  - [Credential files via `rwDirs`](#credential-files-via-rwdirs)
-- [Git](#git)
-  - [What the sandbox exposes](#what-the-sandbox-exposes)
-  - [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
-  - [Git identity](#git-identity)
-  - [Read-only paths in the git directory](#read-only-paths-in-the-git-directory)
-- [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
-- [Common patterns / recipes](#common-patterns--recipes)
-  - [Python with uv](#python-with-uv)
-  - [Node.js with npm](#nodejs-with-npm)
-  - [Deriving an allowlist](#deriving-an-allowlist)
-- [Troubleshooting](#troubleshooting)
-  - [Session directories](#session-directories)
-  - [Reproduce it interactively](#reproduce-it-interactively)
-  - [macOS: system denial log](#macos-system-denial-log)
-- [Security](#security)
-  - [What it protects against](#what-it-protects-against)
-  - [What it doesn't protect against](#what-it-doesnt-protect-against)
-  - [Launching from your home directory](#launching-from-your-home-directory)
-  - [Specific things worth being aware of](#specific-things-worth-being-aware-of)
-  - [Linux vs macOS](#linux-vs-macos)
-  - [Is this the right tool for me?](#is-this-the-right-tool-for-me)
-- [Caveats](#caveats)
-- [Similar projects](#similar-projects)
+* [Usage and configuration](#usage-and-configuration)
+    * [Templates](#templates)
+    * [Example shells](#example-shells)
+    * [Arguments](#arguments)
+    * [Network restrictions](#network-restrictions)
+        * [Domain and internet access](#domain-and-internet-access)
+        * [Host ports](#host-ports)
+        * [Published ports](#published-ports)
+    * [UNIX-domain sockets](#unix-domain-sockets)
+    * [Supported agents](#supported-agents)
+* [Authentication](#authentication)
+    * [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
+    * [Credential files via `rwDirs`](#credential-files-via-rwdirs)
+* [Git](#git)
+    * [What the sandbox exposes](#what-the-sandbox-exposes)
+    * [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
+    * [Git identity](#git-identity)
+    * [Read-only paths in the git directory](#read-only-paths-in-the-git-directory)
+* [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
+* [Common patterns / recipes](#common-patterns--recipes)
+    * [Python with uv](#python-with-uv)
+    * [Node.js with npm](#nodejs-with-npm)
+    * [Deriving an allowlist](#deriving-an-allowlist)
+* [Troubleshooting](#troubleshooting)
+    * [Session directories](#session-directories)
+    * [Reproduce it interactively](#reproduce-it-interactively)
+    * [macOS: system denial log](#macos-system-denial-log)
+* [Security](#security)
+    * [What it protects against](#what-it-protects-against)
+    * [What it doesn't protect against](#what-it-doesnt-protect-against)
+    * [Launching from your home directory](#launching-from-your-home-directory)
+    * [Specific things worth being aware of](#specific-things-worth-being-aware-of)
+    * [Linux vs macOS](#linux-vs-macos)
+    * [Is this the right tool for me?](#is-this-the-right-tool-for-me)
+* [Caveats](#caveats)
+* [Similar projects](#similar-projects)
 
 <!-- vim-markdown-toc -->
 
 ## Usage and configuration
 
-The quickest way to start is with a flake template. If you prefer a `shell.nix`, see [`shells/`](shells/) for examples you can use directly. For authentication, see [Authentication](#authentication).
+The quickest way to start is with a flake template. [`shells/`](shells/) holds one plain Claude `shell.nix` (for those that don't use flakes) and worked examples for niche use-cases. For authentication, see [Authentication](#authentication).
 
 ### Templates
 
-The repository provides flake templates for Claude Code and GitHub Copilot CLI for quick project setup. You can change either template to work with another CLI tool.
+The repository provides flake templates for quick project setup. You can change any template to work with another CLI tool.
+
+| Template | Agent | Wrapped binary |
+| --- | --- | --- |
+| `claude` | Claude Code | `claude-sandboxed` |
+| `codex` | Codex | `codex-sandboxed` |
+| `copilot` | GitHub Copilot CLI | `copilot-sandboxed` |
+| `gemini` | Gemini | `gemini-sandboxed` |
+| `opencode` | OpenCode | `opencode-sandboxed` |
+| `pi` | Pi | `pi-sandboxed` |
 
 To initialize a template in your project directory:
 
 ```bash
-nix flake init -t github:archie-judd/agent-sandbox.nix#claude
-# or
-nix flake init -t github:archie-judd/agent-sandbox.nix#copilot
+nix flake init -t github:archie-judd/agent-sandbox.nix#<template>
 ```
 
-This command creates a `flake.nix` in your project. See [`templates/claude/flake.nix`](templates/claude/flake.nix) for the contents. Edit the file for your needs, export your access token, and then enter the dev shell:
+This command creates a `flake.nix` in your project. See [`templates/claude/flake.nix`](templates/claude/flake.nix) for an example of the contents. Edit the file for your needs, export your access token, and then enter the dev shell:
 
 ```bash
 nix develop
@@ -85,12 +93,26 @@ nix develop
 Then run your wrapped binary:
 
 ```bash
-claude-sandboxed --dangerously-skip-permissions # Claude Code's "YOLO mode"
-# or
-copilot-sandboxed --yolo
+claude-sandboxed 
 ```
 
-To keep the original command name as the alias, change the `outName` value, for example to `"claude"` or `"copilot"`.
+To keep the original command name as the alias, change the `outName` value, for example to `"claude"`.
+
+If your tool of choice is not here, contributions are welcome. Copy the closest template, adjust `pkg`, `binName`, `outName`, `allowedDomains` and the `rwDirs` the agent needs for its config and cache, register it under `templates` in [`flake.nix`](flake.nix), and open a pull request.
+
+### Example shells
+
+Templates are the happy path: one per agent, ready to scaffold a project with. The [`shells/`](shells/) directory is for everything else. These are recipes to read and copy from rather than start from, plus one plain example for projects that do not use flakes.
+
+| Shell | Demonstrates |
+| --- | --- |
+| [`claude.shell.nix`](shells/claude.shell.nix) | The `claude` template written as a plain `shell.nix`, for projects that do not use flakes |
+| [`claude-docker.shell.nix`](shells/claude-docker.shell.nix) | `publishedPorts`: a docker container on the host drives a dev server the agent runs |
+| [`claude-nix.shell.nix`](shells/claude-nix.shell.nix) | `allowNix` and `allowUnixSockets`: letting the agent run nix inside the sandbox |
+| [`claude-uv.shell.nix`](shells/claude-uv.shell.nix) | uv and Python: the cache directories and library paths uv needs |
+| [`opencode-ollama.shell.nix`](shells/opencode-ollama.shell.nix) | `allowedLocalPorts` with no internet access: the agent reaches only Ollama on the host |
+
+Run one with `nix-shell shells/<file>`.
 
 ### Arguments
 
@@ -199,6 +221,8 @@ publishedPorts = [
 
 The `bindAddr` is the exposure decision: the `127.0.0.1` default is reachable from host processes only, anything wider exposes whatever the agent runs on that port to everything that can reach that address. Prefer the narrowest `bindAddr` that serves the caller.
 
+For a worked example, see [`shells/claude-docker.shell.nix`](shells/claude-docker.shell.nix), where a docker container on the host reaches a dev server running in the sandbox.
+
 ### UNIX-domain sockets
 
 UNIX-domain (AF_UNIX) sockets are denied by default, because a sandboxed process would use host sockets to reach your SSH agent or other per-user services. Set `allowUnixSockets = true` to permit them. Build tools that communicate over a domain socket (sbt/BSP, metals, nailgun) need this setting. Socket access then follows the filesystem grants on both platforms. In paths the agent can write (the launch directory and `rwDirs`), the agent can create sockets and connect to them. In read-only paths (`roDirs`, `roFiles`, and the repository root when you launch from a subdirectory), the agent can only connect.
@@ -207,7 +231,7 @@ UNIX-domain (AF_UNIX) sockets are denied by default, because a sandboxed process
 
 ### Supported agents
 
-The sandbox is tested with `claude-code` and `copilot-cli`. Other agents should work if they support token-based authentication through an environment variable. See [Authentication](#authentication).
+The sandbox is tested with `claude-code`, `codex`, `copilot-cli` and `opencode`. Templates are also provided for `gemini-cli` and `pi-coding-agent`, see [Templates](#templates). Other agents should work if they support token-based authentication through an environment variable. See [Authentication](#authentication).
 
 ## Authentication
 
