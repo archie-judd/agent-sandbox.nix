@@ -4,6 +4,7 @@ enforced."""
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 from launcher.lib.build_spec import SandboxBuildSpecDarwin
 from launcher.lib.constants import (
@@ -24,8 +25,10 @@ from launcher.lib.host_state import (
 )
 from launcher.lib.launch_config.darwin import seatbelt
 from launcher.lib.launch_config.shared import (
+    NIX_STORE,
     SandboxLaunchConfig,
     get_sessions_root_warnings,
+    get_store_symlink_targets,
 )
 from launcher.lib.session_state import SessionStateDarwin
 
@@ -52,7 +55,10 @@ def _get_ancestors(start: Path, stop: Path) -> list[Path]:
 
 
 def _get_traversal_ancestors(
-    host: HostStateDarwin, session: SessionStateDarwin, git: GitState | None
+    host: HostStateDarwin,
+    session: SessionStateDarwin,
+    git: GitState | None,
+    store_targets: Sequence[Path],
 ) -> list[Path]:
     # From the launch directory and from the common git dir, not from
     # repo_root: the repo_root grant is withheld at a work tree root, and it
@@ -63,6 +69,12 @@ def _get_traversal_ancestors(
         ancestors += _get_ancestors(git.common_dir, host.real_home)
     for declared in host.declared:
         ancestors += _get_ancestors(declared.expanded_path, host.real_home)
+
+    # A symlink target deep inside a store path needs the steps down to it
+    # stat-able; its own grant covers the target and below, not the way in.
+    # The walk stops at /nix/store, which NIX_STORE already makes stat-able.
+    for target in store_targets:
+        ancestors += _get_ancestors(target, NIX_STORE)
 
     # The sandbox HOME and TMPDIR sit inside the session directory, so the
     # walk down to them has to be stat-able the whole way. It runs to "/"
@@ -204,6 +216,7 @@ def _get_profile_lines(
     host: HostStateDarwin,
     session: SessionStateDarwin,
     git: GitState | None,
+    store_targets: Sequence[Path],
 ) -> list[str]:
     repo_root_parent = git.repo_root.parent if git is not None else None
     git_dir = git.common_dir if git is not None else None
@@ -249,14 +262,17 @@ def _get_profile_lines(
     lines += seatbelt.dns_tls(session.session_dir / PASSWD, ca_bundle, ca_cert)
     lines += seatbelt.KEYCHAINS
     lines += seatbelt.temp_dirs(session.sandbox_tmpdir)
-    lines += seatbelt.NIX_STORE
+    lines += seatbelt.NIX_STORE_METADATA
     lines += seatbelt.traversal(host.real_home, session.sandbox_home, repo_root_parent)
     lines += seatbelt.sandbox_home(session.sandbox_home)
     lines += seatbelt.workspace(host.cwd, repo_root, git_dir)
     lines += seatbelt.TIMEZONE
     lines += seatbelt.declared_paths(host.declared)
     lines += seatbelt.closure(host.closure_paths)
-    lines += seatbelt.ancestor_metadata(_get_traversal_ancestors(host, session, git))
+    lines += seatbelt.symlink_targets(store_targets)
+    lines += seatbelt.ancestor_metadata(
+        _get_traversal_ancestors(host, session, git, store_targets)
+    )
 
     # Last, so they outrank every allow above, including a declared rwDir
     # that happens to contain the gitdir.
@@ -274,6 +290,15 @@ def compute_launch_config(
 ) -> SandboxLaunchConfigDarwin:
     git, warnings = get_usable_git_state(host)
     warnings += get_sessions_root_warnings(host, session.session_dir)
+
+    # allowNix exposes the whole store, so nothing a symlink names needs a
+    # grant of its own; without it, only the closure is already exposed.
+    if spec.allow_nix:
+        exposed = [NIX_STORE]
+    else:
+        exposed = list(host.closure_paths)
+    store_targets, target_warnings = get_store_symlink_targets(host.declared, exposed)
+    warnings += target_warnings
 
     argv_before_env = [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)
     argv_after_env = [
@@ -298,6 +323,8 @@ def compute_launch_config(
         cleanup=(session.sandbox_home, session.sandbox_tmpdir),
         cleanup_if_empty=(),
         warnings=tuple(warnings),
-        seatbelt_profile_lines=tuple(_get_profile_lines(spec, host, session, git)),
+        seatbelt_profile_lines=tuple(
+            _get_profile_lines(spec, host, session, git, store_targets)
+        ),
         home_symlinks=tuple(_get_home_symlinks(host, session.sandbox_home)),
     )

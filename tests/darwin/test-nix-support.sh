@@ -20,9 +20,12 @@ echo
 
 run_nix_support() { "$NIX_SUPPORT_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
 
-# The whole store is readable on Darwin regardless of allowNix; allowNix is what
-# grants process-exec on paths outside the allowedPackages closure, so the
-# daemon can build a result the agent then runs.
+# allowNix grants read and exec over the whole store, not just the closure: the
+# daemon builds results after the sandbox starts, and their paths are not
+# knowable when the profile is written.
+expect_ok run_nix_support "non-closure store path is readable with allowNix" \
+    'cat "$NON_CLOSURE_STORE_PATH/bin/hello"'
+
 expect_ok run_nix_support "non-closure store path is exec-able with allowNix" \
     '"$NON_CLOSURE_STORE_PATH/bin/hello"'
 
@@ -37,13 +40,22 @@ expect_ok run_nix_support "/etc/nix metadata is accessible with allowNix" \
 
 run_store_isolation() { "$STORE_ISOLATION_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
 
-# Same store path: still readable (Darwin exposes all of /nix/store), but not
-# exec-able without allowNix.
-expect_ok run_store_isolation "non-closure store path is still readable without allowNix" \
+# Same store path, neither readable nor exec-able without allowNix. Reaching it
+# takes a grant of its own: membership of the closure, or a symlink in a
+# declared path that names it (tests/darwin/test-symlinks.sh).
+expect_fail run_store_isolation "non-closure store path is not readable without allowNix" \
     'cat "$DISALLOWED_STORE_PATH/bin/hello"'
 
 expect_fail run_store_isolation "non-closure store path is not exec-able without allowNix" \
     '"$DISALLOWED_STORE_PATH/bin/hello"'
+
+# The store listing itself: stat resolves a path through /nix/store without
+# readdir enumerating what the host has built.
+expect_fail run_store_isolation "store is not listable without allowNix" \
+    'ls /nix/store'
+
+expect_ok run_store_isolation "store stays traversable to closure paths" \
+    '[ -d /nix/store ]'
 
 expect_fail run_store_isolation "/nix/var metadata is not accessible without allowNix" \
     '[ -d /nix/var ]'

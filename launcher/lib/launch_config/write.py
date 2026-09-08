@@ -18,9 +18,8 @@ from launcher.lib.constants import (
     SECCOMP_FILTER,
 )
 from launcher.lib.launch_config.darwin.compute import SandboxLaunchConfigDarwin
-from launcher.lib.launch_config.linux.binds import NIX_STORE
 from launcher.lib.launch_config.linux.compute import SandboxLaunchConfigLinux
-from launcher.lib.launch_config.shared import SandboxLaunchConfig
+from launcher.lib.launch_config.shared import NIX_STORE, SandboxLaunchConfig
 from launcher.lib.session_state import SessionState, SessionStateDarwin
 
 NIX_STORE_TMPFS_LINE = f"--tmpfs {NIX_STORE}"
