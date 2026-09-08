@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Sequence
 
 from launcher.lib.build_spec import SandboxBuildSpecLinux
-from launcher.lib.constants import WARN_PREFIX
 from launcher.lib.git_state import GitState
 from launcher.lib.host_state import (
     DeclaredDir,
@@ -20,9 +19,12 @@ from launcher.lib.host_state import (
     HostStateLinux,
     get_grantable_repo_root,
 )
+from launcher.lib.launch_config.shared import (
+    NIX_STORE,
+    get_store_symlink_targets,
+    is_already_bound,
+)
 from launcher.lib.symlinks import Symlink
-
-NIX_STORE = Path("/nix/store")
 
 # Bound unconditionally, so a symlink target under any of them is already
 # reachable.
@@ -45,10 +47,6 @@ class DeclaredBinds:
     symlink_targets: tuple[str, ...]
     parent_symlinks: tuple[str, ...]
     warnings: tuple[str, ...]
-
-
-def _is_already_bound(path: Path, prefixes: Sequence[Path]) -> bool:
-    return any(path == prefix or prefix in path.parents for prefix in prefixes)
 
 
 def get_bound_prefixes(
@@ -85,7 +83,7 @@ def _get_parent_dirs(
     needed: list[Path] = []
     current = path.parent
     while current != Path("/"):
-        if _is_already_bound(current, prefixes) or current in seen:
+        if is_already_bound(current, prefixes) or current in seen:
             break
         needed.append(current)
         seen.add(current)
@@ -93,63 +91,20 @@ def _get_parent_dirs(
     return needed
 
 
-def _get_symlink_target_args(
-    target: Path, prefixes: Sequence[Path], resolved: set[Path]
-) -> tuple[list[str], list[str]]:
-    # Targets are bound read-only and only when in the nix store: anywhere
-    # else would let an agent plant a symlink that expands the sandbox on the
-    # next launch. Store paths are immutable and agent-unwritable.
-    if target in resolved:
-        return [], []
-    resolved.add(target)
-    if _is_already_bound(target, prefixes):
-        return [], []
-    if NIX_STORE not in target.parents:
-        return [], [
-            f"{WARN_PREFIX} ignoring symlink to '{target}': outside permitted "
-            f"paths. Declare it as a rwDir, rwFile, roDir or roFile to allow "
-            f"access."
-        ]
-    return ["--ro-bind", str(target), str(target)], []
-
-
 def _get_parent_symlink_args(
     parent_symlinks: Sequence[Symlink], prefixes: Sequence[Path], planted: set[Path]
 ) -> list[str]:
     # Planted even when the target is already exposed: the kernel walks the
     # declared name, and a missing directory partway along it fails the open
-    # with ENOENT. Not a way around the nix-store check above: a symlink is
-    # a name, not an access grant.
+    # with ENOENT. Not a way around the nix-store check in
+    # get_store_symlink_targets: a symlink is a name, not an access grant.
     args: list[str] = []
     for link in parent_symlinks:
-        if link.path in planted or _is_already_bound(link.path, prefixes):
+        if link.path in planted or is_already_bound(link.path, prefixes):
             continue
         planted.add(link.path)
         args.extend(["--symlink", str(link.points_to), str(link.path)])
     return args
-
-
-def _get_hop_args(
-    hops: Sequence[Path],
-    prefixes: Sequence[Path],
-    resolved: set[Path],
-    seen_parents: set[Path],
-) -> tuple[list[str], list[str], list[str]]:
-    targets: list[str] = []
-    parent_dirs: list[str] = []
-    warnings: list[str] = []
-
-    for landing in hops:
-        target_args, target_warnings = _get_symlink_target_args(
-            landing, prefixes, resolved
-        )
-        targets += target_args
-        warnings += target_warnings
-        if target_args:
-            for parent in _get_parent_dirs(landing, prefixes, seen_parents):
-                parent_dirs += ["--dir", str(parent)]
-
-    return targets, parent_dirs, warnings
 
 
 def _get_declared_bind_args(
@@ -164,7 +119,7 @@ def _get_declared_bind_args(
     flag = "--bind" if declared.mode == "rw" else "--ro-bind"
     if not declared.hops:
         return [flag, str(path), str(path)]
-    if _is_already_bound(path.parent, prefixes):
+    if is_already_bound(path.parent, prefixes):
         return []
     if isinstance(declared, DeclaredDir):
         return [flag, str(path), str(path)]
@@ -175,9 +130,6 @@ def _get_declared_bind_args(
 
 
 def get_declared_binds(host: HostStateLinux, prefixes: Sequence[Path]) -> DeclaredBinds:
-    # Files, then directories, then the symlinks inside those directories:
-    # that order decides which of two paths leading to one target carries the
-    # bind.
     dir_binds: list[str] = []
     ro_dir_binds: list[str] = []
     file_binds: list[str] = []
@@ -185,25 +137,24 @@ def get_declared_binds(host: HostStateLinux, prefixes: Sequence[Path]) -> Declar
     parent_dirs: list[str] = []
     symlink_targets: list[str] = []
     parent_symlinks: list[str] = []
-    warnings: list[str] = []
-    resolved: set[Path] = set()
     planted: set[Path] = set()
     seen_parents: set[Path] = set()
 
+    # Files before directories: that order decides which of two declared paths
+    # leading to one parent symlink is the one that plants it.
     files = [d for d in host.declared if not isinstance(d, DeclaredDir)]
     dirs = [d for d in host.declared if isinstance(d, DeclaredDir)]
+
+    targets, warnings = get_store_symlink_targets(host.declared, prefixes)
+    for target in targets:
+        symlink_targets += ["--ro-bind", str(target), str(target)]
+        for parent in _get_parent_dirs(target, prefixes, seen_parents):
+            parent_dirs += ["--dir", str(parent)]
 
     for declared in [*files, *dirs]:
         parent_symlinks += _get_parent_symlink_args(
             declared.parent_symlinks, prefixes, planted
         )
-
-        targets, chain_dirs, chain_warnings = _get_hop_args(
-            declared.hops, prefixes, resolved, seen_parents
-        )
-        symlink_targets += targets
-        parent_dirs += chain_dirs
-        warnings += chain_warnings
 
         bind_args = _get_declared_bind_args(declared, prefixes)
         is_dir = isinstance(declared, DeclaredDir)
@@ -229,12 +180,6 @@ def get_declared_binds(host: HostStateLinux, prefixes: Sequence[Path]) -> Declar
             parent_symlinks += _get_parent_symlink_args(
                 inner.parent_symlinks, prefixes, planted
             )
-            targets, chain_dirs, chain_warnings = _get_hop_args(
-                inner.hops, prefixes, resolved, seen_parents
-            )
-            symlink_targets += targets
-            parent_dirs += chain_dirs
-            warnings += chain_warnings
 
     return DeclaredBinds(
         dir_binds=tuple(dir_binds),

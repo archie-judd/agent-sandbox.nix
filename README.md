@@ -13,7 +13,7 @@ See [Security](#security) for the threat model and the known limits.
 - **Project directory**: read/write access to the directory you launch the agent from.
 - **Declared state**: read/write access to anything you list in `rwDirs` / `rwFiles`, or read-only access through `roDirs` / `roFiles`.
 - **Allowed packages**: the binaries you list in `allowedPackages` are on the agent's PATH, together with `bash` and `cacert`.
-- **Network filtering**: open by default. Optionally filtered to `allowedDomains`.
+- **Network filtering**: open by default. Optionally filtered to `allowedDomains`. Ports are closed by default, but may be optionally exposed or connected to.
 - **Environment**: environment restricted to declared environment variables.
 - **Git**: git commands, including when launched within a worktree.
 - **Nix**: disabled by default. You can let the agent run nix commands.
@@ -520,6 +520,7 @@ The agent can do something it should not do. It can run a bad prompt, process a 
 - The agent cannot talk to local services on your laptop (databases, dev servers, the SSH agent, other terminal windows, and similar), unless you allow host-local TCP ports explicitly with `allowedHostPorts`.
 - The agent cannot leave code behind that runs on your host at your next git command. A writable git directory would permit that: a file in `hooks/`, a `core.hooksPath` or `alias.*` entry in a config file, or a pointer file aimed at a git directory the agent controls. Those paths are read-only for the repo you launch in.
 - The agent can run only the tools you list in `allowedPackages`, unless you set `allowNix = true`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox).
+- The agent cannot read or list the Nix store beyond the closure of `allowedPackages`, unless you set `allowNix = true`.
 - The agent cannot see your other running programs, read the environment variables they have set, or interfere with your other open terminals.
 - The agent cannot widen its own sandbox by planting a symlink in a path you declared. See [Arguments](#arguments).
 
@@ -529,7 +530,7 @@ The sandbox is an isolation boundary. It is not an anonymity boundary, and it is
 
 - The agent can fingerprint your machine. It can see your hostname, hardware model, CPU, RAM, OS version, and rough network details. If the agent must not know which machine it runs on, this is not the tool. Use a VM or a separate device.
 - Your username and home directory path are visible to the agent. This is unavoidable, because the agent needs to know where `$HOME/.claude` resolves to. If your username is itself sensitive, this is not the right tool.
-- All of `/nix/store` is readable, not only your allowed packages. The allowlist restricts execution only. The Nix store is normally world-readable on any system, so this matches existing behavior. It does mean that the agent can list every package you have built.
+- With `allowNix = true`, all of `/nix/store` is readable and executable, not only your allowed packages, so the agent can list every package you have built. The Nix store is normally world-readable on any system, so this matches existing behavior.See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox).
 - A launch from a subdirectory does not limit reads to that subdirectory. The agent can read the whole working tree that contains it. See [What the sandbox exposes](#what-the-sandbox-exposes).
 - The agent can read all of the git directory. This includes every branch, stash and reflog entry, also content that is no longer in the working tree.
 - The agent has everything you hand it. If you expose your `~/.claude` directory (or any credential file) through `rwDirs`, or pass a token through `env`, the agent can read it. That is how it logs in. A compromised agent has the same access to those credentials as your shell. Treat this the way you would treat handing the token to any other CLI tool you did not write yourself.

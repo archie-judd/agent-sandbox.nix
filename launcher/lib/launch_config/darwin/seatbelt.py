@@ -81,13 +81,12 @@ KEYCHAINS = (
     '  (literal "/private/var/run/systemkeychaincheck.done"))',
 )
 
-NIX_STORE = (
+NIX_STORE_METADATA = (
     "",
-    ";; Nix store — read all, exec only the closure below",
+    ";; Nix store — stat only; read and exec are granted per path below",
     "(allow file-read-metadata",
     '  (literal "/nix")',
     '  (literal "/nix/store"))',
-    '(allow file-read* (subpath "/nix/store"))',
 )
 
 TIMEZONE = (
@@ -294,9 +293,24 @@ def closure(store_paths: Sequence[Path]) -> list[str]:
     return lines
 
 
+def symlink_targets(targets: Sequence[Path]) -> list[str]:
+    # Read without exec, and per target rather than per containing store path:
+    # the grant goes no further than the symlink named. A declared path that
+    # resolves into the store is not here; declared_paths already emits it,
+    # because host_state records declared paths physically.
+    if not targets:
+        return []
+    lines = ["", ";; Nix store — targets of symlinks in the declared paths"]
+    for target in targets:
+        lines.append(f'(allow file-read* (subpath "{target}"))')
+    return lines
+
+
 def nix_support(daemon_socket: Path) -> list[str]:
-    # Full-store exec so the agent can run results the daemon builds after
-    # sandbox start, which are not in the closure.
+    # Full-store read and exec so the agent can use results the daemon builds
+    # after sandbox start, which are not in the closure and whose paths are
+    # not knowable when this profile is written. This is the grant allowNix
+    # trades away, and the reason allowedPackages stops bounding what runs.
     return [
         "",
         ";; Nix daemon support",
@@ -304,6 +318,7 @@ def nix_support(daemon_socket: Path) -> list[str]:
         '(allow file-read-metadata (subpath "/etc/nix") (subpath "/private/etc/nix"))',
         "(allow network-outbound",
         f'  (remote unix-socket (path-literal "{daemon_socket}")))',
+        '(allow file-read* (subpath "/nix/store"))',
         '(allow process-exec (subpath "/nix/store"))',
     ]
 

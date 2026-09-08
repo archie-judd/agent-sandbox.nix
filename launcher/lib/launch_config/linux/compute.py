@@ -25,7 +25,6 @@ from launcher.lib.host_state import (
     get_usable_git_state,
 )
 from launcher.lib.launch_config.linux.binds import (
-    NIX_STORE,
     DeclaredBinds,
     get_bound_prefixes,
     get_declared_binds,
@@ -34,6 +33,7 @@ from launcher.lib.launch_config.linux.binds import (
 from launcher.lib.launch_config.linux.nftables import get_nft_rules
 from launcher.lib.launch_config.linux.seccomp import get_unix_deny_filter
 from launcher.lib.launch_config.shared import (
+    NIX_STORE,
     SandboxLaunchConfig,
     get_sessions_root_warnings,
 )
@@ -87,6 +87,7 @@ def _get_pasta_tcp_flags(
     for forward in published_ports:
         flags += ["-t", f"{forward.bind_addr}/{forward.port}"]
     return flags
+
 
 ROUTE_LOCALNET_SYSCTLS = (
     "/proc/sys/net/ipv4/conf/all/route_localnet",
