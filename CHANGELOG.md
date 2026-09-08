@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.0...v5.2.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **darwin:** restrict nix store reads to symlinked files + allowedPackages ([#133](https://github.com/archie-judd/agent-sandbox.nix/issues/133)) ([61bdf31](https://github.com/archie-judd/agent-sandbox.nix/commit/61bdf31ca9426e4f7fb77632e188c172a13fbae9))
+
 ## [5.2.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.1.0...v5.2.0) (2026-09-06)
 
 
