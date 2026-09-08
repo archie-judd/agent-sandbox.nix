@@ -36,9 +36,11 @@ from launcher.lib.launch_config.shared import (
     NIX_STORE,
     SandboxLaunchConfig,
     get_sessions_root_warnings,
+    is_already_bound,
 )
 from launcher.lib.session_state import SessionState
 
+NIX_VAR = Path("/nix/var")
 SANDBOX_TMPDIR = Path("/tmp")
 # Fixed paths rather than the session directory's own, so nothing inside the
 # sandbox learns where that is.
@@ -187,7 +189,7 @@ def _get_bwrap_args(
 
     if spec.allow_nix:
         args += ["--ro-bind", str(NIX_STORE), str(NIX_STORE)]
-        args += ["--ro-bind-try", "/nix/var", "/nix/var"]
+        args += ["--ro-bind-try", str(NIX_VAR), str(NIX_VAR)]
     else:
         args += ["--tmpfs", str(NIX_STORE)]
         for store_path in host.closure_paths:
@@ -223,6 +225,16 @@ def _get_bwrap_args(
     # symlink it has already planted.
     args += list(binds.parent_symlinks)
     args += list(git_args)
+
+    # The socket itself, not its directory, which for a socket resolving into
+    # /run would hand over every other daemon's socket there. Emitted after
+    # the masks and the declared binds, either of which would otherwise mount
+    # over a socket living under /tmp, the home, or a declared path.
+    if host.nix_daemon_socket is not None and not is_already_bound(
+        host.nix_daemon_socket, [NIX_VAR]
+    ):
+        daemon_socket = str(host.nix_daemon_socket)
+        args += ["--ro-bind", daemon_socket, daemon_socket]
 
     if session.proxy is not None:
         bundle = session.session_dir / CA_BUNDLE

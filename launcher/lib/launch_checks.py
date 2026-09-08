@@ -8,6 +8,7 @@ from launcher.lib.host_state import (
     DeclaredPath,
     HostStateDarwin,
     HostStateLinux,
+    get_nix_daemon_socket_path,
 )
 from launcher.lib.launch_config.linux.seccomp import SUPPORTED_MACHINES
 
@@ -175,6 +176,15 @@ def get_launch_refusals(
             f"no AF_UNIX seccomp filter is available for this machine "
             f"({host.machine}; supported: {supported}). Set "
             f"allowUnixSockets = true to launch without the denial."
+        )
+
+    # Refused rather than warned: the store grant allowNix trades away is
+    # already paid by launch time, and nothing inside would say why nix fails.
+    if spec.allow_nix and host.nix_daemon_socket is None:
+        refusals.append(
+            f"no nix daemon socket at {get_nix_daemon_socket_path()}, which "
+            f"allowNix = true needs. Set NIX_DAEMON_SOCKET_PATH if the daemon "
+            f"listens elsewhere."
         )
 
     if _is_cwd_above_home(host):

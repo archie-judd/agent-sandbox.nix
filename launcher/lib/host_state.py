@@ -86,6 +86,13 @@ def _path_is_file(path: Path) -> bool:
         return False
 
 
+def _path_is_socket(path: Path) -> bool:
+    try:
+        return path.is_socket()
+    except OSError:
+        return False
+
+
 def _expand_env_var(reference: str, environ: dict[str, str]) -> str:
     _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
     if reference.startswith("{"):
@@ -227,7 +234,7 @@ def _read_closure_paths(closure_paths_file: Path) -> tuple[Path, ...]:
     return tuple(paths)
 
 
-def _get_nix_daemon_socket() -> Path:
+def get_nix_daemon_socket_path() -> Path:
     # Resolved because Determinate Nix on macOS exposes the upstream path as
     # a symlink, which a seatbelt path-literal would not match.
     override = os.environ.get("NIX_DAEMON_SOCKET_PATH")
@@ -280,10 +287,13 @@ def _common_host_state(
     declared_paths += _get_declared_paths(spec.ro_dirs, "ro", "dir")
     declared_paths += _get_declared_paths(spec.ro_files, "ro", "file")
 
+    # A socket rather than mere existence: a single-user install has no daemon
+    # to reach, and a leftover regular file at the path is not one either.
+    nix_daemon_socket = None
     if spec.allow_nix:
-        nix_daemon_socket = _get_nix_daemon_socket()
-    else:
-        nix_daemon_socket = None
+        path = get_nix_daemon_socket_path()
+        if _path_is_socket(path):
+            nix_daemon_socket = path
 
     return _CommonHostState(
         cwd=cwd,
