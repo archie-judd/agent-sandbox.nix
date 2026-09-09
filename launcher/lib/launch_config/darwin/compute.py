@@ -170,6 +170,7 @@ def _get_computed_env(
         f"HOME={session.sandbox_home}",
         f"SHELL={spec.shell}",
         f"PATH={spec.sandbox_path}",
+        f"PKG_CONFIG_PATH={spec.pkg_config_path}",
         f"SSL_CERT_DIR={spec.cacert_dir}",
         f"TMPDIR={session.sandbox_tmpdir}",
         f"CLAUDE_CODE_TMPDIR={session.sandbox_tmpdir}",

@@ -128,7 +128,7 @@ Set `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `~/.claude.jso
 | `pkg` | yes | Package that contains the binary to wrap |
 | `binName` | yes | Name of the binary inside `pkg/bin/` |
 | `outName` | yes | Name of the wrapped binary, and the command that runs it |
-| `allowedPackages` | yes | Packages whose `bin/` dirs form the sandbox PATH. See the note below the table |
+| `allowedPackages` | yes | Packages the agent can use. See the notes below the table |
 | `rwDirs` | no | Directories the agent can read and write (for example `~/.config/claude`, or a package manager's cache: see [`shells/claude-uv.shell.nix`](shells/claude-uv.shell.nix)) |
 | `rwFiles` | no | Individual files the agent can read and write |
 | `roDirs` | no | Directories the agent can read but not write (for example signed binaries, reference source trees, secret stores) |

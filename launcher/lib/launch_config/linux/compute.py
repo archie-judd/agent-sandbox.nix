@@ -124,6 +124,7 @@ def _get_computed_env(
         f"HOME={host.real_home}",
         f"SHELL={spec.shell}",
         f"PATH={spec.sandbox_path}",
+        f"PKG_CONFIG_PATH={spec.pkg_config_path}",
         f"SSL_CERT_DIR={spec.cacert_dir}",
         f"TMPDIR={SANDBOX_TMPDIR}",
         "GIT_CONFIG_COUNT=1",

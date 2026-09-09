@@ -7,6 +7,7 @@
   pkg,
   binName,
   sandboxPath,
+  pkgConfigPath,
   allowNix,
   allowUnixSockets,
   rwDirs,
@@ -75,6 +76,7 @@ let
     platform = platform;
     out_name = outName;
     sandbox_path = sandboxPath;
+    pkg_config_path = pkgConfigPath;
     allow_nix = allowNix;
     allow_unix_sockets = allowUnixSockets;
     rw_dirs = rwDirs;
