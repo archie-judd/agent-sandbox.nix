@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.3](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.2...v5.2.3) (2026-09-09)
+
+
+### Bug Fixes
+
+* set PKG_CONFIG_PATH ([#138](https://github.com/archie-judd/agent-sandbox.nix/issues/138)) ([f801173](https://github.com/archie-judd/agent-sandbox.nix/commit/f8011734d69bbe2fdc0c3f568a7bb3ec98535e47))
+
 ## [5.2.2](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.1...v5.2.2) (2026-09-09)
 
 
