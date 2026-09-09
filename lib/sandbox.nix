@@ -32,9 +32,12 @@ let
 
   pathStr = pkgs.lib.makeBinPath (allowedPackages ++ implicitPackages);
 
+  pkgConfigPathStr = shared.mkPkgConfigPathStr (allowedPackages ++ implicitPackages);
+
   closurePathsFile = pkgs.writeClosure (
     allowedPackages
     ++ implicitPackages
+    ++ shared.devOutputs (allowedPackages ++ implicitPackages)
     ++ [ pkg ]
     # coreutils supplies the /usr/bin/env symlink target, and is deliberately
     # not in implicitPackages so it does not leak into PATH.
@@ -62,6 +65,7 @@ let
       pkg = pkg;
       binName = binName;
       sandboxPath = pathStr;
+      pkgConfigPath = pkgConfigPathStr;
       allowNix = allowNix;
       rwDirs = rwDirs;
       rwFiles = rwFiles;

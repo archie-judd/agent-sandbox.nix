@@ -170,6 +170,17 @@ let
     ]
     ++ (if allowNix then [ pkgs.nix ] else [ ]);
 
+  devOutputs = packages: pkgs.lib.unique (map pkgs.lib.getDev packages);
+
+  mkPkgConfigPathStr =
+    packages:
+    builtins.concatStringsSep ":" (
+      builtins.concatMap (out: [
+        "${out}/lib/pkgconfig"
+        "${out}/share/pkgconfig"
+      ]) (devOutputs packages)
+    );
+
   # One declare_env line per declared variable. toJSON supplies the double
   # quotes the value expands inside, so a value containing spaces stays one
   # word; escapeShellArg carries the fragment through unexpanded until
@@ -235,6 +246,8 @@ in
   preEntryScript = preEntryScript;
   launcherPackage = launcherPackage;
   mkImplicitPackages = mkImplicitPackages;
+  devOutputs = devOutputs;
+  mkPkgConfigPathStr = mkPkgConfigPathStr;
   mkEnvFragment = mkEnvFragment;
   mkStub = mkStub;
   mkWrapper = mkWrapper;

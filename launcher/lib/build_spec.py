@@ -76,6 +76,7 @@ class SandboxBuildSpec:
     version: str
     out_name: str
     sandbox_path: str  # $PATH not Path
+    pkg_config_path: str
     allow_nix: bool
     allow_unix_sockets: bool
     # Unexpanded: "$HOME/.claude" is not a path yet. They become Path in
@@ -119,6 +120,7 @@ class _CommonBuildSpec(TypedDict):
     version: str
     out_name: str
     sandbox_path: str
+    pkg_config_path: str
     allow_nix: bool
     allow_unix_sockets: bool
     rw_dirs: tuple[str, ...]
@@ -158,6 +160,7 @@ def _common_build_spec(data: Mapping[str, Any]) -> _CommonBuildSpec:
         version=data["version"],
         out_name=data["out_name"],
         sandbox_path=data["sandbox_path"],
+        pkg_config_path=data["pkg_config_path"],
         allow_nix=data["allow_nix"],
         allow_unix_sockets=data["allow_unix_sockets"],
         rw_dirs=tuple(data["rw_dirs"]),
