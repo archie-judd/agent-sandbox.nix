@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.2](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.1...v5.2.2) (2026-09-09)
+
+
+### Bug Fixes
+
+* **allowNix:** ensure daemon ([#135](https://github.com/archie-judd/agent-sandbox.nix/issues/135)) ([8fa9e44](https://github.com/archie-judd/agent-sandbox.nix/commit/8fa9e44e12eefd1bcd63a663c8ed40eec26f6ef1))
+
 ## [5.2.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.0...v5.2.1) (2026-09-08)
 
 
