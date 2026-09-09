@@ -506,7 +506,7 @@ Nothing in the session directory records this, so pair the log with `seatbelt.sb
 
 ### macOS: gh and other Go tools
 
-On macOS, when you set `allowedDomains`, `gh` (the GitHub CLI) fails HTTPS requests with a certificate error. The filtering proxy uses its own certificate. `git` accepts this certificate, but `gh` and other Go tools reject it on macOS. Linux is unaffected. The workaround is to use curl instead - most agents will figure this out themselves.
+On macOS, when you set `allowedDomains`, `gh` (the GitHub CLI) fails HTTPS requests with a certificate error. The filtering proxy uses its own certificate. `git` accepts this certificate, but `gh` and other Go tools reject it on macOS. There is an issue [here](https://github.com/cli/cli/issues/1735) for this on the `gh` repo. Linux is unaffected. The workaround is to use curl instead - most agents will figure this out themselves.
 
 ## Security
 
