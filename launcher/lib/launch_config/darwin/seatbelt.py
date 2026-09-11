@@ -252,8 +252,9 @@ def workspace(cwd: Path, repo_root: Path | None, git_dir: Path | None) -> list[s
 
 
 def declared_paths(declared: Sequence[DeclaredPath]) -> list[str]:
-    # A roDir nested inside an rwDir stays writable: seatbelt matches per
-    # operation, so fixing that needs explicit denies, not reordering.
+    # Note: if a file is declared read-write and read-only, the read-write grant wins.
+    # In this case we deny the write in nested_ro_protection() below.
+
     if not declared:
         return []
     lines = ["", ";; Declared directories & files"]
@@ -269,6 +270,17 @@ def declared_paths(declared: Sequence[DeclaredPath]) -> list[str]:
             lines.append(f'(allow file-read* (subpath "{path}"))')
         else:
             lines.append(f'(allow file-read* (literal "{path}"))')
+    return lines
+
+
+def nested_ro_protection(
+    nested_dirs: Sequence[Path], nested_files: Sequence[Path]
+) -> list[str]:
+    if not nested_dirs and not nested_files:
+        return []
+    lines = ["", ";; Declared read-only paths inside writable ones — deny writes"]
+    lines += [f'(deny file-write* (subpath "{path}"))' for path in nested_dirs]
+    lines += [f'(deny file-write* (literal "{path}"))' for path in nested_files]
     return lines
 
 

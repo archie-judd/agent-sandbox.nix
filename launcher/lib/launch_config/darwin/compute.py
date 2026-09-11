@@ -157,6 +157,36 @@ def _get_unix_socket_scope(
     )
 
 
+def _get_nested_ro_paths(
+    host: HostStateDarwin, git_dir: Path | None
+) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+    """
+    Fetch all the ro paths that are declared under a writable path, so they can be
+    emitted with deny-write rules in the seatbelt profile. This is needed because
+    seatbelt is last-match-wins.
+    """
+    writable = [host.cwd]
+    if git_dir is not None:
+        writable.append(git_dir)
+    for declared in host.declared:
+        if isinstance(declared, DeclaredDir) and declared.mode == "rw":
+            writable.append(declared.expanded_path)
+
+    nested_dirs: list[Path] = []
+    nested_files: list[Path] = []
+    for declared in host.declared:
+        if declared.mode != "ro":
+            continue
+        path = declared.expanded_path
+        if not any(path.is_relative_to(directory) for directory in writable):
+            continue
+        if isinstance(declared, DeclaredDir):
+            nested_dirs.append(path)
+        else:
+            nested_files.append(path)
+    return tuple(nested_dirs), tuple(nested_files)
+
+
 def _get_passwd(host: HostStateDarwin) -> str:
     # A single fabricated user: the host's real /etc/passwd would hand over
     # every account name and home path on the machine.
@@ -274,6 +304,9 @@ def _get_profile_lines(
     lines += seatbelt.ancestor_metadata(
         _get_traversal_ancestors(host, session, git, store_targets)
     )
+
+    nested_ro_dirs, nested_ro_files = _get_nested_ro_paths(host, git_dir)
+    lines += seatbelt.nested_ro_protection(nested_ro_dirs, nested_ro_files)
 
     # Last, so they outrank every allow above, including a declared rwDir
     # that happens to contain the gitdir.
