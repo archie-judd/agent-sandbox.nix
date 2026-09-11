@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.4](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.3...v5.2.4) (2026-09-11)
+
+
+### Bug Fixes
+
+* **darwin:** deny writes to read-only paths inside writable ones ([#140](https://github.com/archie-judd/agent-sandbox.nix/issues/140)) ([461ea4b](https://github.com/archie-judd/agent-sandbox.nix/commit/461ea4b0e7a6559d4f380b07bf9b03c8f725388d))
+
 ## [5.2.3](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.2...v5.2.3) (2026-09-09)
 
 
