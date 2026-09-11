@@ -12,6 +12,4 @@ Worked `shell.nix` examples for [agent-sandbox.nix](../README.md). Run one with
 | [`opencode-ollama.shell.nix`](opencode-ollama.shell.nix) | `allowedHostPorts` with no internet access: the agent reaches only Ollama on the host |
 
 Each file imports the published library from GitHub, so it works when copied
-out of this repository. `tests/shared/test-example-shells.sh` rewrites that
-import to the local checkout and evaluates every file, so an example cannot
-drift from the current arguments.
+out of this repository.

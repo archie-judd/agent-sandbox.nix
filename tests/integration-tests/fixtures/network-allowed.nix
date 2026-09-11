@@ -1,0 +1,15 @@
+# Test fixture: network restricted with allowed domain.
+# httpbin.test is redirected to a local go-httpbin started by the test
+# harness, so tests don't depend on public services. The port is passed
+# in via --argstr httpbinPort.
+{ httpbinPort ? "18918", pkgs ? import ../../pinned-nixpkgs.nix { } }:
+let
+  sandbox = import ../../../default.nix { pkgs = pkgs; };
+in sandbox.mkSandbox {
+  pkg = pkgs.bash;
+  binName = "bash";
+  outName = "sandboxed-bash-net";
+  allowedPackages = [ pkgs.coreutils pkgs.bash pkgs.curl ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.iputils ];
+  allowedDomains = [ "httpbin.test" ];
+  _proxyRedirects = { "httpbin.test" = "127.0.0.1:${httpbinPort}"; };
+}
