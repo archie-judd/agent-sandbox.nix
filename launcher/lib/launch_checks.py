@@ -31,6 +31,16 @@ def _get_missing_binds(host: HostStateLinux | HostStateDarwin) -> list[DeclaredP
     return [declared for declared in host.declared if not declared.exists]
 
 
+def _get_unfollowed_symlinks(
+    host: HostStateLinux | HostStateDarwin,
+) -> list[DeclaredPath]:
+    return [
+        declared
+        for declared in host.declared
+        if declared.unfollowed_symlink is not None
+    ]
+
+
 def _get_relative_paths(host: HostStateLinux | HostStateDarwin) -> list[DeclaredPath]:
     return [
         declared
@@ -147,8 +157,17 @@ def get_launch_refusals(
             f"{_origin_suffix(declared)}"
         )
 
+    unfollowed = _get_unfollowed_symlinks(host)
+    for declared in unfollowed:
+        refusals.append(
+            f"{declared.expanded_path}: declared as "
+            f"{_get_declared_label(declared)} but "
+            f"{declared.unfollowed_symlink}"
+            f"{_origin_suffix(declared)}"
+        )
+
     for declared in _get_missing_binds(host):
-        if declared in relative:
+        if declared in relative or declared in unfollowed:
             continue
         refusals.append(
             f"{declared.expanded_path}: declared as "

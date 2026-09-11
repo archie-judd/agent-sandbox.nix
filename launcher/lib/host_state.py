@@ -34,6 +34,8 @@ class DeclaredPath:
     exists: bool
     parent_symlinks: tuple[Symlink, ...]
     hops: tuple[Path, ...]
+    # Why resolution stopped, when it did; None when the path resolved.
+    unfollowed_symlink: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -158,7 +160,12 @@ def _get_inner_symlinks(directory: Path) -> tuple[ResolvedPath, ...]:
 
     for entry in entries:
         if entry.is_symlink():
-            inner_symlinks.append(resolve_path(entry))
+            resolved, unfollowed_symlink = resolve_path(entry)
+            # Dropped rather than refused: one unfollowable link says nothing
+            # about the declared directory, and a partial walk records no
+            # landing to expose.
+            if unfollowed_symlink is None:
+                inner_symlinks.append(resolved)
 
     return tuple(inner_symlinks)
 
@@ -172,11 +179,15 @@ def _get_declared_paths(
         expanded = _expand_path(unexpanded, environ)
         parent_symlinks: tuple[Symlink, ...] = ()
         hops: tuple[Path, ...] = ()
+        unfollowed_symlink: str | None = None
         if expanded.is_absolute():
-            resolved = resolve_path(expanded)
-            expanded = resolved.physical_path
-            parent_symlinks = resolved.parent_symlinks
-            hops = resolved.hops
+            resolved, unfollowed_symlink = resolve_path(expanded)
+            # A stopped walk leaves the declared path as it was written: the
+            # refusal names that, not the interior link it stopped at.
+            if unfollowed_symlink is None:
+                expanded = resolved.physical_path
+                parent_symlinks = resolved.parent_symlinks
+                hops = resolved.hops
         exists = _path_exists(expanded)
         path: DeclaredPath
         match kind:
@@ -192,6 +203,7 @@ def _get_declared_paths(
                     exists=exists,
                     parent_symlinks=parent_symlinks,
                     hops=hops,
+                    unfollowed_symlink=unfollowed_symlink,
                     inner_symlinks=inner_symlinks,
                 )
             case "file":
@@ -202,6 +214,7 @@ def _get_declared_paths(
                     exists=exists,
                     parent_symlinks=parent_symlinks,
                     hops=hops,
+                    unfollowed_symlink=unfollowed_symlink,
                 )
             case _:
                 assert_never(kind)

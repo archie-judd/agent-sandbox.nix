@@ -73,8 +73,34 @@ class ResolvedPath:
     hops: tuple[Path, ...]
 
 
-def resolve_path(path: Path) -> ResolvedPath:
+def _stopped_walk(
+    link: Path,
+    physical_path: Path | None,
+    parent_symlinks: list[Symlink],
+    hops: list[Path],
+    reason: str,
+) -> tuple[ResolvedPath, str]:
+    """The resolution as far as the walk got, ending at the link it stopped
+    on: never the components behind that link, which sit under a name the
+    kernel does not present, so joining them on would invent a path that was
+    never resolved."""
+    return (
+        ResolvedPath(
+            physical_path=link if physical_path is None else physical_path,
+            parent_symlinks=tuple(parent_symlinks),
+            hops=tuple(hops),
+        ),
+        reason,
+    )
+
+
+def resolve_path(path: Path) -> tuple[ResolvedPath, str | None]:
     """Walk an absolute path as the kernel would, recording every link.
+
+    The second element names the link the walk stopped at, and is None when
+    the walk ran to the end. A stopped walk is one the kernel would refuse
+    too, so the resolution is as far as it got: the caller decides what to
+    do about it rather than reading the partial walk as a whole path.
 
     One divergence: `.` and `..` are collapsed textually before walking, so
     a `..` written after a symlink is removed as text rather than walked
@@ -115,21 +141,16 @@ def resolve_path(path: Path) -> ResolvedPath:
             resolved = current
             continue
 
-        if follows >= MAX_SYMLINK_FOLLOWS:
-            if physical_path is None:
-                physical_path = current.joinpath(*remaining)
-            return ResolvedPath(
-                physical_path=physical_path,
-                parent_symlinks=tuple(parent_symlinks),
-                hops=tuple(hops),
-            )
-        follows += 1
-
         try:
             link_text = os.readlink(current)
-        except OSError:
-            resolved = current
-            continue
+        except OSError as error:
+            return _stopped_walk(
+                link=current,
+                physical_path=physical_path,
+                parent_symlinks=parent_symlinks,
+                hops=hops,
+                reason=f"{current} could not be read: {error.strerror}",
+            )
 
         target = Path(link_text)
         # A relative link is relative to the directory it sits in, which is
@@ -137,6 +158,19 @@ def resolve_path(path: Path) -> ResolvedPath:
         if not target.is_absolute():
             target = resolved / target
         target = Path(os.path.normpath(target))
+
+        if follows >= MAX_SYMLINK_FOLLOWS:
+            return _stopped_walk(
+                link=current,
+                physical_path=physical_path,
+                parent_symlinks=parent_symlinks,
+                hops=hops,
+                reason=(
+                    f"{current} -> {target} could not be followed: "
+                    f"too many symlink levels"
+                ),
+            )
+        follows += 1
 
         if at_final_component:
             awaiting_hop_landing = True
@@ -153,8 +187,11 @@ def resolve_path(path: Path) -> ResolvedPath:
         # target, was the root itself.
         physical_path = resolved
 
-    return ResolvedPath(
-        physical_path=physical_path,
-        parent_symlinks=tuple(parent_symlinks),
-        hops=tuple(hops),
+    return (
+        ResolvedPath(
+            physical_path=physical_path,
+            parent_symlinks=tuple(parent_symlinks),
+            hops=tuple(hops),
+        ),
+        None,
     )
