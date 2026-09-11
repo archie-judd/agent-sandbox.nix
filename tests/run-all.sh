@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run all sandbox tests
+# Run all tests: the unit suites first, because they take seconds and need no
+# sandbox, then the integration suites, which build fixtures and launch one.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OS=$(uname)
@@ -27,19 +28,23 @@ run_suite() {
 	fi
 }
 
-# Run all shared tests
-for test in "$SCRIPT_DIR/shared/"test-*.sh; do
-	run_suite "$(basename "$test")" "shared/$(basename "$test")"
+# One runner per language, each named for the runner it drives.
+for runner in "$SCRIPT_DIR/unit-tests/"*/run.sh; do
+	language="$(basename "$(dirname "$runner")")"
+	run_suite "$language unit tests" "unit-tests/$language/run.sh"
 done
 
-# Run platform-specific tests
+for test in "$SCRIPT_DIR/integration-tests/shared/"test-*.sh; do
+	run_suite "$(basename "$test")" "integration-tests/shared/$(basename "$test")"
+done
+
 if [ "$OS" = "Linux" ]; then
-	for test in "$SCRIPT_DIR/linux/"test-*.sh; do
-		run_suite "$(basename "$test") [Linux]" "linux/$(basename "$test")"
+	for test in "$SCRIPT_DIR/integration-tests/linux/"test-*.sh; do
+		run_suite "$(basename "$test") [Linux]" "integration-tests/linux/$(basename "$test")"
 	done
 elif [ "$OS" = "Darwin" ]; then
-	for test in "$SCRIPT_DIR/darwin/"test-*.sh; do
-		run_suite "$(basename "$test") [Darwin]" "darwin/$(basename "$test")"
+	for test in "$SCRIPT_DIR/integration-tests/darwin/"test-*.sh; do
+		run_suite "$(basename "$test") [Darwin]" "integration-tests/darwin/$(basename "$test")"
 	done
 fi
 

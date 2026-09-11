@@ -8,3 +8,6 @@ strict = true
 # the script directory off sys.path while still honouring PYTHONPATH.
 python_version = "3.11"
 files = ["launcher"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit-tests/python"]
