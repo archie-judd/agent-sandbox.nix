@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.5](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.4...v5.2.5) (2026-09-11)
+
+
+### Bug Fixes
+
+* **linux:** refuse launch for unresolved symlink hop ([#143](https://github.com/archie-judd/agent-sandbox.nix/issues/143)) ([8b72979](https://github.com/archie-judd/agent-sandbox.nix/commit/8b729792aaf573dd8205d095dc5d7e7fa8252ff4))
+
 ## [5.2.4](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.3...v5.2.4) (2026-09-11)
 
 
