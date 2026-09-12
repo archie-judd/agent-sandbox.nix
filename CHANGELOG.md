@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.2.6](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.5...v5.2.6) (2026-09-12)
+
+
+### Bug Fixes
+
+* **launcher:** always set SANDBOX_PROXY_REDIRECT ([4a30596](https://github.com/archie-judd/agent-sandbox.nix/commit/4a305962be3b27a7807117e12c9905d947aa7eb5))
+* **proxy:** disallow , and = in redirects ([#146](https://github.com/archie-judd/agent-sandbox.nix/issues/146)) ([f1397bc](https://github.com/archie-judd/agent-sandbox.nix/commit/f1397bcd42363b046c7cde1273be887d1e26a62c))
+
 ## [5.2.5](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.4...v5.2.5) (2026-09-11)
 
 
