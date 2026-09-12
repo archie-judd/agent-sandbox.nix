@@ -142,6 +142,7 @@ func TestApplyFilters(t *testing.T) {
 	cases := []struct {
 		name   string
 		cfg    Config
+		host   string
 		raw    string
 		status int
 	}{
@@ -226,16 +227,105 @@ func TestApplyFilters(t *testing.T) {
 			raw:    "GET /thing HTTP/1.1\r\nHost: example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
 			status: 0,
 		},
+		{
+			// The wildcard makes every name allowlisted, so only the
+			// comparison against the CONNECT host can refuse this.
+			name:   "Host naming another host refused",
+			cfg:    Config{"*": {AllowAll: true}},
+			raw:    "GET /thing HTTP/1.1\r\nHost: other.example\r\n\r\n",
+			status: http.StatusForbidden,
+		},
+		{
+			name:   "Host bracketing the CONNECT host refused",
+			cfg:    Config{"*": {AllowAll: true}},
+			raw:    "GET /thing HTTP/1.1\r\nHost: [example.com]\r\n\r\n",
+			status: http.StatusForbidden,
+		},
+		{
+			name:   "Host carrying the port allowed",
+			cfg:    wildcardPolicy,
+			raw:    "GET /thing HTTP/1.1\r\nHost: example.com:443\r\n\r\n",
+			status: 0,
+		},
+		{
+			name:   "Host differing in case allowed",
+			cfg:    wildcardPolicy,
+			raw:    "GET /thing HTTP/1.1\r\nHost: EXAMPLE.CoM\r\n\r\n",
+			status: 0,
+		},
+		{
+			name:   "Host carrying a trailing dot allowed",
+			cfg:    wildcardPolicy,
+			raw:    "GET /thing HTTP/1.1\r\nHost: example.com.\r\n\r\n",
+			status: 0,
+		},
+		{
+			name:   "IPv6 CONNECT host matched through its brackets",
+			cfg:    Config{"2606:4700:4700::1111": {AllowAll: true}},
+			host:   "2606:4700:4700::1111",
+			raw:    "GET /thing HTTP/1.1\r\nHost: [2606:4700:4700::1111]:443\r\n\r\n",
+			status: 0,
+		},
+		{
+			name:   "request without a Host refused",
+			cfg:    Config{"*": {AllowAll: true}},
+			raw:    "GET /thing HTTP/1.0\r\n\r\n",
+			status: http.StatusBadRequest,
+		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			host := c.host
+			if host == "" {
+				host = "example.com"
+			}
 			req := readRequest(t, c.raw)
-			status, reason := applyFilters(req, "example.com", c.cfg)
+			status, reason := applyFilters(req, host, c.cfg)
 			if status != c.status {
 				t.Errorf("applyFilters = (%d, %q), want status %d", status, reason, c.status)
 			}
 		})
+	}
+}
+
+// The Host header selects the origin on an upstream that serves several names
+// from one address, while the allowlist was applied to the CONNECT host.
+func TestApplyFiltersReportsHostMismatch(t *testing.T) {
+	req := readRequest(t, "GET /thing HTTP/1.1\r\nHost: other.example\r\n\r\n")
+	status, reason := applyFilters(req, "example.com", Config{"*": {AllowAll: true}})
+	if status != http.StatusForbidden {
+		t.Fatalf("applyFilters = (%d, %q), want 403", status, reason)
+	}
+	if !strings.Contains(reason, "CONNECT host") {
+		t.Errorf("reason = %q, want it to name the CONNECT host", reason)
+	}
+}
+
+func TestHostOnly(t *testing.T) {
+	cases := []struct {
+		addr string
+		want string
+		ok   bool
+	}{
+		{addr: "example.com:443", want: "example.com", ok: true},
+		{addr: "example.com", want: "example.com", ok: true},
+		{addr: "[::1]:443", want: "::1", ok: true},
+		{addr: "[2606:4700:4700::1111]", want: "2606:4700:4700::1111", ok: true},
+		// Brackets wrap an IPv6 literal and nothing else. SplitHostPort strips
+		// them without reading what is inside, so a name written this way
+		// would otherwise pass as the bare name it contains.
+		{addr: "[example.com]:443", ok: false},
+		{addr: "[example.com]", ok: false},
+		{addr: "[127.0.0.1]:443", ok: false},
+		{addr: "[::1", ok: false},
+		{addr: "[::1]x", ok: false},
+	}
+	for _, c := range cases {
+		got, ok := hostOnly(c.addr)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("hostOnly(%q) = (%q, %v), want (%q, %v)", c.addr, got, ok, c.want, c.ok)
+		}
 	}
 }
 
