@@ -65,6 +65,31 @@ func TestIsBlockedAddr(t *testing.T) {
 	}
 }
 
+// A redirect skips resolveVetted, so an entry the caller never wrote is
+// worth as much as one it did. "a=b=c" is what reaches the proxy when a key
+// of "a=b" is written: taking the first "=" would silently redirect "a".
+func TestParseRedirectEnvRejectsExtraEquals(t *testing.T) {
+	if _, err := parseRedirectEnv("a=b=c"); err == nil {
+		t.Error("parseRedirectEnv(\"a=b=c\") succeeded, want an error")
+	}
+}
+
+func TestParseRedirectEnv(t *testing.T) {
+	got, err := parseRedirectEnv("Example.com=127.0.0.1:8080, other.test=[::1]:9090")
+	if err != nil {
+		t.Fatalf("parseRedirectEnv errored: %v", err)
+	}
+	want := Redirects{"example.com": "127.0.0.1:8080", "other.test": "[::1]:9090"}
+	if len(got) != len(want) {
+		t.Fatalf("parseRedirectEnv = %v, want %v", got, want)
+	}
+	for host, addr := range want {
+		if got[host] != addr {
+			t.Errorf("parseRedirectEnv[%q] = %q, want %q", host, got[host], addr)
+		}
+	}
+}
+
 // An allowlisted name whose address is loopback must be refused: the proxy
 // runs on the host, so dialing it would reach the host services that
 // allowedHostPorts exists to gate.

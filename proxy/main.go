@@ -56,6 +56,13 @@ func parseRedirectEnv(s string) (Redirects, error) {
 		if host == "" || addr == "" {
 			return nil, fmt.Errorf("invalid redirect entry %q: empty host or address", entry)
 		}
+		// The split takes the first "=", so a second one means the host was
+		// cut at an "=" the caller wrote inside its key: the entry is not the
+		// one it set. The "," case cannot reach here, having split entries
+		// first, and no address needs an "=" of its own.
+		if strings.Contains(addr, "=") {
+			return nil, fmt.Errorf("invalid redirect entry %q: extra '='", entry)
+		}
 		out[host] = addr
 	}
 	return out, nil

@@ -102,6 +102,24 @@ let
       builtins.throw "${errorPrefix} allowNix = true requires allowUnixSockets = true: the nix daemon is reached over an AF_UNIX socket, which the sandbox denies by default."
     else
       allowUnixSockets;
+
+  # The launcher joins these into SANDBOX_PROXY_REDIRECT as "host=addr[,...]"
+  # and the proxy splits them back apart, so a "," in either half, or an "="
+  # in the host, would forge an entry no caller wrote.
+  validateProxyRedirects =
+    proxyRedirects:
+    if !(builtins.isAttrs proxyRedirects) then
+      builtins.throw "${errorPrefix} _proxyRedirects must be an attrset mapping \"host\" to \"addr:port\""
+    else
+      let
+        validHost = host: builtins.match "[^,=]+" host != null;
+        validAddr = addr: builtins.isString addr && builtins.match "[^,]+" addr != null;
+        invalid = pkgs.lib.filterAttrs (host: addr: !(validHost host) || !(validAddr addr)) proxyRedirects;
+      in
+      if invalid != { } then
+        builtins.throw "${errorPrefix} _proxyRedirects hosts must not contain \",\" or \"=\", and addresses must not contain \",\". Invalid: ${builtins.toJSON invalid}"
+      else
+        proxyRedirects;
   assertNoLegacyArgs =
     {
       restrictNetwork,
@@ -218,18 +236,21 @@ let
       allowedHostPorts,
       publishedPorts,
       allowUnixSockets,
+      proxyRedirects,
     }:
     builtins.seq (assertNoLegacyArgs legacyArgs) (
       builtins.seq allowedHostPorts (
         builtins.seq publishedPorts (
           builtins.seq allowUnixSockets (
-            pkgs.runCommand outName { } ''
-              mkdir -p $out/bin
-              install -m755 ${stub} $out/bin/${outName}
-            ''
-            // {
-              buildSpec = buildSpec;
-            }
+            builtins.seq proxyRedirects (
+              pkgs.runCommand outName { } ''
+                mkdir -p $out/bin
+                install -m755 ${stub} $out/bin/${outName}
+              ''
+              // {
+                buildSpec = buildSpec;
+              }
+            )
           )
         )
       )
@@ -243,6 +264,7 @@ in
   validateAllowedHostPorts = validateAllowedHostPorts;
   validatePublishedPorts = validatePublishedPorts;
   validateAllowUnixSockets = validateAllowUnixSockets;
+  validateProxyRedirects = validateProxyRedirects;
   preEntryScript = preEntryScript;
   launcherPackage = launcherPackage;
   mkImplicitPackages = mkImplicitPackages;
