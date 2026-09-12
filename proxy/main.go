@@ -84,7 +84,53 @@ const (
 	refusalWriteTimeout = 10 * time.Second
 
 	maxConns = 256
+
+	// Caps one request's header block. http.ReadRequest is called directly
+	// rather than through http.Server, and the textproto reader beneath it
+	// runs unbounded, so without this a single header line allocates without
+	// limit in a process that runs on the host, outside whatever memory
+	// confinement the sandbox has.
+	maxHeaderBytes = 64 * 1024
 )
+
+// Bounds the client TLS handshake in handleMITM. A var rather than a const so
+// the test can shorten it.
+var clientHandshakeTimeout = 10 * time.Second
+
+// headerLimitReader bounds how much is read while a request header block is
+// being parsed. It is armed around http.ReadRequest and disarmed for the body
+// and for anything tunnelled afterwards, which must not be capped.
+type headerLimitReader struct {
+	r         io.Reader
+	remaining int64
+}
+
+var errHeaderTooLarge = errors.New("request header exceeds limit")
+
+func (h *headerLimitReader) arm() {
+	h.remaining = maxHeaderBytes
+}
+
+func (h *headerLimitReader) disarm() {
+	h.remaining = -1
+}
+
+func (h *headerLimitReader) Read(p []byte) (int, error) {
+	if h.remaining < 0 {
+		return h.r.Read(p)
+	}
+	if h.remaining == 0 {
+		return 0, errHeaderTooLarge
+	}
+	// Read no more than the budget, so the error surfaces on the read that
+	// exhausts it rather than after the excess has been buffered.
+	if int64(len(p)) > h.remaining {
+		p = p[:h.remaining]
+	}
+	n, err := h.r.Read(p)
+	h.remaining -= int64(n)
+	return n, err
+}
 
 // Proxy nil rather than ProxyFromEnvironment, so the proxy itself does not
 // route through another proxy on the host.
@@ -520,6 +566,10 @@ func main() {
 	fmt.Println(ln.Addr().(*net.TCPAddr).Port)
 	os.Stdout.Sync()
 
+	serve(ln, cfg, ca, redirects)
+}
+
+func serve(ln net.Listener, cfg Config, ca *certAuthority, redirects Redirects) {
 	conns := make(chan struct{}, maxConns)
 	var retryDelay time.Duration
 	for {
@@ -529,6 +579,11 @@ func main() {
 			// persist, a closed listener or an exhausted descriptor table,
 			// would otherwise spin this loop at the cost of a whole core.
 			if retryDelay == 0 {
+				// Logged on entry to the backoff rather than once per
+				// process, so a storm that clears and returns is not silent
+				// the second time, and not once per failure, which would let
+				// the storm flood the log it is meant to show up in.
+				fmt.Fprintf(os.Stderr, "%s accept error, backing off: %v\n", time.Now().Format(time.RFC3339), err)
 				retryDelay = 5 * time.Millisecond
 			} else {
 				retryDelay *= 2
@@ -556,8 +611,11 @@ func main() {
 
 func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 	defer conn.Close()
-	br := bufio.NewReader(conn)
+	hlr := &headerLimitReader{r: conn}
+	br := bufio.NewReader(hlr)
+	hlr.arm()
 	req, err := http.ReadRequest(br)
+	hlr.disarm()
 	if err != nil {
 		return
 	}
@@ -659,7 +717,14 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		Certificates: []tls.Certificate{*leafCert},
 	}
 	clientTLS := tls.Server(clientConn, tlsConfig)
-	if err := clientTLS.Handshake(); err != nil {
+	// The 200 has already gone out, so a client that never sends a ClientHello
+	// would otherwise park this goroutine and its slot for good.
+	clientConn.SetDeadline(time.Now().Add(clientHandshakeTimeout))
+	err = clientTLS.Handshake()
+	// Cleared unconditionally: left set it would expire mid-session, cutting
+	// the keep-alive loop and any tunnel below it.
+	clientConn.SetDeadline(time.Time{})
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s client TLS handshake error for %s: %v\n", time.Now().Format(time.RFC3339), host, err)
 		return
 	}
@@ -707,9 +772,13 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		}
 	}()
 
-	clientBuf := bufio.NewReader(clientTLS)
+	// Above the TLS layer, so the cap applies to the decrypted header block.
+	clientLimit := &headerLimitReader{r: clientTLS}
+	clientBuf := bufio.NewReader(clientLimit)
 	for {
+		clientLimit.arm()
 		req, err := http.ReadRequest(clientBuf)
+		clientLimit.disarm()
 		if err != nil {
 			return
 		}

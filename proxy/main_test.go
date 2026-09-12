@@ -9,7 +9,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -403,5 +406,219 @@ func TestWriteSwitchingProtocolsSingleWrite(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in %q", want, got)
 		}
+	}
+}
+
+func TestHeaderLimitReader(t *testing.T) {
+	src := strings.Repeat("a", maxHeaderBytes*2)
+
+	h := &headerLimitReader{r: strings.NewReader(src)}
+	h.arm()
+	n, err := io.Copy(io.Discard, h)
+	if !errors.Is(err, errHeaderTooLarge) {
+		t.Errorf("armed read error = %v, want errHeaderTooLarge", err)
+	}
+	if n != maxHeaderBytes {
+		t.Errorf("armed read passed %d bytes, want %d", n, maxHeaderBytes)
+	}
+
+	h = &headerLimitReader{r: strings.NewReader(src)}
+	h.arm()
+	h.disarm()
+	n, err = io.Copy(io.Discard, h)
+	if err != nil {
+		t.Errorf("disarmed read error = %v, want nil", err)
+	}
+	if n != int64(len(src)) {
+		t.Errorf("disarmed read passed %d bytes, want %d", n, len(src))
+	}
+}
+
+func TestHandleRejectsOversizedHeader(t *testing.T) {
+	ca, err := newCertAuthority()
+	if err != nil {
+		t.Fatalf("new cert authority: %v", err)
+	}
+	client, server := net.Pipe()
+	defer client.Close()
+	go handle(server, wildcardPolicy, ca, Redirects{})
+
+	client.SetDeadline(time.Now().Add(10 * time.Second))
+	go func() {
+		fmt.Fprintf(client, "GET / HTTP/1.1\r\nHost: example.com\r\nX-Big: %s\r\n\r\n", strings.Repeat("a", maxHeaderBytes*2))
+	}()
+
+	// The header never completes, so the proxy closes without answering
+	// rather than forwarding it upstream.
+	got, err := io.ReadAll(client)
+	if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, io.EOF) {
+		t.Fatalf("read after oversized header: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("proxy answered %q, want the connection closed with nothing written", got)
+	}
+}
+
+func TestHandleMITMDeadlinesClientHandshake(t *testing.T) {
+	old := clientHandshakeTimeout
+	clientHandshakeTimeout = 50 * time.Millisecond
+	defer func() { clientHandshakeTimeout = old }()
+
+	ca, err := newCertAuthority()
+	if err != nil {
+		t.Fatalf("new cert authority: %v", err)
+	}
+	client, server := net.Pipe()
+	defer client.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handle(server, wildcardPolicy, ca, Redirects{})
+	}()
+
+	client.SetDeadline(time.Now().Add(10 * time.Second))
+	go fmt.Fprintf(client, "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
+
+	// The 200 is written before the handshake, so a client that stops here
+	// holds a connection slot until the deadline gives it back.
+	br := bufio.NewReader(client)
+	status, err := br.ReadString('\n')
+	if err != nil || !strings.HasPrefix(status, "HTTP/1.1 200") {
+		t.Fatalf("CONNECT response = %q, err = %v", status, err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("handle did not return: a client that never sends a ClientHello parks the goroutine")
+	}
+}
+
+// fakeListener drives serve from a closure, so a test can script accept
+// failures the network will not produce on demand.
+type fakeListener struct {
+	accept func() (net.Conn, error)
+}
+
+func (f *fakeListener) Accept() (net.Conn, error) { return f.accept() }
+func (f *fakeListener) Close() error              { return nil }
+func (f *fakeListener) Addr() net.Addr            { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)} }
+
+func captureStderr(t *testing.T) func() string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+	var buf bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		io.Copy(&buf, r)
+		close(done)
+	}()
+	return func() string {
+		os.Stderr = old
+		w.Close()
+		<-done
+		r.Close()
+		return buf.String()
+	}
+}
+
+func TestServeLogsAcceptBackoffOnce(t *testing.T) {
+	stderr := captureStderr(t)
+	stop := make(chan struct{})
+	var calls atomic.Int32
+	reached := make(chan struct{})
+	var once sync.Once
+
+	ln := &fakeListener{accept: func() (net.Conn, error) {
+		if calls.Add(1) <= 3 {
+			return nil, errors.New("accept tcp: too many open files")
+		}
+		once.Do(func() { close(reached) })
+		<-stop
+		return nil, errors.New("listener stopped")
+	}}
+	go serve(ln, wildcardPolicy, nil, Redirects{})
+
+	select {
+	case <-reached:
+	case <-time.After(10 * time.Second):
+		close(stop)
+		stderr()
+		t.Fatal("serve did not retry past the scripted accept failures")
+	}
+	close(stop)
+	got := stderr()
+
+	// One line for the storm, not one per failure: the point of the log is to
+	// show up beside the traffic it explains, not to bury it.
+	if n := strings.Count(got, "accept error, backing off"); n != 1 {
+		t.Errorf("backoff logged %d times, want 1:\n%s", n, got)
+	}
+	if !strings.Contains(got, "too many open files") {
+		t.Errorf("log does not carry the underlying error:\n%s", got)
+	}
+}
+
+func TestServeRefusesBeyondMaxConns(t *testing.T) {
+	stderr := captureStderr(t)
+	defer func() {
+		if t.Failed() {
+			t.Log(stderr())
+		}
+	}()
+
+	ca, err := newCertAuthority()
+	if err != nil {
+		t.Fatalf("new cert authority: %v", err)
+	}
+
+	// Built up front rather than inside the closure, which runs on serve's
+	// goroutine while the cleanup below reads the slice from this one.
+	held := make([]net.Conn, maxConns)
+	ready := make([]net.Conn, maxConns)
+	for i := range held {
+		held[i], ready[i] = net.Pipe()
+	}
+	defer func() {
+		for _, c := range held {
+			c.Close()
+		}
+	}()
+	refusedClient, refusedServer := net.Pipe()
+	defer refusedClient.Close()
+
+	stop := make(chan struct{})
+	defer close(stop)
+	handed := 0
+	// Accept is serial and the slot is claimed before the next call, so by the
+	// time the extra connection is handed over every slot is genuinely taken.
+	ln := &fakeListener{accept: func() (net.Conn, error) {
+		switch {
+		case handed < maxConns:
+			handed++
+			return ready[handed-1], nil
+		case handed == maxConns:
+			handed++
+			return refusedServer, nil
+		default:
+			<-stop
+			return nil, errors.New("listener stopped")
+		}
+	}}
+	go serve(ln, wildcardPolicy, ca, Redirects{})
+
+	refusedClient.SetDeadline(time.Now().Add(10 * time.Second))
+	status, err := bufio.NewReader(refusedClient).ReadString('\n')
+	if err != nil {
+		t.Fatalf("read refusal: %v", err)
+	}
+	if !strings.HasPrefix(status, "HTTP/1.1 503") {
+		t.Errorf("connection %d got %q, want 503 once the cap is reached", maxConns+1, status)
 	}
 }
