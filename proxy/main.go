@@ -70,10 +70,30 @@ func parseRedirectEnv(s string) (Redirects, error) {
 
 const maxURLBytes = 8192
 
+const (
+	// Upstream connect, covering the TLS handshake. Without it a host that
+	// completes the TCP connect and then never sends ServerHello parks the
+	// goroutine and both its file descriptors for the life of the proxy.
+	dialTimeout = 10 * time.Second
+	// The wait for upstream response headers.
+	responseHeaderTimeout = 60 * time.Second
+	// Reaps pooled upstream connections. Go's own Transport default.
+	upstreamIdleTimeout = 90 * time.Second
+	// Bounds the refusal written to a client the proxy has no slot for, which
+	// is a client with no reason to read it.
+	refusalWriteTimeout = 10 * time.Second
+
+	maxConns = 256
+)
+
 // Proxy nil rather than ProxyFromEnvironment, so the proxy itself does not
 // route through another proxy on the host.
 var directTransport = &http.Transport{
-	Proxy: nil,
+	Proxy:                 nil,
+	DialContext:           (&net.Dialer{Timeout: dialTimeout}).DialContext,
+	TLSHandshakeTimeout:   dialTimeout,
+	ResponseHeaderTimeout: responseHeaderTimeout,
+	IdleConnTimeout:       upstreamIdleTimeout,
 }
 
 var knownHTTPMethods = map[string]bool{
@@ -356,6 +376,18 @@ func writeSwitchingProtocols(w io.Writer, resp *http.Response) error {
 	return err
 }
 
+func writeStatus(w io.Writer, code int) error {
+	resp := &http.Response{
+		StatusCode: code,
+		Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     make(http.Header),
+	}
+	resp.Header.Set("Connection", "close")
+	return resp.Write(w)
+}
+
 func tunnel(clientR io.Reader, clientW io.Writer, upstreamR io.Reader, upstreamW io.Writer) {
 	done := make(chan struct{}, 2)
 	go func() {
@@ -436,6 +468,19 @@ func dialFailureStatus(err error) int {
 	return http.StatusBadGateway
 }
 
+// refuseConn answers a connection there is no slot for. Logged once, because
+// the refusal is driven by the client: a line each would let it flood the log.
+var connLimitLogged sync.Once
+
+func refuseConn(conn net.Conn) {
+	defer conn.Close()
+	connLimitLogged.Do(func() {
+		fmt.Fprintf(os.Stderr, "%s connection limit reached (%d)\n", time.Now().Format(time.RFC3339), maxConns)
+	})
+	conn.SetWriteDeadline(time.Now().Add(refusalWriteTimeout))
+	writeStatus(conn, http.StatusServiceUnavailable)
+}
+
 func main() {
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: sandbox-proxy <config-file> <ca-cert-output-path> [listen-addr]")
@@ -475,12 +520,37 @@ func main() {
 	fmt.Println(ln.Addr().(*net.TCPAddr).Port)
 	os.Stdout.Sync()
 
+	conns := make(chan struct{}, maxConns)
+	var retryDelay time.Duration
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			// Backing off rather than retrying at once: the errors that
+			// persist, a closed listener or an exhausted descriptor table,
+			// would otherwise spin this loop at the cost of a whole core.
+			if retryDelay == 0 {
+				retryDelay = 5 * time.Millisecond
+			} else {
+				retryDelay *= 2
+			}
+			if retryDelay > time.Second {
+				retryDelay = time.Second
+			}
+			time.Sleep(retryDelay)
 			continue
 		}
-		go handle(conn, cfg, ca, redirects)
+		retryDelay = 0
+		select {
+		case conns <- struct{}{}:
+			go func() {
+				defer func() { <-conns }()
+				handle(conn, cfg, ca, redirects)
+			}()
+		default:
+			// In a goroutine, so one client that never reads its refusal
+			// cannot stall the accept loop for the write deadline.
+			go refuseConn(conn)
+		}
 	}
 }
 
@@ -528,15 +598,16 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 		if req.URL.Host == "" {
 			req.URL.Host = req.Host
 		}
-		if req.URL.Scheme == "" {
-			req.URL.Scheme = "http"
-		}
+		// Unconditionally, not only when the request carried no scheme: the
+		// port check and resolveVetted below have both committed to plaintext,
+		// so an absolute-form https:// URL would otherwise send the transport
+		// into a TLS handshake against port 80.
+		req.URL.Scheme = "http"
 		if addr, ok := lookupRedirect(host, redirects); ok {
 			if req.Host == "" {
 				req.Host = req.URL.Host
 			}
 			req.URL.Host = addr
-			req.URL.Scheme = "http"
 		} else {
 			// Dial the vetted literal, so the transport reaches the address
 			// that was checked instead of resolving the name a second time.
@@ -607,7 +678,7 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		if addr, ok := lookupRedirect(host, redirects); ok {
 			// Redirects deliberately point at a local address, so they skip
 			// vetting.
-			conn, err = net.Dial("tcp", addr)
+			conn, err = net.DialTimeout("tcp", addr, dialTimeout)
 		} else {
 			port := portOf(hostPort)
 			if port == "" {
@@ -619,8 +690,9 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 				return err
 			}
 			// ServerName stays the requested name so the upstream
-			// certificate is validated against it, not the literal.
-			conn, err = tls.Dial("tcp", vetted, &tls.Config{ServerName: host})
+			// certificate is validated against it, not the literal. The
+			// dialer's timeout covers the handshake as well as the connect.
+			conn, err = tls.DialWithDialer(&net.Dialer{Timeout: dialTimeout}, "tcp", vetted, &tls.Config{ServerName: host})
 		}
 		if err != nil {
 			return err
@@ -645,30 +717,14 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		if code, reason := applyFilters(req, host, cfg); code != 0 {
 			fmt.Fprintf(os.Stderr, "%s blocked %s https://%s%s (%s)\n",
 				time.Now().Format(time.RFC3339), req.Method, host, req.URL.Path, reason)
-			resp := &http.Response{
-				StatusCode: code,
-				Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
-				ProtoMajor: 1,
-				ProtoMinor: 1,
-				Header:     make(http.Header),
-			}
-			resp.Header.Set("Connection", "close")
-			resp.Write(clientTLS)
+			writeStatus(clientTLS, code)
 			return
 		}
 		logAllowed(host)
 
 		if err := dialUpstream(); err != nil {
 			fmt.Fprintf(os.Stderr, "%s upstream dial error for %s: %v\n", time.Now().Format(time.RFC3339), hostPort, err)
-			code := dialFailureStatus(err)
-			resp := &http.Response{
-				StatusCode: code,
-				Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
-				ProtoMajor: 1,
-				ProtoMinor: 1,
-				Header:     make(http.Header),
-			}
-			resp.Write(clientTLS)
+			writeStatus(clientTLS, dialFailureStatus(err))
 			return
 		}
 
