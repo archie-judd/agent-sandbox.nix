@@ -247,12 +247,36 @@ func lookupRedirect(host string, redirects Redirects) (string, bool) {
 	return bestAddr, bestDomain != ""
 }
 
-func hostOnly(addr string) string {
+// hostOnly returns the host part of an authority, reporting false for one it
+// cannot read. Brackets wrap an IPv6 literal and nothing else: SplitHostPort
+// strips them without reading what is inside, so "[name]:443" would otherwise
+// yield a bare name carrying no sign of the form it arrived in.
+func hostOnly(addr string) (string, bool) {
+	if strings.HasPrefix(addr, "[") {
+		end := strings.IndexByte(addr, ']')
+		if end < 0 {
+			return "", false
+		}
+		inner := addr[1:end]
+		if ip := net.ParseIP(inner); ip == nil || ip.To4() != nil {
+			return "", false
+		}
+		if rest := addr[end+1:]; rest != "" && rest[0] != ':' {
+			return "", false
+		}
+		return inner, true
+	}
 	h, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		return addr
+		return addr, true
 	}
-	return h
+	return h, true
+}
+
+// normaliseHost renders the spellings of one name in a single form, so the
+// comparison below refuses only a genuinely different host.
+func normaliseHost(host string) string {
+	return strings.ToLower(strings.TrimSuffix(host, "."))
 }
 
 func portOf(addr string) string {
@@ -385,6 +409,17 @@ func hasRequestBody(req *http.Request) bool {
 // applyFilters returns an HTTP status code and reason if blocked, or 0 if
 // allowed. Callers must check isDomainAllowed first.
 func applyFilters(req *http.Request, host string, cfg Config) (int, string) {
+	// Every check below judges host, the name the connection was gated for,
+	// while the request is forwarded carrying its own Host header. An upstream
+	// serving several names from one address routes on that header, so the two
+	// must name the same host or the gate decides nothing.
+	if req.Host == "" {
+		return http.StatusBadRequest, "missing host"
+	}
+	requested, ok := hostOnly(req.Host)
+	if !ok || normaliseHost(requested) != normaliseHost(host) {
+		return http.StatusForbidden, "Host header does not match CONNECT host"
+	}
 	// Normalised once and used for every check below, so "-X get" cannot
 	// satisfy a GET policy and then skip the GET/HEAD restrictions.
 	normalizedMethod := strings.ToUpper(req.Method)
@@ -620,7 +655,12 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 		return
 	}
 
-	host := hostOnly(req.Host)
+	host, ok := hostOnly(req.Host)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "%s blocked unreadable host: %s\n", time.Now().Format(time.RFC3339), req.Host)
+		fmt.Fprintf(conn, "HTTP/1.1 403 Forbidden\r\n\r\n")
+		return
+	}
 
 	if req.Method == http.MethodConnect {
 		if portOf(req.Host) != "443" {
