@@ -54,6 +54,8 @@ let
     allowUnixSockets = allowUnixSockets;
   };
 
+  validatedProxyRedirects = shared.validateProxyRedirects _proxyRedirects;
+
   sandboxBuildSpec = import ./spec.nix
     {
       pkgs = pkgs;
@@ -78,7 +80,7 @@ let
       closurePathsFile = closurePathsFile;
       preEntryScript = shared.preEntryScript;
       allowedDomains = allowedDomains;
-      _proxyRedirects = _proxyRedirects;
+      _proxyRedirects = validatedProxyRedirects;
     };
 
   envFragment = shared.mkEnvFragment {
@@ -106,4 +108,5 @@ shared.mkWrapper {
   allowedHostPorts = validatedAllowedHostPorts;
   publishedPorts = validatedPublishedPorts;
   allowUnixSockets = validatedAllowUnixSockets;
+  proxyRedirects = validatedProxyRedirects;
 }
