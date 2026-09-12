@@ -11,7 +11,7 @@ source "$SCRIPT_DIR/../lib.sh"
 SANDBOXED=$(build_fixture nested-ro-in-cwd.nix)
 SHELL_BIN="$SANDBOXED/bin/sandboxed-bash-nested-ro-in-cwd"
 
-TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)/.tmp-test"
+TESTDIR_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)/.tmp-test"
 mkdir -p "$TESTDIR_ROOT"
 
 FAKE_HOME=$(mktemp -d "$TESTDIR_ROOT/nested-ro-home.XXXXXX")
