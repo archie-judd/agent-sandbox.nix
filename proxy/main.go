@@ -37,6 +37,29 @@ type Config map[string]DomainPolicy
 // hatch, set via SANDBOX_PROXY_REDIRECT as "host=addr:port[,...]".
 type Redirects map[string]string
 
+// lowerASCII folds only ASCII, where strings.ToLower folds Unicode: under a
+// Unicode fold U+212A KELVIN SIGN lowercases to "k" and U+0130 to "i", so a
+// name the resolver and the origin both read as its own would match an
+// allowlist entry it is not.
+func lowerASCII(s string) string {
+	b := []byte(s)
+	for i := range b {
+		if b[i] >= 'A' && b[i] <= 'Z' {
+			b[i] += 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
+func hasNonASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return true
+		}
+	}
+	return false
+}
+
 func parseRedirectEnv(s string) (Redirects, error) {
 	out := make(Redirects)
 	if s == "" {
@@ -51,7 +74,7 @@ func parseRedirectEnv(s string) (Redirects, error) {
 		if eq < 0 {
 			return nil, fmt.Errorf("invalid redirect entry %q: missing '='", entry)
 		}
-		host := strings.ToLower(strings.TrimSpace(entry[:eq]))
+		host := lowerASCII(strings.TrimSpace(entry[:eq]))
 		addr := strings.TrimSpace(entry[eq+1:])
 		if host == "" || addr == "" {
 			return nil, fmt.Errorf("invalid redirect entry %q: empty host or address", entry)
@@ -163,7 +186,13 @@ func loadConfig(path string) (Config, error) {
 
 	cfg := make(Config)
 	for domain, val := range raw {
-		domain = strings.ToLower(domain)
+		// A Unicode fold would store such a key under an ASCII name the
+		// operator never wrote, and allow requests to it. Kept as written, it
+		// matches nothing: a non-ASCII host is refused before any lookup.
+		if hasNonASCII(domain) {
+			fmt.Fprintf(os.Stderr, "WARNING: non-ASCII domain %q will never match; write it in punycode\n", domain)
+		}
+		domain = lowerASCII(domain)
 		var star string
 		if err := json.Unmarshal(val, &star); err == nil {
 			if star == "*" {
@@ -192,7 +221,7 @@ func loadConfig(path string) (Config, error) {
 
 // When multiple suffix entries match, the longest (most specific) wins.
 func lookupPolicy(host string, cfg Config) (DomainPolicy, bool) {
-	host = strings.ToLower(host)
+	host = lowerASCII(host)
 	if p, ok := cfg[host]; ok {
 		return p, true
 	}
@@ -234,7 +263,7 @@ func isMethodAllowed(host, method string, cfg Config) bool {
 // lookupRedirect matches like lookupPolicy, so a subdomain that passes the
 // allowlist by suffix match also gets redirected.
 func lookupRedirect(host string, redirects Redirects) (string, bool) {
-	host = strings.ToLower(host)
+	host = lowerASCII(host)
 	if addr, ok := redirects[host]; ok {
 		return addr, true
 	}
@@ -276,7 +305,7 @@ func hostOnly(addr string) (string, bool) {
 // normaliseHost renders the spellings of one name in a single form, so the
 // comparison below refuses only a genuinely different host.
 func normaliseHost(host string) string {
-	return strings.ToLower(strings.TrimSuffix(host, "."))
+	return lowerASCII(strings.TrimSuffix(host, "."))
 }
 
 func portOf(addr string) string {
@@ -652,6 +681,16 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 	req, err := http.ReadRequest(br)
 	hlr.disarm()
 	if err != nil {
+		return
+	}
+
+	// A non-ASCII authority is more than one name: the allowlist reads it
+	// folded, the resolver may map it, and Request.Write puts it on the wire
+	// punycoded. Refused here rather than per request, because the CONNECT
+	// branch writes its 200 and runs the client handshake before any of those.
+	if hasNonASCII(req.Host) {
+		fmt.Fprintf(os.Stderr, "%s blocked non-ASCII host: %s\n", time.Now().Format(time.RFC3339), req.Host)
+		fmt.Fprintf(conn, "HTTP/1.1 403 Forbidden\r\n\r\n")
 		return
 	}
 

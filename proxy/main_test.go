@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -272,6 +273,16 @@ func TestApplyFilters(t *testing.T) {
 			raw:    "GET /thing HTTP/1.0\r\n\r\n",
 			status: http.StatusBadRequest,
 		},
+		{
+			// handle refuses a non-ASCII authority, so the CONNECT host is
+			// ASCII and a Host that only folds onto it under Unicode is a
+			// different name: it reaches the origin punycoded as a third.
+			name:   "Host folding onto the CONNECT host under Unicode refused",
+			cfg:    Config{"*": {AllowAll: true}},
+			host:   "k.example",
+			raw:    "GET /thing HTTP/1.1\r\nHost: \u212A.example\r\n\r\n",
+			status: http.StatusForbidden,
+		},
 	}
 
 	for _, c := range cases {
@@ -326,6 +337,79 @@ func TestHostOnly(t *testing.T) {
 		if ok != c.ok || (ok && got != c.want) {
 			t.Errorf("hostOnly(%q) = (%q, %v), want (%q, %v)", c.addr, got, ok, c.want, c.ok)
 		}
+	}
+}
+
+func TestLowerASCII(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{in: "EXAMPLE.CoM", want: "example.com"},
+		// U+212A KELVIN SIGN and U+0130 lowercase to "k" and "i" under a
+		// Unicode fold. They are their own names to the resolver and to the
+		// origin, and must stay their own names here.
+		{in: "\u212A.example", want: "\u212A.example"},
+		{in: "\u0130.example", want: "\u0130.example"},
+	}
+	for _, c := range cases {
+		if got := lowerASCII(c.in); got != c.want {
+			t.Errorf("lowerASCII(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestHasNonASCII(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{in: "example.com:443", want: false},
+		{in: "[2606:4700:4700::1111]:443", want: false},
+		{in: "\u212A.example:443", want: true},
+		{in: "sub.\u0130.example", want: true},
+	}
+	for _, c := range cases {
+		if got := hasNonASCII(c.in); got != c.want {
+			t.Errorf("hasNonASCII(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestLookupPolicyFoldsOnlyASCII(t *testing.T) {
+	cfg := Config{"k.example": {AllowAll: true}, "i.example": {AllowAll: true}}
+	for _, host := range []string{"\u212A.example", "\u0130.example", "sub.\u212A.example"} {
+		if isDomainAllowed(host, cfg) {
+			t.Errorf("isDomainAllowed(%q) = true, want false: it is not the allowlisted name", host)
+		}
+	}
+	for _, host := range []string{"K.EXAMPLE", "sub.K.example"} {
+		if !isDomainAllowed(host, cfg) {
+			t.Errorf("isDomainAllowed(%q) = false, want true: ASCII case must still fold", host)
+		}
+	}
+}
+
+// An allowlist key folded to ASCII would admit a host the operator never
+// wrote: a key spelled with U+0130 would be stored, and allowed, as
+// "i.example".
+func TestLoadConfigKeepsNonASCIIDomainUnmatched(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "allowlist.json")
+	if err := os.WriteFile(path, []byte(`{"\u0130.example": "*"}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	stderr := captureStderr(t)
+	cfg, err := loadConfig(path)
+	log := stderr()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if isDomainAllowed("i.example", cfg) {
+		t.Error("i.example allowed: the key folded onto an ASCII name the operator never wrote")
+	}
+	if !strings.Contains(log, "punycode") {
+		t.Errorf("stderr = %q, want a warning telling the operator to write punycode", log)
 	}
 }
 
@@ -546,6 +630,51 @@ func TestHandleRejectsOversizedHeader(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("proxy answered %q, want the connection closed with nothing written", got)
+	}
+}
+
+// The allowlist entry here is the ASCII name the requested authority folds
+// onto under Unicode, so nothing after this point would refuse it: CONNECT
+// answers 200 and runs the client handshake before any per-request check.
+func TestHandleRefusesNonASCIIHost(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{name: "CONNECT", raw: "CONNECT \u212A.example:443 HTTP/1.1\r\nHost: \u212A.example:443\r\n\r\n"},
+		{name: "plaintext", raw: "GET /thing HTTP/1.1\r\nHost: \u212A.example\r\n\r\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ca, err := newCertAuthority()
+			if err != nil {
+				t.Fatalf("new cert authority: %v", err)
+			}
+			client, server := net.Pipe()
+			defer client.Close()
+
+			stderr := captureStderr(t)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				handle(server, Config{"k.example": {AllowAll: true}}, ca, Redirects{})
+			}()
+
+			client.SetDeadline(time.Now().Add(10 * time.Second))
+			go fmt.Fprint(client, c.raw)
+			status, err := bufio.NewReader(client).ReadString('\n')
+			<-done
+			log := stderr()
+			if err != nil {
+				t.Fatalf("read response: %v", err)
+			}
+			if !strings.HasPrefix(status, "HTTP/1.1 403") {
+				t.Errorf("response = %q, want 403: the authority is not the allowlisted name", status)
+			}
+			if !strings.Contains(log, "non-ASCII host") {
+				t.Errorf("log = %q, want it to name the refusal", log)
+			}
+		})
 	}
 }
 
