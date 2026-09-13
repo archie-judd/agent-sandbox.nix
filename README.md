@@ -400,7 +400,7 @@ SSH remotes (for example `git@github.com:...`) do not work by default. The sandb
 
 ### Read-only paths in the git directory
 
-Some paths inside the git directory are read-only inside the sandbox: `hooks/`, `config`, `config.worktree`, and the pointer files that record the location of a worktree's or a submodule's git directory. This is a security measure. See [Security](#what-it-protects-against).
+Some paths inside the git directory are read-only inside the sandbox: `hooks/`, `config`, `config.worktree`, `objects/info/alternates`, and the pointer files that record the location of a worktree's or a submodule's git directory. This is a security measure. See [Security](#what-it-protects-against).
 
 All other paths stay writable, so commits, fetches, branch switches and history reads work as normal. Two operations do not work:
 
@@ -524,7 +524,8 @@ The agent can do something it should not do. It can run a bad prompt, process a 
 - The agent cannot delete or modify files outside the project directory and your declared `rwDirs` and `rwFiles`.
 - The agent cannot reach internet domains outside the ones you allow, when you set `allowedDomains`.
 - The agent cannot talk to local services on your laptop (databases, dev servers, the SSH agent, other terminal windows, and similar), unless you allow host-local TCP ports explicitly with `allowedHostPorts`.
-- The agent cannot leave code behind that runs on your host at your next git command. A writable git directory would permit that: a file in `hooks/`, a `core.hooksPath` or `alias.*` entry in a config file, or a pointer file aimed at a git directory the agent controls. Those paths are read-only for the repo you launch in.
+- The agent cannot leave code behind that runs on your host at your next git command. A writable git directory would permit that: a file in `hooks/`, a `core.hooksPath` or `alias.*` entry in a config file, or a pointer file aimed at a git directory the agent controls.
+- The agent cannot leave your repository storing part of its history somewhere else. `objects/info/alternates` tells git to look for objects in another directory as well as your own and is not writable.
 - The agent can run only the tools you list in `allowedPackages`, unless you set `allowNix = true`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox).
 - The agent cannot read or list the Nix store beyond the closure of `allowedPackages`, unless you set `allowNix = true`.
 - The agent cannot see your other running programs, read the environment variables they have set, or interfere with your other open terminals.

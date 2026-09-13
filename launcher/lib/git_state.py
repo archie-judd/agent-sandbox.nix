@@ -101,6 +101,8 @@ def _get_protected_files_in_gitdir(git: Path, gitdir: Path) -> list[Path]:
     if config.is_file():
         protected.append(config)
 
+    protected.append(gitdir / "objects" / "info" / "alternates")
+
     worktree_config_enabled = _is_worktree_config_enabled(git, config)
     if worktree_config_enabled:
         protected.append(gitdir / "config.worktree")
