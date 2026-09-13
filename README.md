@@ -558,7 +558,7 @@ If your threat model is *"I assume the agent is actively malicious and need it t
 ## Limitations
 
 - `sandbox-exec` is deprecated on macOS. It remains the only native unprivileged sandboxing mechanism. It currently works on macOS 26 (Tahoe) and older, but a future release may break it.
-- The sandbox is tested on x86_64-linux, aarch64-linux and aarch64-darwin. Other architectures should work, but they are untested.
+- The sandbox is tested on x86_64-linux, aarch64-linux and aarch64-darwin. x86_64-darwin should work but is untested.
 
 ## Similar projects
 
