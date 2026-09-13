@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.9](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.8...v5.2.9) (2026-09-13)
+
+
+### Bug Fixes
+
+* correct AUDIT_ARCH_AARCH64 in the AF_UNIX seccomp filter ([21d13be](https://github.com/archie-judd/agent-sandbox.nix/commit/21d13bec3deeb4c427fa0d6c98f97ef4b4e37638))
+
 ## [5.2.8](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.7...v5.2.8) (2026-09-13)
 
 
