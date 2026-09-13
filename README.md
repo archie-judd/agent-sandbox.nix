@@ -214,7 +214,7 @@ By default, internet access is open, all host-local services are blocked, and no
 
 ### Domain and internet access
 
-To restrict internet access, set `allowedDomains`. The sandbox can then reach only the domains you list. Leave it unset for open internet, or set it to `[ ]` to block all internet access.
+To restrict internet access, set `allowedDomains`, which routes HTTP and HTTPS traffic through a filtering proxy. The sandbox can then reach only the domains you list. Leave it unset for open internet, or set it to `[ ]` to block all internet access.
 
 `allowedDomains` accepts two formats:
 
@@ -223,9 +223,11 @@ To restrict internet access, set `allowedDomains`. The sandbox can then reach on
 
 Domains must be ASCII. Write an internationalized domain in its punycode form (`xn--...`): the proxy refuses a request whose host is not ASCII, and logs a warning at startup for an allowlist entry that is not, since such an entry can never match.
 
-The sandbox matches domains by suffix, so `"anthropic.com"` also matches all `*.anthropic.com` subdomains. The key `"*"` allows all domains, so to route everything through the proxy, and allow everything, use: `{ "*" = "*"; }`. This is useful for [deriving a network allowlist](deriving-a-network-allowlist), but it is not a restriction.
+The sandbox matches domains by suffix, so `"anthropic.com"` also matches all `*.anthropic.com` subdomains. One entry decides each request, and entries never combine: the exact domain, else the longest matching suffix, else `"*"`, else blocked. So in `{ "github.com" = [ "GET" "HEAD" "POST" ]; "*" = [ "GET" "HEAD" ]; }`, `github.com` matches its own entry and may POST, while every other domain on the internet gets GET and HEAD.
 
-When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. WebSocket connections are permitted only to a domain whose policy is `"*"`.
+To route everything through the proxy and allow everything, use `{ "*" = "*"; }`. This is useful for [deriving a network allowlist](deriving-a-network-allowlist), but it is not a restriction. The proxy warns at startup when a `"*"` entry is present, naming what it permits.
+
+WebSocket connections are permitted only to a domain whose policy is `"*"`.
 
 The proxy logs each allowed or denied host contact to `proxy.log` in the sandbox's [session directory](#session-directories). Only the first allow is logged to reduce noise.
 
