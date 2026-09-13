@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.8](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.7...v5.2.8) (2026-09-13)
+
+
+### Bug Fixes
+
+* sync shell version ([7097ca1](https://github.com/archie-judd/agent-sandbox.nix/commit/7097ca13cb2129406373abc56816bae38e3b5573))
+
 ## [5.2.7](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.6...v5.2.7) (2026-09-13)
 
 
