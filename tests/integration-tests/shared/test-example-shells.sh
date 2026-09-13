@@ -20,13 +20,20 @@ source "$SCRIPT_DIR/../lib.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # The exact expression the copy-paste examples use to reach the published
-# library. Substituting it is what points an example at this checkout.
-IMPORT_EXPR='(fetchTarball "https://github.com/archie-judd/agent-sandbox.nix/archive/main.tar.gz")'
+# library. Substituting it is what points an example at this checkout. Built
+# from version.txt rather than a literal, so a release bump does not have to
+# edit this file — and so a shell release-please missed fails below.
+VERSION=$(cat "$REPO_ROOT/version.txt")
+IMPORT_EXPR='(fetchTarball "https://github.com/archie-judd/agent-sandbox.nix/archive/refs/tags/v'"$VERSION"'.tar.gz")'
+
+# A release tag other than the current one: the shell is pinned to a version
+# this checkout is not, so evaluating it would check the wrong tree.
+PUBLISHED_TAG_PREFIX='github.com/archie-judd/agent-sandbox.nix/archive/refs/tags/v'
 
 # Any other mention of the published repository means the file reaches it in a
 # shape the substitution above misses. Failing beats evaluating against GitHub
 # and calling it a pass. Files that already import this checkout (debug/) match
-# neither and are evaluated where they sit.
+# none of the three and are evaluated where they sit.
 PUBLISHED_REPO='github.com/archie-judd/agent-sandbox.nix'
 
 # The examples resolve nixpkgs through <nixpkgs>, so pin it to the revision the
@@ -54,6 +61,10 @@ expect_shell_evaluates() {
 		# against WORK_DIR rather than the checkout. `|` delimits because the
 		# expression is full of slashes.
 		sed "s|$IMPORT_EXPR|($REPO_ROOT)|" "$src" >"$copy"
+	elif grep -qF "$PUBLISHED_TAG_PREFIX" "$src"; then
+		echo "FAIL: $rel (pinned to a release tag other than v$VERSION, the version in version.txt)"
+		FAIL=$((FAIL + 1))
+		return
 	elif grep -qF "$PUBLISHED_REPO" "$src"; then
 		echo "FAIL: $rel (reaches the published tree in a form this test does not rewrite, so it would not have been checked against this checkout)"
 		FAIL=$((FAIL + 1))
