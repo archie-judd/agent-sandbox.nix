@@ -38,7 +38,7 @@ _AF_UNIX = 1
 # machines are little-endian, which _OFF_ARG0_LO above relies on.
 _MACHINES = {
     "x86_64": (0xC000003E, 41),
-    "aarch64": (0xC00000B6, 198),
+    "aarch64": (0xC00000B7, 198),
 }
 SUPPORTED_MACHINES = frozenset(_MACHINES)
 
