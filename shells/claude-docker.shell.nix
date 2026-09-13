@@ -20,7 +20,8 @@ let
     config.allowUnfreePredicate = pkg: pkgs.lib.getName pkg == "claude-code";
   };
   agent-sandbox =
-    import (fetchTarball "https://github.com/archie-judd/agent-sandbox.nix/archive/main.tar.gz")
+    import
+      (fetchTarball "https://github.com/archie-judd/agent-sandbox.nix/archive/refs/tags/v5.2.6.tar.gz") # x-release-please-version
       {
         pkgs = pkgs;
       };

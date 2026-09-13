@@ -33,9 +33,9 @@ jobs:
           sudo rm -rf /etc/nix /nix /var/root/.nix-* 2>/dev/null || true
           sudo launchctl remove org.nixos.nix-daemon 2>/dev/null || true
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
 
       - name: Run sandbox tests
         run: bash tests/run-all.sh
