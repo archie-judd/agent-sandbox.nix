@@ -413,6 +413,47 @@ func TestLoadConfigKeepsNonASCIIDomainUnmatched(t *testing.T) {
 	}
 }
 
+func TestLoadConfigWarnsOnCatchAll(t *testing.T) {
+	cases := []struct {
+		name  string
+		raw   string
+		want  string
+		quiet bool
+	}{
+		{name: "all methods", raw: `{"*": "*"}`, want: "all methods"},
+		{name: "method list", raw: `{"*": ["post","GET"]}`, want: "GET, POST"},
+		{name: "no catch-all", raw: `{"example.com": "*"}`, quiet: true},
+		{name: "empty method list", raw: `{"*": []}`, quiet: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "allowlist.json")
+			if err := os.WriteFile(path, []byte(c.raw), 0o600); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+
+			stderr := captureStderr(t)
+			_, err := loadConfig(path)
+			log := stderr()
+			if err != nil {
+				t.Fatalf("loadConfig: %v", err)
+			}
+			if c.quiet {
+				if strings.Contains(log, "WARNING") {
+					t.Errorf("stderr = %q, want no warning: nothing here reaches an unlisted domain", log)
+				}
+				return
+			}
+			if !strings.Contains(log, c.want) {
+				t.Errorf("stderr = %q, want it to name the methods %q permits", log, c.want)
+			}
+			if !strings.Contains(log, "every domain not listed") {
+				t.Errorf("stderr = %q, want it to name what the entry reaches", log)
+			}
+		})
+	}
+}
+
 func TestHasRequestBody(t *testing.T) {
 	cases := []struct {
 		name string

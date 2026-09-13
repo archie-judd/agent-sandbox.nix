@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,7 +30,8 @@ type DomainPolicy struct {
 	Methods  map[string]bool
 }
 
-// The "*" key is the default policy.
+// The "*" key matches every host no other entry matches, which is the rest of
+// the internet rather than a floor beneath the hosts listed.
 type Config map[string]DomainPolicy
 
 // Redirects maps a lowercase hostname to a local "host:port" address the
@@ -216,10 +218,27 @@ func loadConfig(path string) (Config, error) {
 		}
 		cfg[domain] = DomainPolicy{Methods: m}
 	}
+	// Named at startup because the matching code is the only other place it is
+	// visible, and "*" reads as a floor under the listed hosts rather than the
+	// catch-all it is.
+	if p, ok := cfg["*"]; ok && (p.AllowAll || len(p.Methods) > 0) {
+		allows := "all methods"
+		if !p.AllowAll {
+			methods := make([]string, 0, len(p.Methods))
+			for method := range p.Methods {
+				methods = append(methods, method)
+			}
+			sort.Strings(methods)
+			allows = strings.Join(methods, ", ")
+		}
+		fmt.Fprintf(os.Stderr, "WARNING: %q allows %s to every domain not listed, which is the rest of the internet\n", "*", allows)
+	}
 	return cfg, nil
 }
 
-// When multiple suffix entries match, the longest (most specific) wins.
+// Exactly one entry applies and policies never merge: the exact key, else the
+// longest matching suffix entry, else "*", else deny. A host that matched a
+// name of its own does not also pick up what "*" allows.
 func lookupPolicy(host string, cfg Config) (DomainPolicy, bool) {
 	host = lowerASCII(host)
 	if p, ok := cfg[host]; ok {
