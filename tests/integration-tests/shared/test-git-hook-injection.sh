@@ -3,8 +3,11 @@
 # time git is used (hooks, config, config.worktree, submodule gitdirs, and
 # the commondir/.git pointers that redirect git elsewhere) are read-only for
 # the repo the sandbox was launched in, while commits and fetches keep
-# working. Repos that merely sit under a writable launch directory are a
-# documented non-goal, pinned by the last case here.
+# working. objects/info/alternates is pinned alongside them: it redirects
+# object lookup rather than execution, so it cannot substitute content, but it
+# can leave the repo depending on an object store the sandbox placed.
+# Repos that merely sit under a writable launch directory are a documented
+# non-goal, pinned by the last case here.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -107,6 +110,14 @@ expect_fail run "cannot create a submodule hook" \
 expect_fail run "cannot append to a submodule config" \
 	"echo '' >> '$SUB_GIT/config'"
 
+# alternates points object lookup at another store, so the repo can be left
+# fsck-clean only against a directory the sandbox chose. Absent at launch in
+# both gitdirs, so this covers masking a missing path as well.
+expect_fail run "cannot create .git/objects/info/alternates" \
+	"echo '$TESTDIR/evil-objects' > '$COMMON_GIT/objects/info/alternates'"
+expect_fail run "cannot create a submodule's objects/info/alternates" \
+	"echo '$TESTDIR/evil-objects' > '$SUB_GIT/objects/info/alternates'"
+
 # Reads still work — git needs to run existing hooks and read existing config.
 expect_ok run "can read .git/config" "head -c 1 '$COMMON_GIT/config' >/dev/null"
 expect_ok run "can list .git/hooks/" "ls '$COMMON_GIT/hooks/' >/dev/null"
@@ -131,6 +142,8 @@ expect_fail run "cannot create .git/config.worktree" \
 	"echo '[core]' > '$COMMON_GIT/config.worktree'"
 expect_fail run "cannot create a submodule hook" \
 	"touch '$SUB_GIT/hooks/pre-commit'"
+expect_fail run "cannot create .git/objects/info/alternates" \
+	"echo '$TESTDIR/evil-objects' > '$COMMON_GIT/objects/info/alternates'"
 expect_fail run "cannot rewrite the submodule's .git pointer" \
 	"echo 'gitdir: /tmp/evil' > '$MAIN_REPO/vendor/sub/.git'"
 expect_fail run "cannot rewrite a worktree's .git pointer from the root" \
