@@ -21,7 +21,7 @@ let
   };
   agent-sandbox =
     import
-      (fetchTarball "https://github.com/archie-judd/agent-sandbox.nix/archive/refs/tags/v5.2.6.tar.gz") # x-release-please-version
+      (fetchTarball "https://github.com/archie-judd/agent-sandbox.nix/archive/refs/tags/v5.2.7.tar.gz") # x-release-please-version
       {
         pkgs = pkgs;
       };

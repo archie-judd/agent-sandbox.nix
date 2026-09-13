@@ -12,6 +12,18 @@
 * **proxy:** fold hostnames ASCII-only and refuse a non-ASCII host ([#151](https://github.com/archie-judd/agent-sandbox.nix/issues/151)) ([019780f](https://github.com/archie-judd/agent-sandbox.nix/commit/019780facaf266b3b7e08b4095ff4857f76ef4d0))
 * **proxy:** require the Host header to match the CONNECT host ([#150](https://github.com/archie-judd/agent-sandbox.nix/issues/150)) ([8813839](https://github.com/archie-judd/agent-sandbox.nix/commit/8813839576a062c169589cf68479e9e835293816))
 
+## [5.2.7](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.6...v5.2.7) (2026-09-13)
+
+
+### Bug Fixes
+
+* **git:** pin objects/info/alternates in every gitdir ([#153](https://github.com/archie-judd/agent-sandbox.nix/issues/153)) ([2b6647a](https://github.com/archie-judd/agent-sandbox.nix/commit/2b6647a5e2a04675d30833ed7fe269205aacc50b))
+* **proxy:** bound upstream dials and cap concurrent connections ([#147](https://github.com/archie-judd/agent-sandbox.nix/issues/147)) ([baa4ae3](https://github.com/archie-judd/agent-sandbox.nix/commit/baa4ae32a3283edcfb5ac8bc0a406a3561c2505a))
+* **proxy:** cap request headers, deadline the client handshake, log accept backoff ([#149](https://github.com/archie-judd/agent-sandbox.nix/issues/149)) ([484524a](https://github.com/archie-judd/agent-sandbox.nix/commit/484524a05dab5b9f120ae1e4df3a2d3a958252bf))
+* **proxy:** document + test default policy ([#152](https://github.com/archie-judd/agent-sandbox.nix/issues/152)) ([b4e36b2](https://github.com/archie-judd/agent-sandbox.nix/commit/b4e36b2effafc2611f1ea0556db60cee1fa0e7f4))
+* **proxy:** fold hostnames ASCII-only and refuse a non-ASCII host ([#151](https://github.com/archie-judd/agent-sandbox.nix/issues/151)) ([019780f](https://github.com/archie-judd/agent-sandbox.nix/commit/019780facaf266b3b7e08b4095ff4857f76ef4d0))
+* **proxy:** require the Host header to match the CONNECT host ([#150](https://github.com/archie-judd/agent-sandbox.nix/issues/150)) ([8813839](https://github.com/archie-judd/agent-sandbox.nix/commit/8813839576a062c169589cf68479e9e835293816))
+
 ## [5.2.6](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.5...v5.2.6) (2026-09-12)
 
 
