@@ -221,6 +221,8 @@ To restrict internet access, set `allowedDomains`. The sandbox can then reach on
 - Attrset (recommended): map each domain to `"*"` (all HTTP methods allowed) or to a list of permitted methods (for example `[ "GET" "HEAD" ]`).
 - List: `[ "anthropic.com" "sentry.io" ]`. This allows all methods for each domain.
 
+Domains must be ASCII. Write an internationalized domain in its punycode form (`xn--...`): the proxy refuses a request whose host is not ASCII, and logs a warning at startup for an allowlist entry that is not, since such an entry can never match.
+
 The sandbox matches domains by suffix, so `"anthropic.com"` also matches all `*.anthropic.com` subdomains. The key `"*"` allows all domains, so to route everything through the proxy, and allow everything, use: `{ "*" = "*"; }`. This is useful for [deriving a network allowlist](deriving-a-network-allowlist), but it is not a restriction.
 
 When you set `allowedDomains`, the sandbox routes all HTTP and HTTPS traffic through a filtering proxy. WebSocket connections are permitted only to a domain whose policy is `"*"`.
