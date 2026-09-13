@@ -15,7 +15,7 @@ let
   pkgs = import <nixpkgs> { };
   agent-sandbox =
     import
-      (fetchTarball "https://github.com/archie-judd/agent-sandbox.nix/archive/refs/tags/v5.2.8.tar.gz") # x-release-please-version
+      (fetchTarball "https://github.com/archie-judd/agent-sandbox.nix/archive/refs/tags/v5.2.9.tar.gz") # x-release-please-version
       {
         pkgs = pkgs;
       };
