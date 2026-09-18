@@ -18,7 +18,9 @@ cd "$TESTDIR"
 echo "=== Nix support tests (Darwin) ==="
 echo
 
-run_nix_support() { "$NIX_SUPPORT_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
+run_nix_support() {
+    run_confirmed "$NIX_SUPPORT_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1
+}
 
 # allowNix grants read and exec over the whole store, not just the closure: the
 # daemon builds results after the sandbox starts, and their paths are not

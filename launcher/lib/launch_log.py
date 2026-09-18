@@ -62,8 +62,7 @@ def write_launch_request(
 
     if spec.published_ports:
         published_ports = ", ".join(
-            f"{forward.bind_addr}/{forward.port}"
-            for forward in spec.published_ports
+            f"{forward.bind_addr}/{forward.port}" for forward in spec.published_ports
         )
     else:
         published_ports = _NONE
@@ -126,6 +125,20 @@ def write_launch_outcome(
             _field(
                 "git repository",
                 f"{host.git.repo_root} (git dir {host.git.common_dir})",
+            )
+        )
+
+    if host.nix_daemon_socket is not None:
+        if host.nix_user_is_trusted is None:
+            trusted = "unknown"
+        else:
+            trusted = "yes" if host.nix_user_is_trusted else "no"
+        lines.append(
+            _field(
+                "host nix daemon",
+                f"{host.nix_daemon_socket} "
+                f"(sandbox = {host.nix_sandbox_setting or 'unreadable'}, "
+                f"trusted user: {trusted})",
             )
         )
 

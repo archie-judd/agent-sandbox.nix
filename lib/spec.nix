@@ -30,6 +30,11 @@ let
     ::1       localhost
   '';
 
+  # The launcher reads the host's nix config with this, before the sandbox
+  # exists. Null without allowNix, so a wrapper that never reaches a daemon
+  # does not carry nix in its closure.
+  nixBinary = if allowNix then "${pkgs.nix}/bin/nix" else null;
+
   dependencies =
     if platform == "linux" then
       {
@@ -39,10 +44,12 @@ let
         nft = "${pkgs.nftables}/bin/nft";
         env = "${pkgs.coreutils}/bin/env";
         python = "${pkgs.python3}/bin/python3";
+        nix = nixBinary;
       }
     else
       {
         git = "${pkgs.git}/bin/git";
+        nix = nixBinary;
       };
 
   # Omitted when allowedDomains is unset, so an unrestricted wrapper does

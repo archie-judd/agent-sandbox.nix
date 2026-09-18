@@ -39,6 +39,15 @@ class PublishedPort:
         return cls(port=int(data["port"]), bind_addr=str(data["bind_addr"]))
 
 
+def _get_nix(data: Mapping[str, Any]) -> Path | None:
+    # Null unless the wrapper was built with allowNix: it is only ever used to
+    # read the host's nix config, and there is no daemon to read it for.
+    value = data["nix"]
+    if value is None:
+        return None
+    return Path(value)
+
+
 @dataclass(frozen=True, kw_only=True)
 class DependenciesLinux:
     git: Path
@@ -47,6 +56,7 @@ class DependenciesLinux:
     nft: Path
     env: Path
     python: Path
+    nix: Path | None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
@@ -56,17 +66,28 @@ class DependenciesLinux:
         nft = Path(data["nft"])
         env = Path(data["env"])
         python = Path(data["python"])
-        return cls(git=git, bwrap=bwrap, pasta=pasta, nft=nft, env=env, python=python)
+        nix = _get_nix(data)
+        return cls(
+            git=git,
+            bwrap=bwrap,
+            pasta=pasta,
+            nft=nft,
+            env=env,
+            python=python,
+            nix=nix,
+        )
 
 
 @dataclass(frozen=True, kw_only=True)
 class DependenciesDarwin:
     git: Path
+    nix: Path | None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
         git = Path(data["git"])
-        return cls(git=git)
+        nix = _get_nix(data)
+        return cls(git=git, nix=nix)
 
 
 @dataclass(frozen=True, kw_only=True)

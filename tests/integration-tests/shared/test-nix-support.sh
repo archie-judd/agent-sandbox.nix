@@ -18,7 +18,9 @@ cd "$TESTDIR"
 echo "=== Nix support tests (shared) ==="
 echo
 
-run_nix_support() { "$NIX_SUPPORT_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
+run_nix_support() {
+    run_confirmed "$NIX_SUPPORT_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1
+}
 
 expect_ok run_nix_support "nix build succeeds with allowNix" \
     'nix build "path:$NIXPKGS_SRC#hello" --no-link'

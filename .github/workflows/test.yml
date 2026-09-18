@@ -36,6 +36,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
+        with:
+          # Default is true, which puts the runner in trusted-users. The
+          # wrapper refuses allowNix for a trusted user, because the agent
+          # inherits that trust and nix documents it as root on the host, so
+          # the nix suite would have nothing left to exercise.
+          trust-runner-user: false
 
       - name: Run sandbox tests
         run: bash tests/run-all.sh
