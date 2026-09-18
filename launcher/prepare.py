@@ -108,7 +108,7 @@ def prepare_launch(spec_path: Path, now: datetime) -> Path:
     # has somewhere to record why.
     session_dir = create_session_dir(spec, now)
     log_file = session_dir / LAUNCH_LOG
-    write_launch_request(log_file, session_dir, spec, Path(os.getcwd()), now)
+    write_launch_request(log_file, session_dir, spec_path, spec, Path(os.getcwd()), now)
 
     # SystemExit passes through unrecorded: a refusal has already written its
     # own section, and the proxy failures name proxy.log.
