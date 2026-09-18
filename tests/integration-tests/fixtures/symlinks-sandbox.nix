@@ -7,7 +7,10 @@ in sandbox.mkSandbox {
   binName = "bash";
   outName = "sandboxed-bash-symlinks";
   allowedPackages = [ pkgs.coreutils ];
-  rwDirs = [ "$HOME/.test-state-dir" ];
+  # The second is outside $HOME, so Darwin reaches it at its real spelling
+  # instead of replanting it into the sandbox home, and on Darwin /tmp is a
+  # symlink: resolution passes through a link node no physical-path grant names.
+  rwDirs = [ "$HOME/.test-state-dir" "/tmp/test-parent-link-dir" ];
   rwFiles = [ "$HOME/.test-state-file" ];
   roFiles = [ "$HOME/.test-ro-file" ];
   env = {

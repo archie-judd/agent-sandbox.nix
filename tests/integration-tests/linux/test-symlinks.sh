@@ -18,7 +18,7 @@ TESTDIR=$(mktemp -d "$TESTDIR_ROOT/symlinks.XXXXXX")
 # Inside the sandbox $HOME is a tmpfs, so this file is invisible unless explicitly bound.
 OOB_FILE=$(mktemp "$HOME/.sandbox-test-oob.XXXXXX")
 echo "out-of-bounds content" > "$OOB_FILE"
-trap 'rm -rf "$TESTDIR" "$OOB_FILE"' EXIT
+trap 'rm -rf "$TESTDIR" "$OOB_FILE" /tmp/test-parent-link-dir' EXIT
 cd "$TESTDIR"
 
 # Pre-create the rwDir / rwFile declared by symlinks-sandbox.nix. The wrapper
@@ -26,6 +26,8 @@ cd "$TESTDIR"
 mkdir -p "$HOME/.test-state-dir"
 touch "$HOME/.test-state-file"
 touch "$HOME/.test-ro-file"
+# /tmp is a real directory here; the symlinked-parent case it covers is Darwin's.
+mkdir -p /tmp/test-parent-link-dir
 
 echo "=== rwDir/rwFile and symlink resolution tests (Linux) ==="
 echo
@@ -34,6 +36,7 @@ echo
 expect_ok run "can write to rwDir" "echo test > \$HOME/.test-state-dir/file && cat \$HOME/.test-state-dir/file"
 expect_ok run "can write to rwFile" "echo test > \$HOME/.test-state-file && cat \$HOME/.test-state-file"
 expect_fail run "rwDir does not weaken isolation" "ls \$HOME/.ssh"
+expect_ok run "can write to rwDir outside \$HOME" "echo test > /tmp/test-parent-link-dir/file && cat /tmp/test-parent-link-dir/file"
 
 # Retrieve store paths baked into the sandbox at build time
 CLOSURE_STORE_FILE=$(run_output 'echo $CLOSURE_STORE_FILE')
