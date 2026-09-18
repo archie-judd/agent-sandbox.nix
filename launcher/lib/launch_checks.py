@@ -111,20 +111,10 @@ def _get_nested_bind_conflicts(
     return conflicts
 
 
-def _confirm_home_cwd_launch(host: HostStateLinux | HostStateDarwin) -> bool:
+def _confirm_on_terminal() -> bool:
     # /dev/tty rather than stdin, so this neither consumes input meant for
     # the agent nor auto-answers itself when stdin is a pipe. There is
     # deliberately no flag or environment variable to skip it.
-    print(
-        f"{WARN_PREFIX} launching from your home directory ({host.real_home}).",
-        file=sys.stderr,
-    )
-    print(
-        f"{WARN_PREFIX} the launch directory is bound read-write, so the agent "
-        f"can read and modify everything under it. Your home is not masked in "
-        f"this session.",
-        file=sys.stderr,
-    )
     try:
         with open("/dev/tty", "w", encoding="utf-8") as terminal:
             terminal.write(f"{WARN_PREFIX} continue? [y/N] ")
@@ -139,6 +129,50 @@ def _confirm_home_cwd_launch(host: HostStateLinux | HostStateDarwin) -> bool:
         )
         return False
     return reply.strip() in _AFFIRMATIVE
+
+
+def _confirm_home_cwd_launch(host: HostStateLinux | HostStateDarwin) -> bool:
+    print(
+        f"{WARN_PREFIX} launching from your home directory ({host.real_home}).",
+        file=sys.stderr,
+    )
+    print(
+        f"{WARN_PREFIX} the launch directory is bound read-write, so the agent "
+        f"can read and modify everything under it. Your home is not masked in "
+        f"this session.",
+        file=sys.stderr,
+    )
+    return _confirm_on_terminal()
+
+
+def _confirm_unsandboxed_nix_builds(host: HostStateLinux | HostStateDarwin) -> bool:
+    """Every line here is about the host's nix daemon, which runs outside the
+    sandbox and is not configured by this wrapper."""
+    match host.nix_sandbox_setting:
+        case "false":
+            state = (
+                "your nix daemon builds without a sandbox: the host's nix "
+                "config sets sandbox = false"
+            )
+        case "relaxed":
+            state = (
+                "your nix daemon lets a derivation opt out of its sandbox: "
+                "the host's nix config sets sandbox = relaxed, and the agent "
+                "is the one writing the derivations"
+            )
+        case _:
+            state = (
+                "could not read whether your nix daemon sandboxes its builds "
+                "from the host's nix config"
+            )
+    print(f"{WARN_PREFIX} {state}.", file=sys.stderr)
+    print(
+        f"{WARN_PREFIX} set sandbox = true in /etc/nix/nix.conf, or "
+        f"nix.settings.sandbox on NixOS and nix-darwin, and restart the "
+        f"daemon.",
+        file=sys.stderr,
+    )
+    return _confirm_on_terminal()
 
 
 def get_launch_refusals(
@@ -206,6 +240,25 @@ def get_launch_refusals(
             f"listens elsewhere."
         )
 
+    # Refused, not warned: the sandbox keeps the launching uid, and the daemon
+    # authenticates the socket by uid, so a trusted user's agent is trusted
+    # too. Nix documents that trust as equivalent to root on the host.
+    if spec.allow_nix and host.nix_daemon_socket is not None:
+        if host.nix_user_is_trusted:
+            refusals.append(
+                "you are a trusted user of the host's nix daemon, so "
+                "allowNix = true would let the agent set nix daemon settings, such as"
+                " sandbox = false, which nix documents as equivalent to root access to"
+                " the host."
+            )
+        elif host.nix_user_is_trusted is None:
+            refusals.append(
+                f"could not determine whether you are a trusted user of the host's nix "
+                f"daemon at {host.nix_daemon_socket}. allowNix = true is refused rather"
+                " than assumed safe, because a trusted client can set daemon settings, "
+                "which nix documents as equivalent to root access to the host."
+            )
+
     if _is_cwd_above_home(host):
         refusals.append(
             f"refusing to launch from {host.cwd}: it sits above your home directory "
@@ -213,6 +266,30 @@ def get_launch_refusals(
             f"the sandbox."
         )
         return tuple(refusals)
+
+    # Confirmed rather than refused: an unsandboxed daemon is the macOS
+    # default, and the fix is a root-level change to the host's nix config.
+    # `is False` is the verified-untrusted case, the only one to get here
+    # without the refusal above having fired already.
+    if (
+        spec.allow_nix
+        and host.nix_daemon_socket is not None
+        and host.nix_user_is_trusted is False
+        and host.nix_sandbox_setting != "true"
+    ):
+        setting = host.nix_sandbox_setting or "unreadable"
+        if not host.has_controlling_terminal:
+            refusals.append(
+                f"refusing to launch: allowNix = true needs confirmation that "
+                f"the host's nix daemon sandboxes its builds "
+                f"(sandbox = {setting}), and there is no terminal to confirm "
+                f"on."
+            )
+        elif not _confirm_unsandboxed_nix_builds(host):
+            refusals.append(
+                f"launching with allowNix = true against the host's nix "
+                f"daemon (sandbox = {setting}) was declined."
+            )
 
     if _is_cwd_home(host):
         if not host.has_controlling_terminal:

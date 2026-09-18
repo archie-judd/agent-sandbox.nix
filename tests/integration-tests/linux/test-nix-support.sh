@@ -17,16 +17,21 @@ TESTDIR=$(mktemp -d "$TESTDIR_ROOT/nix-support-linux.XXXXXX")
 # the only way the assertions below can see it is the bind the launcher adds
 # for the socket itself.
 SOCKET_DIR=$(mktemp -d /tmp/nix-daemon-socket.XXXXXX)
-trap 'rm -rf "$TESTDIR" "$SOCKET_DIR"' EXIT
 
 OUTSIDE_SOCKET="$SOCKET_DIR/socket"
-HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
-# The listener exits immediately: the socket inode it leaves behind is all the
-# launcher checks and all `[ -S ]` needs.
-"$HOST_PYTHON3" -c 'import socket, sys
-listener = socket.socket(socket.AF_UNIX)
-listener.bind(sys.argv[1])
-listener.listen(1)' "$OUTSIDE_SOCKET"
+# A live relay to the real daemon rather than a bare socket inode: the
+# launcher asks the daemon over this socket whether the user is trusted, and
+# refuses the launch when nothing answers.
+SOCAT=$(build_host_pkg socat)/bin/socat
+"$SOCAT" "UNIX-LISTEN:$OUTSIDE_SOCKET,fork" \
+    "UNIX-CONNECT:/nix/var/nix/daemon-socket/socket" &
+SOCAT_PID=$!
+trap 'kill "$SOCAT_PID" 2>/dev/null; rm -rf "$TESTDIR" "$SOCKET_DIR"' EXIT
+for _ in $(seq 50); do
+    [ -S "$OUTSIDE_SOCKET" ] && break
+    sleep 0.1
+done
+[ -S "$OUTSIDE_SOCKET" ] || _usage_error "the relay never opened $OUTSIDE_SOCKET"
 # A neighbour, so the bind can be shown to cover the socket and not the
 # directory holding it.
 touch "$SOCKET_DIR/host-only"
@@ -36,7 +41,9 @@ cd "$TESTDIR"
 echo "=== Nix support tests (Linux) ==="
 echo
 
-run_nix_support() { "$NIX_SUPPORT_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1; }
+run_nix_support() {
+    run_confirmed "$NIX_SUPPORT_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1
+}
 
 expect_ok run_nix_support "non-closure store path is readable with allowNix" \
     'cat "$NON_CLOSURE_STORE_PATH/bin/hello" >/dev/null'
@@ -45,7 +52,7 @@ expect_ok run_nix_support "daemon socket is visible with allowNix" \
     '[ -S "$NIX_DAEMON_SOCKET_PATH" ]'
 
 run_outside_socket() {
-    env NIX_DAEMON_SOCKET_PATH="$OUTSIDE_SOCKET" \
+    NIX_DAEMON_SOCKET_PATH="$OUTSIDE_SOCKET" run_confirmed \
         "$NIX_SUPPORT_SHELL" --norc --noprofile -c "$1" >/dev/null 2>&1
 }
 

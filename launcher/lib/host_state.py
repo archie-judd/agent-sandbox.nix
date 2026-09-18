@@ -3,8 +3,10 @@
 become bubblewrap and seatbelt rules and the kernel resolves symlinks before
 either is matched, so an unresolved name would match nothing."""
 
+import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +23,8 @@ from launcher.lib.symlinks import ResolvedPath, Symlink, resolve_path
 SYSTEMD_RESOLV_CONF = Path("/run/systemd/resolve/resolv.conf")
 RESOLV_CONF = Path("/etc/resolv.conf")
 DEFAULT_NIX_DAEMON_SOCKET = Path("/nix/var/nix/daemon-socket/socket")
+# A wedged daemon would otherwise hang the launch with nothing on screen.
+NIX_PROBE_TIMEOUT_SECONDS = 10
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -60,6 +64,10 @@ class HostState:
     git: GitState | None
     closure_paths: tuple[Path, ...]
     nix_daemon_socket: Path | None
+    # Both describe the host's nix daemon, never the sandbox. None means the
+    # host could not be asked.
+    nix_sandbox_setting: Literal["true", "false", "relaxed"] | None
+    nix_user_is_trusted: bool | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -259,6 +267,94 @@ def get_nix_daemon_socket_path() -> Path:
     return Path(resolved)
 
 
+def _run_host_nix_command(nix: Path, socket: Path, *args: str) -> str | None:
+    """Asks the host's nix about the host's own configuration. Nothing here
+    describes the sandbox, which does not exist yet.
+
+    The launching shell's nix settings are stripped, because the daemon never
+    read them: a check a shell can answer is not a check. The experimental
+    feature is forced on, so a host that has it disabled still answers."""
+    environment = dict(os.environ)
+    environment.pop("NIX_CONFIG", None)
+    environment.pop("NIX_CONF_DIR", None)
+    # Empty rather than removed: removing it sends nix to the user's own
+    # ~/.config/nix/nix.conf instead.
+    environment["NIX_USER_CONF_FILES"] = ""
+    # The daemon the sandbox is about to be given, not whatever auto finds.
+    environment["NIX_REMOTE"] = "daemon"
+    environment["NIX_DAEMON_SOCKET_PATH"] = str(socket)
+    try:
+        result = subprocess.run(
+            [str(nix), "--extra-experimental-features", "nix-command", *args],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=NIX_PROBE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def _parse_nix_sandbox_setting(
+    output: str,
+) -> Literal["true", "false", "relaxed"] | None:
+    for line in output.splitlines():
+        name, separator, value = line.partition(" = ")
+        if not separator or name != "sandbox":
+            continue
+        # Written out rather than matched against a set, so the returned
+        # value is the literal type and not a widened str.
+        match value.strip():
+            case "true":
+                return "true"
+            case "false":
+                return "false"
+            case "relaxed":
+                return "relaxed"
+            case _:
+                return None
+    return None
+
+
+def _parse_nix_user_is_trusted(output: str) -> bool | None:
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    trusted = data.get("trusted")
+    if isinstance(trusted, bool):
+        return trusted
+    # Older daemons report the field as 0 or 1. bool is checked first,
+    # because bool is an int.
+    if isinstance(trusted, int):
+        return trusted != 0
+    return None
+
+
+def _read_host_nix_sandbox_setting(
+    nix: Path, socket: Path
+) -> Literal["true", "false", "relaxed"] | None:
+    output = _run_host_nix_command(nix, socket, "config", "show")
+    if output is None:
+        return None
+    return _parse_nix_sandbox_setting(output)
+
+
+def _read_host_nix_user_is_trusted(nix: Path, socket: Path) -> bool | None:
+    # The daemon's own verdict over the socket, not a config read: a client
+    # setting cannot move it, and it resolves @group entries for us.
+    output = _run_host_nix_command(nix, socket, "store", "info", "--json")
+    if output is None:
+        return None
+    return _parse_nix_user_is_trusted(output)
+
+
 def _resolv_conf_names_loopback() -> bool:
     # systemd-resolved points /etc/resolv.conf at a stub listener on the
     # host's own loopback, which inside pasta's namespace is a different
@@ -284,6 +380,8 @@ class _CommonHostState(TypedDict):
     git: GitState | None
     closure_paths: tuple[Path, ...]
     nix_daemon_socket: Path | None
+    nix_sandbox_setting: Literal["true", "false", "relaxed"] | None
+    nix_user_is_trusted: bool | None
 
 
 def _common_host_state(
@@ -303,10 +401,18 @@ def _common_host_state(
     # A socket rather than mere existence: a single-user install has no daemon
     # to reach, and a leftover regular file at the path is not one either.
     nix_daemon_socket = None
+    nix_sandbox_setting: Literal["true", "false", "relaxed"] | None = None
+    nix_user_is_trusted: bool | None = None
     if spec.allow_nix:
         path = get_nix_daemon_socket_path()
         if _path_is_socket(path):
             nix_daemon_socket = path
+            # None only if the spec disagrees with itself; the checks read
+            # that as an unreadable host, which fails closed.
+            nix = spec.dependencies.nix
+            if nix is not None:
+                nix_sandbox_setting = _read_host_nix_sandbox_setting(nix, path)
+                nix_user_is_trusted = _read_host_nix_user_is_trusted(nix, path)
 
     return _CommonHostState(
         cwd=cwd,
@@ -322,6 +428,8 @@ def _common_host_state(
         git=read_git_state(spec.dependencies.git, cwd),
         closure_paths=_read_closure_paths(spec.closure_paths_file),
         nix_daemon_socket=nix_daemon_socket,
+        nix_sandbox_setting=nix_sandbox_setting,
+        nix_user_is_trusted=nix_user_is_trusted,
     )
 
 

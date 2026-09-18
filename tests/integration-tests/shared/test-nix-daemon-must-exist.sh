@@ -47,9 +47,11 @@ assert_stderr_contains "not a socket: refusal names the path" \
 	"no nix daemon socket at $NOT_A_SOCKET"
 
 # --- 3. The host's own daemon, which the rest of the nix suite needs anyway ---
-capture "$SHELL_BIN" --norc --noprofile -c 'echo ok'
+# Over a pty, because a host whose daemon does not sandbox its builds asks
+# before launching. Contains rather than equals: the prompt shares the stream.
+capture run_confirmed "$SHELL_BIN" --norc --noprofile -c 'echo ok'
 assert_exit_code "host daemon present: launch succeeds" 0
-assert_output_equals "host daemon present: command runs in sandbox" "ok"
+assert_output_contains "host daemon present: command runs in sandbox" "ok"
 
 print_results
 exit_status

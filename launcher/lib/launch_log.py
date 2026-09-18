@@ -130,6 +130,20 @@ def write_launch_outcome(
             )
         )
 
+    if host.nix_daemon_socket is not None:
+        if host.nix_user_is_trusted is None:
+            trusted = "unknown"
+        else:
+            trusted = "yes" if host.nix_user_is_trusted else "no"
+        lines.append(
+            _field(
+                "host nix daemon",
+                f"{host.nix_daemon_socket} "
+                f"(sandbox = {host.nix_sandbox_setting or 'unreadable'}, "
+                f"trusted user: {trusted})",
+            )
+        )
+
     if session.proxy is None:
         lines.append(_field("proxy", _NONE))
     else:

@@ -54,6 +54,29 @@ build_host_pkg() {
 	_build_memoised "host-$1" -E "(import $PINNED_NIXPKGS { }).$1"
 }
 
+# run_on_tty <reply> <argv...> — launch with a terminal to confirm on. The
+# wrapper reads confirmations from /dev/tty, so piping a reply on stdin
+# deliberately does not satisfy one. pty.spawn merges the child's stderr into
+# its stdout, so capture-based assertions on these runs look at CAP_OUT.
+run_on_tty() {
+	local reply="$1"
+	shift
+	if [ -z "${HOST_PYTHON3:-}" ]; then
+		HOST_PYTHON3=$(build_host_pkg python3Minimal)/bin/python3
+	fi
+	printf '%s\n' "$reply" | "$HOST_PYTHON3" -c \
+		'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))' \
+		"$@"
+}
+
+# run_confirmed <argv...> — for launches whose confirmation is not what is
+# under test. An allowNix launch asks whether to proceed against a nix daemon
+# that does not sandbox its builds, which is the macOS default; on a host that
+# sandboxes them nothing prompts and the reply is never read.
+run_confirmed() {
+	run_on_tty y "$@"
+}
+
 # expect_ok <runner> <desc> <command>
 # <command> is one shell script string, not an argv: call sites rely on &&,
 # redirections, and $HOME expanded inside the sandbox. Passing more than one
