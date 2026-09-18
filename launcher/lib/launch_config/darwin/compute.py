@@ -67,8 +67,14 @@ def _get_traversal_ancestors(
     ancestors = _get_ancestors(host.cwd, host.real_home)
     if git is not None:
         ancestors += _get_ancestors(git.common_dir, host.real_home)
+    # A declared path reached through a symlinked parent is resolved through
+    # the link node, which the grants derived from the physical path never
+    # name. Metadata on the link only: it exposes nothing the link points at.
     for declared in host.declared:
         ancestors += _get_ancestors(declared.expanded_path, host.real_home)
+        for link in declared.parent_symlinks:
+            ancestors.append(link.path)
+            ancestors += _get_ancestors(link.path, host.real_home)
 
     # A symlink target deep inside a store path needs the steps down to it
     # stat-able; its own grant covers the target and below, not the way in.

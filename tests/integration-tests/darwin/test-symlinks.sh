@@ -26,12 +26,17 @@ TESTDIR=$(mktemp -d "$TESTDIR_ROOT/symlinks-darwin.XXXXXX")
 # reachable if a symlink to it is wrongly honoured.
 OOB_FILE=$(mktemp "$HOME/.sandbox-test-oob.XXXXXX")
 echo "out-of-bounds content" > "$OOB_FILE"
-trap 'rm -rf "$TESTDIR" "$OOB_FILE" "$HOME/.test-state-dir" "$HOME/.test-state-file" "$HOME/.test-ro-file"' EXIT
+# A sibling of the declared /tmp directory: declaring one entry under the temp
+# root must not expose the rest of it.
+OOB_TMP_FILE=$(mktemp "/tmp/sandbox-test-tmp-oob.XXXXXX")
+echo "out-of-bounds content" > "$OOB_TMP_FILE"
+trap 'rm -rf "$TESTDIR" "$OOB_FILE" "$OOB_TMP_FILE" "$HOME/.test-state-dir" "$HOME/.test-state-file" "$HOME/.test-ro-file" /tmp/test-parent-link-dir' EXIT
 cd "$TESTDIR"
 
 mkdir -p "$HOME/.test-state-dir"
 touch "$HOME/.test-state-file"
 touch "$HOME/.test-ro-file"
+mkdir -p /tmp/test-parent-link-dir
 
 echo "=== Symlink target resolution tests (Darwin) ==="
 echo
@@ -118,6 +123,24 @@ assert_stderr_contains "rwDir symlink to out-of-bounds path: warns about the ign
     "ignoring symlink to '$OOB_FILE'"
 
 rm -f "$HOME/.test-state-dir/link-to-oob"
+
+# --- Test F: declared directory reached through a symlinked parent ---
+# /tmp is a symlink to /private/tmp, so resolution passes through the link
+# node. Grants derived from the physical path never name it, and the walk is
+# refused at /tmp before the declared grant is ever consulted.
+expect_ok run "symlinked parent: writable at the declared /tmp spelling" \
+    'echo test > /tmp/test-parent-link-dir/file && cat /tmp/test-parent-link-dir/file'
+
+expect_ok run "symlinked parent: writable at the physical /private/tmp spelling" \
+    'echo test > /private/tmp/test-parent-link-dir/file && cat /private/tmp/test-parent-link-dir/file'
+
+# The link node is granted stat only. If it were granted as a subpath instead,
+# the temp root would be readable and these would pass.
+expect_fail run "symlinked parent: temp root is not listable" \
+    'ls /tmp'
+
+expect_fail run "symlinked parent: sibling under the temp root not readable" \
+    "cat $OOB_TMP_FILE"
 
 print_results
 exit_status
