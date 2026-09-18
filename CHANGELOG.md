@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.10](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.9...v5.2.10) (2026-09-18)
+
+
+### Bug Fixes
+
+* **darwin:** follow symlink chains ([#160](https://github.com/archie-judd/agent-sandbox.nix/issues/160)) ([4664d0b](https://github.com/archie-judd/agent-sandbox.nix/commit/4664d0b438c37b99628ae1de837ca18bd82fc0a5))
+
 ## [5.2.9](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.8...v5.2.9) (2026-09-13)
 
 
