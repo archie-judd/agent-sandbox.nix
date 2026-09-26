@@ -57,7 +57,7 @@ def _refuse_launch(session_dir: Path, refusals: tuple[str, ...]) -> None:
 def _print_workspace(host: HostState) -> None:
     # The widest grant in the profile, and the only one not written in the
     # config. Printed physical, because that is what the rules match.
-    print(f"{INFO_PREFIX} workspace: {host.cwd}", file=sys.stderr)
+    print(f"{INFO_PREFIX} workspace: {host.workspace_dir}", file=sys.stderr)
 
 
 def _print_warnings(warnings: tuple[str, ...]) -> None:

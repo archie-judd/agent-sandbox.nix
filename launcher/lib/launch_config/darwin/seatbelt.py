@@ -96,11 +96,11 @@ TIMEZONE = (
 )
 
 
-def process_exec(cwd: Path) -> list[str]:
+def process_exec(workspace_dir: Path) -> list[str]:
     return [
         "",
         ";; Process execution — per-store-path rules come from the closure below",
-        f'(allow process-exec (subpath "{cwd}"))',
+        f'(allow process-exec (subpath "{workspace_dir}"))',
         '(allow process-exec (literal "/bin/sh"))',
         '(allow process-exec (literal "/bin/bash"))',
         '(allow process-exec (literal "/usr/bin/env"))',
@@ -238,11 +238,13 @@ def sandbox_home(home: Path) -> list[str]:
     ]
 
 
-def workspace(cwd: Path, repo_root: Path | None, git_dir: Path | None) -> list[str]:
+def workspace(
+    workspace_dir: Path, repo_root: Path | None, git_dir: Path | None
+) -> list[str]:
     lines = [
         "",
-        ";; Working directory & repository",
-        f'(allow file-read* file-write* (subpath "{cwd}"))',
+        ";; Workspace & repository",
+        f'(allow file-read* file-write* (subpath "{workspace_dir}"))',
     ]
     if repo_root is not None:
         lines.append(f'(allow file-read* (subpath "{repo_root}"))')

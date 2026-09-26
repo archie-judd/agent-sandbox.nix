@@ -60,11 +60,11 @@ def _get_traversal_ancestors(
     git: GitState | None,
     store_targets: Sequence[Path],
 ) -> list[Path]:
-    # From the launch directory and from the common git dir, not from
-    # repo_root: the repo_root grant is withheld at a work tree root, and it
-    # was what supplied the steps down to the git dir. Metadata only, so this
-    # permits the walk without exposing anything along it.
-    ancestors = _get_ancestors(host.cwd, host.real_home)
+    # From the workspace and from the common git dir, not from repo_root: the
+    # repo_root grant is withheld at a work tree root, and it was what
+    # supplied the steps down to the git dir. Metadata only, so this permits
+    # the walk without exposing anything along it.
+    ancestors = _get_ancestors(host.workspace_dir, host.real_home)
     if git is not None:
         ancestors += _get_ancestors(git.common_dir, host.real_home)
     # A declared path reached through a symlinked parent is resolved through
@@ -130,12 +130,12 @@ def _get_unix_socket_scope(
     # rendezvous sockets at the build root (.bsp, .bloop, nailgun), not the
     # module directory the agent was launched in. It arrives already gated by
     # get_grantable_repo_root, so at a work tree root there is nothing to add:
-    # the build root is the launch directory, which is in `writable` below.
+    # the build root is the workspace, which is in `writable` below.
     #
     # The session tmpdir joins the bind set: tools create their IPC sockets
     # under $TMPDIR. The directory is sandbox-private, so no host listener
     # can live there.
-    writable = [host.cwd, sandbox_tmpdir]
+    writable = [host.workspace_dir, sandbox_tmpdir]
     for declared in host.declared:
         if isinstance(declared, DeclaredDir) and declared.mode == "rw":
             writable.append(declared.expanded_path)
@@ -171,7 +171,7 @@ def _get_nested_ro_paths(
     emitted with deny-write rules in the seatbelt profile. This is needed because
     seatbelt is last-match-wins.
     """
-    writable = [host.cwd]
+    writable = [host.workspace_dir]
     if git_dir is not None:
         writable.append(git_dir)
     for declared in host.declared:
@@ -263,7 +263,7 @@ def _get_profile_lines(
     lines += seatbelt.HEADER
     lines += seatbelt.PROCESS_CONTROL
     lines += seatbelt.SYSCTLS
-    lines += seatbelt.process_exec(host.cwd)
+    lines += seatbelt.process_exec(host.workspace_dir)
     lines += seatbelt.MACH_IPC
 
     if session.proxy is None:
@@ -302,7 +302,7 @@ def _get_profile_lines(
     lines += seatbelt.NIX_STORE_METADATA
     lines += seatbelt.traversal(host.real_home, session.sandbox_home, repo_root_parent)
     lines += seatbelt.sandbox_home(session.sandbox_home)
-    lines += seatbelt.workspace(host.cwd, repo_root, git_dir)
+    lines += seatbelt.workspace(host.workspace_dir, repo_root, git_dir)
     lines += seatbelt.TIMEZONE
     lines += seatbelt.declared_paths(host.declared)
     lines += seatbelt.closure(host.closure_paths)

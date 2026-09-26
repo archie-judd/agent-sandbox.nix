@@ -54,7 +54,8 @@ class DeclaredDir(DeclaredPath):
 
 @dataclass(frozen=True, kw_only=True)
 class HostState:
-    cwd: Path
+    workspace_dir: Path
+    launch_dir: Path
     real_home: Path
     uid: int
     gid: int
@@ -370,7 +371,8 @@ def _resolv_conf_names_loopback() -> bool:
 class _CommonHostState(TypedDict):
     """The fields both platforms share, typed so `**` is checked by mypy."""
 
-    cwd: Path
+    workspace_dir: Path
+    launch_dir: Path
     real_home: Path
     uid: int
     gid: int
@@ -387,7 +389,8 @@ class _CommonHostState(TypedDict):
 def _common_host_state(
     spec: SandboxBuildSpecLinux | SandboxBuildSpecDarwin,
 ) -> _CommonHostState:
-    cwd = Path.cwd()
+    launch_dir = Path.cwd()
+    workspace_dir = launch_dir
     home = os.environ.get("HOME")
     if not home:
         raise SystemExit(f"{ERROR_PREFIX} HOME is not set")
@@ -415,7 +418,8 @@ def _common_host_state(
                 nix_user_is_trusted = _read_host_nix_user_is_trusted(nix, path)
 
     return _CommonHostState(
-        cwd=cwd,
+        workspace_dir=workspace_dir,
+        launch_dir=launch_dir,
         # Resolved in full, unlike declared paths: the home is only compared,
         # never bound, and it has to match what os.getcwd() reports even
         # when $HOME is itself a symlink.
@@ -425,7 +429,7 @@ def _common_host_state(
         term=os.environ.get("TERM"),
         has_controlling_terminal=_has_controlling_terminal(),
         declared=tuple(declared_paths),
-        git=read_git_state(spec.dependencies.git, cwd),
+        git=read_git_state(spec.dependencies.git, workspace_dir),
         closure_paths=_read_closure_paths(spec.closure_paths_file),
         nix_daemon_socket=nix_daemon_socket,
         nix_sandbox_setting=nix_sandbox_setting,
@@ -435,10 +439,10 @@ def _common_host_state(
 
 def _is_git_root_the_home(host: HostState, git: GitState) -> bool:
     # A home-rooted repo's object store holds the history of tracked
-    # dotfiles. Launching from the home directory itself is the exception:
-    # the user has already confirmed that the whole home is exposed.
+    # dotfiles. A workspace that is the home itself is the exception: the
+    # user has already confirmed that the whole home is exposed.
     if host.real_home == git.repo_root:
-        return host.cwd != host.real_home
+        return host.workspace_dir != host.real_home
     return git.repo_root in host.real_home.parents
 
 
@@ -455,16 +459,16 @@ def get_usable_git_state(host: HostState) -> tuple[GitState | None, list[str]]:
 
 
 def get_grantable_repo_root(host: HostState, git: GitState | None) -> Path | None:
-    # The work tree root, when granting it adds access the launch directory
-    # does not already have. Below a work tree root it is what lets git report
-    # on files above the launch directory, so withholding it would make git
-    # status and git diff call them deleted rather than fail.
+    # The work tree root, when granting it adds access the workspace does not
+    # already have. Below a work tree root it is what lets git report on files
+    # above the workspace, so withholding it would make git status and git
+    # diff call them deleted rather than fail.
     #
     # `git` is what get_usable_git_state returned, not host.git: a home-rooted
     # repo has git disabled, and nothing should be granted on its behalf.
     if git is None:
         return None
-    if git.work_tree_root == host.cwd:
+    if git.work_tree_root == host.workspace_dir:
         return None
     return git.work_tree_root
 
