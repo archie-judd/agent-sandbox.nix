@@ -49,6 +49,17 @@ def _get_relative_paths(host: HostStateLinux | HostStateDarwin) -> list[Declared
     ]
 
 
+def _get_workspace_refusal(host: HostStateLinux | HostStateDarwin) -> str | None:
+    if not host.workspace_dir.is_absolute():
+        return (
+            f"{host.workspace_dir}: declared as workspaceDir but is not an "
+            f"absolute path; write it out in full or use $HOME"
+        )
+    if not host.workspace_dir_exists:
+        return f"{host.workspace_dir}: declared as workspaceDir but does not exist"
+    return None
+
+
 def _is_workspace_above_home(host: HostStateLinux | HostStateDarwin) -> bool:
     if host.workspace_dir == Path("/"):
         return True
@@ -258,6 +269,13 @@ def get_launch_refusals(
                 " than assumed safe, because a trusted client can set daemon settings, "
                 "which nix documents as equivalent to root access to the host."
             )
+
+    # Before the guards below, which compare against the workspace and mean
+    # nothing if it is not a usable path.
+    workspace_refusal = _get_workspace_refusal(host)
+    if workspace_refusal is not None:
+        refusals.append(workspace_refusal)
+        return tuple(refusals)
 
     if _is_workspace_above_home(host):
         refusals.append(

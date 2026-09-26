@@ -116,6 +116,7 @@ def write_launch_outcome(
 ) -> None:
     lines = [
         _heading(None, "launch prepared"),
+        _field("workspace", str(host.workspace_dir)),
         _field("home", str(host.real_home)),
         _field("uid/gid", f"{host.uid}/{host.gid}"),
     ]

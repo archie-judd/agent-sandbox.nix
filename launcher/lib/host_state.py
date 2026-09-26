@@ -55,6 +55,7 @@ class DeclaredDir(DeclaredPath):
 @dataclass(frozen=True, kw_only=True)
 class HostState:
     workspace_dir: Path
+    workspace_dir_exists: bool
     launch_dir: Path
     real_home: Path
     uid: int
@@ -372,6 +373,7 @@ class _CommonHostState(TypedDict):
     """The fields both platforms share, typed so `**` is checked by mypy."""
 
     workspace_dir: Path
+    workspace_dir_exists: bool
     launch_dir: Path
     real_home: Path
     uid: int
@@ -386,11 +388,23 @@ class _CommonHostState(TypedDict):
     nix_user_is_trusted: bool | None
 
 
+def _get_workspace_dir(unexpanded: str, environ: dict[str, str]) -> Path:
+    expanded = _expand_path(unexpanded, environ)
+    # Left alone when relative, like a declared path: get_launch_refusals
+    # refuses it rather than picking a base directory for it.
+    if not expanded.is_absolute():
+        return expanded
+    # Resolved in full, unlike a declared path and like the home below: the
+    # default is bash's $PWD, which keeps a symlink that Path.cwd() has
+    # already followed, and the grants have to name what the kernel matches.
+    return Path(os.path.realpath(expanded))
+
+
 def _common_host_state(
     spec: SandboxBuildSpecLinux | SandboxBuildSpecDarwin,
 ) -> _CommonHostState:
     launch_dir = Path.cwd()
-    workspace_dir = launch_dir
+    workspace_dir = _get_workspace_dir(spec.workspace_dir, dict(os.environ))
     home = os.environ.get("HOME")
     if not home:
         raise SystemExit(f"{ERROR_PREFIX} HOME is not set")
@@ -419,6 +433,7 @@ def _common_host_state(
 
     return _CommonHostState(
         workspace_dir=workspace_dir,
+        workspace_dir_exists=_path_exists(workspace_dir),
         launch_dir=launch_dir,
         # Resolved in full, unlike declared paths: the home is only compared,
         # never bound, and it has to match what os.getcwd() reports even

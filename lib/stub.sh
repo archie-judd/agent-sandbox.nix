@@ -40,6 +40,12 @@ if ((${#UNRESOLVED[@]})); then
   exit 1
 fi
 
+# bash sets PWD but does not export it, and the default workspaceDir is
+# "$PWD". An undefined variable is fatal in the launcher's expansion, so
+# without this anything exec'ing the wrapper with a clean environment would
+# break the default configuration rather than an unusual one.
+export PWD
+
 # Exported so the entry point inside pasta's namespace inherits it too;
 # `env -i` clears it before bubblewrap.
 export PYTHONPATH=@launcher@

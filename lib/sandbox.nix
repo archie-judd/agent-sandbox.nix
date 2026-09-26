@@ -12,6 +12,7 @@
   roDirs ? [ ],
   roFiles ? [ ],
   env ? { },
+  workspaceDir ? "$PWD",
   allowedDomains ? null,
   allowedHostPorts ? [ ],
   publishedPorts ? [ ],
@@ -54,34 +55,38 @@ let
     allowUnixSockets = allowUnixSockets;
   };
 
+  validatedWorkspaceDir = shared.validateWorkspaceDir workspaceDir;
+
   validatedProxyRedirects = shared.validateProxyRedirects _proxyRedirects;
 
-  sandboxBuildSpec = import ./spec.nix
-    {
-      pkgs = pkgs;
-      shared = shared;
-    }
-    {
-      platform = platform;
-      outName = outName;
-      pkg = pkg;
-      binName = binName;
-      sandboxPath = pathStr;
-      pkgConfigPath = pkgConfigPathStr;
-      allowNix = allowNix;
-      rwDirs = rwDirs;
-      rwFiles = rwFiles;
-      roDirs = roDirs;
-      roFiles = roFiles;
-      env = env;
-      allowedHostPorts = validatedAllowedHostPorts;
-      publishedPorts = validatedPublishedPorts;
-      allowUnixSockets = validatedAllowUnixSockets;
-      closurePathsFile = closurePathsFile;
-      preEntryScript = shared.preEntryScript;
-      allowedDomains = allowedDomains;
-      _proxyRedirects = validatedProxyRedirects;
-    };
+  sandboxBuildSpec =
+    import ./spec.nix
+      {
+        pkgs = pkgs;
+        shared = shared;
+      }
+      {
+        platform = platform;
+        outName = outName;
+        pkg = pkg;
+        binName = binName;
+        sandboxPath = pathStr;
+        pkgConfigPath = pkgConfigPathStr;
+        allowNix = allowNix;
+        rwDirs = rwDirs;
+        rwFiles = rwFiles;
+        roDirs = roDirs;
+        roFiles = roFiles;
+        env = env;
+        workspaceDir = validatedWorkspaceDir;
+        allowedHostPorts = validatedAllowedHostPorts;
+        publishedPorts = validatedPublishedPorts;
+        allowUnixSockets = validatedAllowUnixSockets;
+        closurePathsFile = closurePathsFile;
+        preEntryScript = shared.preEntryScript;
+        allowedDomains = allowedDomains;
+        _proxyRedirects = validatedProxyRedirects;
+      };
 
   envFragment = shared.mkEnvFragment {
     outName = outName;
@@ -108,5 +113,6 @@ shared.mkWrapper {
   allowedHostPorts = validatedAllowedHostPorts;
   publishedPorts = validatedPublishedPorts;
   allowUnixSockets = validatedAllowUnixSockets;
+  workspaceDir = validatedWorkspaceDir;
   proxyRedirects = validatedProxyRedirects;
 }
