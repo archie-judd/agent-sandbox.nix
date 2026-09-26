@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.3.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.3.0...v5.3.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **darwin:** run git hooks when the gitdir is outside the launch directory ([#167](https://github.com/archie-judd/agent-sandbox.nix/issues/167)) ([a70a90c](https://github.com/archie-judd/agent-sandbox.nix/commit/a70a90cb4e730e4edbc49fc6bd76fbaf76b794eb))
+
 ## [5.3.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.2.10...v5.3.0) (2026-09-18)
 
 
