@@ -24,6 +24,8 @@
             outName = "pi-sandboxed"; # or whatever alias you'd like
             allowedPackages = sbx.commonTools;
             # Settings, sessions, extensions and skills all live here.
+            # Uncomment to always work in one directory, wherever you launch from:
+            # workspaceDir = "$HOME/projects/my-project";
             rwDirs = [ "$HOME/.pi" ];
             rwFiles = [ ];
             # For git identity, uncomment to bind your host gitconfig (see README):
