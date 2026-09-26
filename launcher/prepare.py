@@ -13,8 +13,12 @@ from launcher.lib.build_spec import (
     SandboxBuildSpecLinux,
     load_build_spec,
 )
-from launcher.lib.constants import ERROR_PREFIX, LAUNCH_LOG
-from launcher.lib.host_state import read_host_state_darwin, read_host_state_linux
+from launcher.lib.constants import ERROR_PREFIX, INFO_PREFIX, LAUNCH_LOG
+from launcher.lib.host_state import (
+    HostState,
+    read_host_state_darwin,
+    read_host_state_linux,
+)
 from launcher.lib.launch_checks import get_launch_refusals
 from launcher.lib.launch_config.darwin import compute as darwin_compute
 from launcher.lib.launch_config.linux import compute as linux_compute
@@ -50,6 +54,12 @@ def _refuse_launch(session_dir: Path, refusals: tuple[str, ...]) -> None:
     raise SystemExit(1)
 
 
+def _print_workspace(host: HostState) -> None:
+    # The widest grant in the profile, and the only one not written in the
+    # config. Printed physical, because that is what the rules match.
+    print(f"{INFO_PREFIX} workspace: {host.cwd}", file=sys.stderr)
+
+
 def _print_warnings(warnings: tuple[str, ...]) -> None:
     for warning in warnings:
         print(warning, file=sys.stderr)
@@ -71,6 +81,7 @@ def _prepare_launch_linux(spec: SandboxBuildSpecLinux, session_dir: Path) -> Pat
         stack.pop_all()
 
     write_launch_outcome(session_dir / LAUNCH_LOG, host, session, config.warnings)
+    _print_workspace(host)
     _print_warnings(config.warnings)
     return session_dir
 
@@ -98,6 +109,7 @@ def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> P
         stack.pop_all()
 
     write_launch_outcome(session_dir / LAUNCH_LOG, host, session, config.warnings)
+    _print_workspace(host)
     _print_warnings(config.warnings)
     return session_dir
 

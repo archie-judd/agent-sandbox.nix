@@ -29,5 +29,6 @@ NO_PROXY_HOSTS = "localhost,127.0.0.1,::1"
 PROXY_STARTUP_TIMEOUT_SECONDS = 5.0
 SESSION_RETENTION = 25
 
+INFO_PREFIX = "[INFO][agent-sandbox.nix]"
 WARN_PREFIX = "[WARN][agent-sandbox.nix]"
 ERROR_PREFIX = "[ERROR][agent-sandbox.nix]"
