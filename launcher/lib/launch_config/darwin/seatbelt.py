@@ -289,11 +289,21 @@ def git_protection(
 ) -> list[str]:
     # Emitted after the declared-path allows, so a declared rwDir containing
     # the gitdir cannot re-grant writes.
+    #
+    # The protected directories are the hooks directories, and exec is what a
+    # hook is for. Only a launch at a work tree root has them under the launch
+    # directory's exec grant; from a linked worktree or a subdirectory they sit
+    # outside it, and git reads the refused exec as an absent hook and skips
+    # it — no error, and the commit succeeds without the human's checks. The
+    # write denial above is what makes the grant safe: the sandbox cannot put
+    # anything in these directories, so executing what is already there is the
+    # host's own git running the host's own hooks.
     if not protected_dirs and not protected_files:
         return []
-    lines = ["", ";; Git protected paths — deny writes, keep reads"]
+    lines = ["", ";; Git protected paths — deny writes, keep reads and exec"]
     lines += [f'(deny file-write* (subpath "{path}"))' for path in protected_dirs]
     lines += [f'(deny file-write* (literal "{path}"))' for path in protected_files]
+    lines += [f'(allow process-exec (subpath "{path}"))' for path in protected_dirs]
     return lines
 
 

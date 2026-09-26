@@ -6,6 +6,8 @@
 # working. objects/info/alternates is pinned alongside them: it redirects
 # object lookup rather than execution, so it cannot substitute content, but it
 # can leave the repo depending on an object store the sandbox placed.
+# Read-only is not inert: a hook the human installed must still run from
+# every launch position, which is pinned here too.
 # Repos that merely sit under a writable launch directory are a documented
 # non-goal, pinned by the last case here.
 set -euo pipefail
@@ -128,6 +130,22 @@ expect_ok run "can list .git/hooks/" "ls '$COMMON_GIT/hooks/' >/dev/null"
 expect_ok run ".git remains writable for commits from worktree" \
 	"git commit --allow-empty -m sandbox-test-commit"
 
+# Listable is not enough: the hook has to run. A linked worktree keeps its
+# hooks in the main checkout, outside the launch directory, so a hook the
+# human installed there runs only if the protected paths are executable as
+# well as readable. When they are not, git reads the refused exec as an
+# absent hook and skips it: the commit succeeds with no error and the checks
+# the human installed are silently dropped. Written from the host, where the
+# sandbox's write denial does not apply.
+HOOK="$COMMON_GIT/hooks/pre-commit"
+HOOK_MARKER="$WT/pre-commit-ran"
+printf '#!/bin/sh\ntouch %s\n' "'$HOOK_MARKER'" >"$HOOK"
+chmod +x "$HOOK"
+
+expect_ok run "an installed pre-commit hook runs from a worktree" \
+	"git commit --allow-empty -m sandbox-test-hook && test -f '$HOOK_MARKER'"
+rm -f "$HOOK_MARKER"
+
 echo
 cd "$MAIN_REPO"
 echo "--- launched from the repo root ---"
@@ -159,11 +177,32 @@ expect_ok run "can read the submodule's history" \
 expect_ok run "can write source files" \
 	"echo change > '$MAIN_REPO/file.txt'"
 
+# The gitdir is under CWD from here, so this position would keep working on
+# the launch directory's exec grant alone. Pinned so the protected-path grant
+# is not the only thing holding it up.
+expect_ok run "an installed pre-commit hook runs from the repo root" \
+	"git commit --allow-empty -m sandbox-test-hook-root && test -f '$HOOK_MARKER'"
+
 # Boundary: a repo that merely sits under the launch directory is not covered.
 # This is deliberate — covering it would mean searching the working tree — and
 # is documented alongside the launch-directory warning.
 expect_ok run "an unrelated nested repo's hooks stay writable (documented non-goal)" \
 	"touch '$NESTED/.git/hooks/post-checkout'"
+
+echo
+mkdir -p "$MAIN_REPO/subdir"
+cd "$MAIN_REPO/subdir"
+echo "--- launched from a repository subdirectory ---"
+
+# The gitdir sits outside CWD here for the same reason as from the worktree,
+# with the same consequence. Asserted with a refusing hook rather than a
+# marker file: git runs hooks from the work tree root, which is above CWD
+# here and read-only, so the hook has nowhere to write. A commit that still
+# lands is a hook that never ran.
+printf '#!/bin/sh\nexit 1\n' >"$HOOK"
+
+expect_fail run "a refusing pre-commit hook stops a commit from a subdirectory" \
+	"git commit --allow-empty -m sandbox-test-hook-subdir"
 
 print_results
 exit_status
