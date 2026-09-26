@@ -309,7 +309,11 @@ def compute_launch_config(
     argv_after_env = (
         [str(spec.dependencies.bwrap)]
         + bwrap_args
-        + [str(spec.pre_entry_script), str(spec.sandboxed_binary)]
+        + [
+            str(spec.pre_entry_script),
+            str(host.workspace_dir),
+            str(spec.sandboxed_binary),
+        ]
     )
 
     ca_bundle = (

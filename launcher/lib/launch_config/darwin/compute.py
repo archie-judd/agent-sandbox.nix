@@ -346,6 +346,7 @@ def compute_launch_config(
         "-f",
         str(session.session_dir / SEATBELT_PROFILE),
         str(spec.pre_entry_script),
+        str(host.workspace_dir),
         str(spec.sandboxed_binary),
     ]
 
