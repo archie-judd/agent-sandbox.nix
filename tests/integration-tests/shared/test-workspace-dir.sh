@@ -124,6 +124,11 @@ assert_stderr_contains "the pin is reported as the workspace" \
 # Relative, so this asserts the process actually started in the pin rather
 # than merely being granted it.
 assert_output_equals "the agent starts in the pinned workspace" "pinned-content"
+# The launch directory is outside the sandbox when it is not the workspace.
+# Carrying it in as the starting directory makes the first process warn twice
+# about a directory it cannot stat, on every single launch.
+assert_stderr_not_contains "no getcwd warnings from the unreachable launch directory" \
+	"getcwd"
 
 assert_pinned_log_contains "the log records where the wrapper was invoked" \
 	"launch directory:  $TESTDIR"

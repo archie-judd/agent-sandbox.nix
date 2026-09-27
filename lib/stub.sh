@@ -64,6 +64,14 @@ echo $$ >"$SESSION_DIR/stub.pid"
 # sandbox's exit status, and every command in the trap body overwrites it.
 trap 'STATUS=$?; "@python@" -P -s -S -m launcher.cleanup "$SESSION_DIR" "$STATUS"' EXIT
 
+# macOS inherits this shell's directory all the way into the sandbox, and
+# workspaceDir can point the sandbox somewhere that does not include it. The
+# first process would then start somewhere it cannot stat and warn twice
+# before the pre-entry script chdirs. "/" is readable in every profile.
+# Safe here: prepare has already recorded the launch directory, and
+# everything below names absolute paths.
+cd / || exit 1
+
 mapfile -d '' ARGV_BEFORE_ENV < "$SESSION_DIR/argv-before-env"
 mapfile -d '' ARGV_AFTER_ENV < "$SESSION_DIR/argv-after-env"
 
