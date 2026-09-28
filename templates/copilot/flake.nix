@@ -28,6 +28,8 @@
             binName = "copilot";
             outName = "copilot-sandboxed"; # or whatever alias you'd like
             allowedPackages = sbx.commonTools;
+            # Uncomment to always work in one directory, wherever you launch from:
+            # workspaceDir = "$HOME/projects/my-project";
             rwDirs = [
               "$HOME/.config/github-copilot"
               "$HOME/.copilot"

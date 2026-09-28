@@ -10,7 +10,7 @@ See [Security](#security) for the threat model and the known limits.
 
 ## What the sandbox allows
 
-- **Project directory**: read/write access to the directory you launch the agent from.
+- **Project directory**: read/write access to the directory you launch the agent from, or to a fixed directory you set with `workspaceDir`.
 - **Declared state**: read/write access to anything you list in `rwDirs` / `rwFiles`, or read-only access through `roDirs` / `roFiles`.
 - **Allowed packages**: the binaries you list in `allowedPackages` are on the agent's PATH, together with `bash` and `cacert`.
 - **Network filtering**: open by default. Optionally filtered to `allowedDomains`. Ports are closed by default, but may be optionally exposed or connected to.
@@ -18,7 +18,7 @@ See [Security](#security) for the threat model and the known limits.
 - **Git**: git commands, including when launched within a worktree.
 - **Nix**: disabled by default. You can let the agent run nix commands.
 
-Everything else is denied. Only changes to the launch directory and declared rwDirs/files are persisted - the agent's home directory and anything else it writes are discarded upon exit.
+Everything else is denied. Only changes to the project directory and declared rwDirs/files are persisted - the agent's home directory and anything else it writes are discarded upon exit.
 
 ## Contents
 
@@ -129,6 +129,7 @@ Set `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `~/.claude.jso
 | `binName` | yes | Name of the binary inside `pkg/bin/` |
 | `outName` | yes | Name of the wrapped binary, and the command that runs it |
 | `allowedPackages` | yes | Packages the agent can execute and build against |
+| `workspaceDir` | no | Where the agent works, and what it can read and write. Defaults to `"$PWD"`: the directory you launch from. Set an absolute path to use the same directory every time, wherever you run the command. |
 | `rwDirs` | no | Directories the agent can read and write (for example `~/.config/claude`, or a package manager's cache: see [`shells/claude-uv.shell.nix`](shells/claude-uv.shell.nix)) |
 | `rwFiles` | no | Individual files the agent can read and write |
 | `roDirs` | no | Directories the agent can read but not write (for example signed binaries, reference source trees, secret stores) |
@@ -264,7 +265,7 @@ For a worked example, see [`shells/claude-docker.shell.nix`](shells/claude-docke
 
 UNIX-domain sockets are denied by default, because a sandboxed process could use host sockets to reach your SSH agent or other per-user services. Set `allowUnixSockets = true` to permit them. Build tools that communicate over a domain socket (sbt/BSP, metals, nailgun) need this setting.
 
-Socket access then follows the filesystem grants on both platforms. In paths the agent can write (the launch directory and `rwDirs`), the agent can create sockets and connect to them. In read-only paths (`roDirs`, `roFiles`, and the repository root when you launch from a subdirectory), the agent can only connect.
+Socket access then follows the filesystem grants on both platforms. In paths the agent can write (the project directory and `rwDirs`), the agent can create sockets and connect to them. In read-only paths (`roDirs`, `roFiles`, and the repository root when you launch from a subdirectory), the agent can only connect.
 
 `allowNix = true` requires `allowUnixSockets = true`, because the agent reaches the nix daemon over a UNIX-domain socket.
 
@@ -381,16 +382,16 @@ If there is a repo, the sandbox exposes these paths:
 
 | Path | Access |
 |---|---|
-| The launch directory | read-write |
+| The project directory | read-write |
 | The root .git directory | read-write, except the [read-only paths](#read-only-paths-in-the-git-directory) |
-| The working tree root | read-only, and only when it is not the launch directory |
+| The working tree root | read-only, and only when it is not the project directory |
 
-The working tree root is the root of the tree you launched in. It is not the root of the repo above it:
+The working tree root is the root of the tree the project directory is in. It is not the root of the repo above it:
 
 - **Worktrees:** the working tree root is the worktree itself. The sandbox does not expose the main checkout, or any sibling worktree.
 - **Submodules:** the working tree root is the submodule itself. The sandbox does not expose the superproject working tree, or the git directory of any other submodule.
 
-When launched in a subdirectory of the working tree, readonly access to the whole worktree is required to let git report on files above the launch directory. Without it, `git status` and `git diff` report those files as deleted.
+When the project directory is a subdirectory of the working tree, readonly access to the whole worktree is required to let git report on files above it. Without it, `git status` and `git diff` report those files as deleted.
 
 ### Remote access (push / pull / fetch)
 
@@ -548,7 +549,7 @@ The sandbox is an isolation boundary. It is not an anonymity boundary, and it is
 - The agent can read all of the git directory. This includes every branch, stash and reflog entry, also content that is no longer in the working tree.
 - The agent has everything you hand it. If you expose your `~/.claude` directory (or any credential file) through `rwDirs`, or pass a token through `env`, the agent can read it. That is how it logs in. A compromised agent has the same access to those credentials as your shell. Treat this the way you would treat handing the token to any other CLI tool you did not write yourself.
 - The agent can edit its own sandbox config. `flake.nix` lives inside the project directory, and the sandbox permits writes to it. An agent could weaken its own restrictions for the next session. The changes take effect only when you enter the dev shell again, so it is worth reading `git diff` first.
-- The sandbox protects only the repo you launch in from git hook injection. It does not protect other repos that sit under your launch directory. A nested repo is writable like anything else there, and this includes its hooks.
+- The sandbox protects only the repo of the project directory from git hook injection. It does not protect other repos that sit under it. A nested repo is writable like anything else there, and this includes its hooks.
 - The sandbox is no defense against root access or kernel bugs. If something on your machine has already gained administrator-level access, or the operating system itself has a deeper bug, this sandbox cannot stop it.
 
 ### Linux vs macOS

@@ -15,6 +15,7 @@
   roDirs,
   roFiles,
   env,
+  workspaceDir,
   allowedHostPorts,
   publishedPorts,
   closurePathsFile,
@@ -93,6 +94,7 @@ let
     # Keys only. The values are runtime shell expressions, emitted as a
     # fragment the stub sources; they never reach Python.
     env_keys = builtins.attrNames env;
+    workspace_dir = workspaceDir;
     allowed_host_ports = allowedHostPorts;
     published_ports = map (entry: {
       port = entry.port;

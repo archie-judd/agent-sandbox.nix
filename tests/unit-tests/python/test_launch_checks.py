@@ -28,6 +28,7 @@ SPEC = SandboxBuildSpecDarwin(
     rw_files=(),
     ro_dirs=(),
     ro_files=(),
+    workspace_dir="$PWD",
     env_keys=(),
     allowed_host_ports=(),
     published_ports=(),
@@ -45,7 +46,9 @@ SPEC = SandboxBuildSpecDarwin(
 )
 
 HOST = HostStateDarwin(
-    cwd=HOME / "project",
+    workspace_dir=HOME / "project",
+    workspace_dir_exists=True,
+    launch_dir=HOME / "project",
     real_home=HOME,
     uid=501,
     gid=20,

@@ -63,7 +63,7 @@ def get_bound_prefixes(
         for declared in host.declared
         if isinstance(declared, DeclaredDir)
     ]
-    prefixes.append(host.cwd)
+    prefixes.append(host.workspace_dir)
     prefixes += list(ETC_PREFIXES)
     # The repo root only when compute.py actually binds it: listing a prefix
     # nothing binds would skip a declared path that then has no bind at all.

@@ -40,6 +40,12 @@ if ((${#UNRESOLVED[@]})); then
   exit 1
 fi
 
+# bash sets PWD but does not export it, and the default workspaceDir is
+# "$PWD". An undefined variable is fatal in the launcher's expansion, so
+# without this anything exec'ing the wrapper with a clean environment would
+# break the default configuration rather than an unusual one.
+export PWD
+
 # Exported so the entry point inside pasta's namespace inherits it too;
 # `env -i` clears it before bubblewrap.
 export PYTHONPATH=@launcher@
@@ -57,6 +63,14 @@ echo $$ >"$SESSION_DIR/stub.pid"
 # prepare tears down its own failures. $? is captured first because it is the
 # sandbox's exit status, and every command in the trap body overwrites it.
 trap 'STATUS=$?; "@python@" -P -s -S -m launcher.cleanup "$SESSION_DIR" "$STATUS"' EXIT
+
+# macOS inherits this shell's directory all the way into the sandbox, and
+# workspaceDir can point the sandbox somewhere that does not include it. The
+# first process would then start somewhere it cannot stat and warn twice
+# before the pre-entry script chdirs. "/" is readable in every profile.
+# Safe here: prepare has already recorded the launch directory, and
+# everything below names absolute paths.
+cd / || exit 1
 
 mapfile -d '' ARGV_BEFORE_ENV < "$SESSION_DIR/argv-before-env"
 mapfile -d '' ARGV_AFTER_ENV < "$SESSION_DIR/argv-after-env"

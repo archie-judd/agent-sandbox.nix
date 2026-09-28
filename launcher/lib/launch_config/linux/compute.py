@@ -208,13 +208,13 @@ def _get_bwrap_args(
     args += ["--tmpfs", str(SANDBOX_TMPDIR)]
     args += ["--tmpfs", str(host.real_home)]
 
-    # Withheld at a work tree root, where the cwd bind below already covers the
-    # work tree. Must stay in step with get_bound_prefixes, which skips binds
-    # this one would have covered.
+    # Withheld at a work tree root, where the workspace bind below already
+    # covers the work tree. Must stay in step with get_bound_prefixes, which
+    # skips binds this one would have covered.
     repo_root = get_grantable_repo_root(host, git)
     if repo_root is not None:
         args += ["--ro-bind", str(repo_root), str(repo_root)]
-    args += ["--bind", str(host.cwd), str(host.cwd)]
+    args += ["--bind", str(host.workspace_dir), str(host.workspace_dir)]
 
     args += list(binds.dir_binds)
     args += list(binds.ro_dir_binds)
@@ -252,7 +252,7 @@ def _get_bwrap_args(
     args += ["--unshare-all", "--hostname", "sandbox"]
     args += ["--uid", str(host.uid), "--gid", str(host.gid)]
     args += ["--share-net", "--die-with-parent"]
-    args += ["--chdir", str(host.cwd)]
+    args += ["--chdir", str(host.workspace_dir)]
     return args
 
 
@@ -309,7 +309,11 @@ def compute_launch_config(
     argv_after_env = (
         [str(spec.dependencies.bwrap)]
         + bwrap_args
-        + [str(spec.pre_entry_script), str(spec.sandboxed_binary)]
+        + [
+            str(spec.pre_entry_script),
+            str(host.workspace_dir),
+            str(spec.sandboxed_binary),
+        ]
     )
 
     ca_bundle = (

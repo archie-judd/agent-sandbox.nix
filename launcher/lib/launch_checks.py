@@ -49,14 +49,25 @@ def _get_relative_paths(host: HostStateLinux | HostStateDarwin) -> list[Declared
     ]
 
 
-def _is_cwd_above_home(host: HostStateLinux | HostStateDarwin) -> bool:
-    if host.cwd == Path("/"):
+def _get_workspace_refusal(host: HostStateLinux | HostStateDarwin) -> str | None:
+    if not host.workspace_dir.is_absolute():
+        return (
+            f"{host.workspace_dir}: declared as workspaceDir but is not an "
+            f"absolute path; write it out in full or use $HOME"
+        )
+    if not host.workspace_dir_exists:
+        return f"{host.workspace_dir}: declared as workspaceDir but does not exist"
+    return None
+
+
+def _is_workspace_above_home(host: HostStateLinux | HostStateDarwin) -> bool:
+    if host.workspace_dir == Path("/"):
         return True
-    return host.cwd in host.real_home.parents
+    return host.workspace_dir in host.real_home.parents
 
 
-def _is_cwd_home(host: HostStateLinux | HostStateDarwin) -> bool:
-    return host.cwd == host.real_home
+def _is_workspace_home(host: HostStateLinux | HostStateDarwin) -> bool:
+    return host.workspace_dir == host.real_home
 
 
 def _get_nested_bind_conflicts(
@@ -131,7 +142,7 @@ def _confirm_on_terminal() -> bool:
     return reply.strip() in _AFFIRMATIVE
 
 
-def _confirm_home_cwd_launch(host: HostStateLinux | HostStateDarwin) -> bool:
+def _confirm_home_workspace_launch(host: HostStateLinux | HostStateDarwin) -> bool:
     print(
         f"{WARN_PREFIX} launching from your home directory ({host.real_home}).",
         file=sys.stderr,
@@ -259,11 +270,18 @@ def get_launch_refusals(
                 "which nix documents as equivalent to root access to the host."
             )
 
-    if _is_cwd_above_home(host):
+    # Before the guards below, which compare against the workspace and mean
+    # nothing if it is not a usable path.
+    workspace_refusal = _get_workspace_refusal(host)
+    if workspace_refusal is not None:
+        refusals.append(workspace_refusal)
+        return tuple(refusals)
+
+    if _is_workspace_above_home(host):
         refusals.append(
-            f"refusing to launch from {host.cwd}: it sits above your home directory "
-            f"({host.real_home}), and the launch directory is always writable inside "
-            f"the sandbox."
+            f"refusing to launch from {host.workspace_dir}: it sits above your "
+            f"home directory ({host.real_home}), and the launch directory is "
+            f"always writable inside the sandbox."
         )
         return tuple(refusals)
 
@@ -291,13 +309,13 @@ def get_launch_refusals(
                 f"daemon (sandbox = {setting}) was declined."
             )
 
-    if _is_cwd_home(host):
+    if _is_workspace_home(host):
         if not host.has_controlling_terminal:
             refusals.append(
                 f"refusing to launch from your home directory ({host.real_home}) "
                 f"with no terminal to confirm on."
             )
-        elif not _confirm_home_cwd_launch(host):
+        elif not _confirm_home_workspace_launch(host):
             refusals.append(
                 f"launching from your home directory ({host.real_home}) was declined."
             )

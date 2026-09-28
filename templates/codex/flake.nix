@@ -28,6 +28,8 @@
             binName = "codex";
             outName = "codex-sandboxed"; # or whatever alias you'd like
             allowedPackages = sbx.commonTools;
+            # Uncomment to always work in one directory, wherever you launch from:
+            # workspaceDir = "$HOME/projects/my-project";
             rwDirs = [ "$HOME/.codex" ];
             rwFiles = [ ];
             # For git identity, uncomment to bind your host gitconfig (see README):

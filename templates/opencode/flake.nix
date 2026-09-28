@@ -23,6 +23,8 @@
             binName = "opencode";
             outName = "opencode-sandboxed"; # or whatever alias you'd like
             allowedPackages = sbx.commonTools;
+            # Uncomment to always work in one directory, wherever you launch from:
+            # workspaceDir = "$HOME/projects/my-project";
             rwDirs = [
               "$HOME/.config/opencode"
               "$HOME/.local/share/opencode"

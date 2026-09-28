@@ -51,6 +51,19 @@ let
         builtins.throw "${errorPrefix} allowedHostPorts must only contain integers from 1 to 65535 (null allows all). Invalid: ${builtins.toJSON invalidPorts}"
       else
         pkgs.lib.unique allowedHostPorts;
+  validateWorkspaceDir =
+    workspaceDir:
+    if !(builtins.isString workspaceDir) then
+      builtins.throw "${errorPrefix} workspaceDir must be a string holding an absolute path (\"$VAR\" and \"~\" are expanded at launch)"
+    else
+      let
+        firstChar = builtins.substring 0 1 workspaceDir;
+      in
+      if firstChar != "/" && firstChar != "~" && firstChar != "$" then
+        builtins.throw "${errorPrefix} workspaceDir must be an absolute path, or start with \"$\" or \"~\" to be expanded at launch. Invalid: ${builtins.toJSON workspaceDir}"
+      else
+        workspaceDir;
+
   # Deliberately no null form: "every port, reachable from the host" is
   # never the intended published surface, unlike allowedHostPorts' null.
   validatePublishedPorts =
@@ -236,20 +249,23 @@ let
       allowedHostPorts,
       publishedPorts,
       allowUnixSockets,
+      workspaceDir,
       proxyRedirects,
     }:
     builtins.seq (assertNoLegacyArgs legacyArgs) (
       builtins.seq allowedHostPorts (
         builtins.seq publishedPorts (
           builtins.seq allowUnixSockets (
-            builtins.seq proxyRedirects (
-              pkgs.runCommand outName { } ''
-                mkdir -p $out/bin
-                install -m755 ${stub} $out/bin/${outName}
-              ''
-              // {
-                buildSpec = buildSpec;
-              }
+            builtins.seq workspaceDir (
+              builtins.seq proxyRedirects (
+                pkgs.runCommand outName { } ''
+                  mkdir -p $out/bin
+                  install -m755 ${stub} $out/bin/${outName}
+                ''
+                // {
+                  buildSpec = buildSpec;
+                }
+              )
             )
           )
         )
@@ -264,6 +280,7 @@ in
   validateAllowedHostPorts = validateAllowedHostPorts;
   validatePublishedPorts = validatePublishedPorts;
   validateAllowUnixSockets = validateAllowUnixSockets;
+  validateWorkspaceDir = validateWorkspaceDir;
   validateProxyRedirects = validateProxyRedirects;
   preEntryScript = preEntryScript;
   launcherPackage = launcherPackage;
