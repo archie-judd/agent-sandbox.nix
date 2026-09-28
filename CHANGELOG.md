@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.4.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.3.1...v5.4.0) (2026-09-28)
+
+
+### Features
+
+* workspaceDir ([#169](https://github.com/archie-judd/agent-sandbox.nix/issues/169)) ([ee965e5](https://github.com/archie-judd/agent-sandbox.nix/commit/ee965e584f5a94d374ea4e8ea6ee47187ea4e79e))
+
 ## [5.3.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.3.0...v5.3.1) (2026-09-26)
 
 
