@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.4.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.4.0...v5.4.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* launch in a subshell ([#172](https://github.com/archie-judd/agent-sandbox.nix/issues/172)) ([542427e](https://github.com/archie-judd/agent-sandbox.nix/commit/542427ebb50039e00e08f8f928dc55921cac259a))
+
 ## [5.4.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.3.1...v5.4.0) (2026-09-28)
 
 
