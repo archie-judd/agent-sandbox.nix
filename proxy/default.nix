@@ -4,4 +4,6 @@ pkgs.buildGoModule {
   version = pkgs.lib.fileContents ../version.txt;
   src = ./.;
   vendorHash = null;
+
+  __darwinAllowLocalNetworking = true;
 }
