@@ -18,10 +18,7 @@
     {
       lib = forAllSystems (
         system:
-        let
-          pkgs = import nixpkgs { system = system; };
-        in
-        import ./. { pkgs = pkgs; }
+        import ./. { pkgs = nixpkgs.legacyPackages.${system}; }
       );
       templates = {
         claude = {
