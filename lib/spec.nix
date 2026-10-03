@@ -18,6 +18,7 @@
   workspaceDir,
   allowedHostPorts,
   publishedPorts,
+  useHostResolver,
   closurePathsFile,
   preEntryScript,
   allowedDomains,
@@ -70,6 +71,11 @@ let
       {
         hosts_file = "${hostsFile}";
         empty_file = "${emptyFile}";
+        host_resolver_conf =
+          if useHostResolver then
+            "${pkgs.writeText "sandbox-host-resolver" "nameserver 10.0.2.2\n"}"
+          else
+            null;
       }
     else
       { };

@@ -128,6 +128,7 @@ class SandboxBuildSpecLinux(SandboxBuildSpec):
     platform: Literal["linux"]
     hosts_file: Path
     empty_file: Path
+    host_resolver_conf: Path | None
     dependencies: DependenciesLinux
 
 
@@ -225,6 +226,11 @@ def load_build_spec(path: Path) -> SandboxBuildSpecLinux | SandboxBuildSpecDarwi
                 platform="linux",
                 hosts_file=Path(data["hosts_file"]),
                 empty_file=Path(data["empty_file"]),
+                host_resolver_conf=(
+                    Path(data["host_resolver_conf"])
+                    if data["host_resolver_conf"] is not None
+                    else None
+                ),
                 dependencies=DependenciesLinux.from_dict(dependencies_data),
             )
         case "darwin":

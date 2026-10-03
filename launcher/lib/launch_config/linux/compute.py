@@ -179,7 +179,9 @@ def _get_bwrap_args(
         # host's own loopback, which inside pasta's namespace is a different
         # loopback with nothing on it; the systemd file holds the real
         # upstream addresses.
-        if host.resolv_conf_names_loopback and host.systemd_resolv_conf is not None:
+        if spec.host_resolver_conf is not None:
+            resolv_conf = spec.host_resolver_conf
+        elif host.resolv_conf_names_loopback and host.systemd_resolv_conf is not None:
             resolv_conf = host.systemd_resolv_conf
         else:
             resolv_conf = Path("/etc/resolv.conf")
@@ -340,6 +342,7 @@ def compute_launch_config(
                     proxy_port,
                     spec.allowed_host_ports,
                     [forward.port for forward in spec.published_ports],
+                    host_dns=spec.host_resolver_conf is not None,
                 )
             ),
             seccomp_filter=seccomp_filter,

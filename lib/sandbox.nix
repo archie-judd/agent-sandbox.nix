@@ -16,6 +16,8 @@
   allowedDomains ? null,
   allowedHostPorts ? [ ],
   publishedPorts ? [ ],
+  # Linux, open-network mode only. Requires a DNS listener on host 127.0.0.1:53.
+  useHostResolver ? false,
   # Internal, for the test harness: maps "host" to "addr:port" so the proxy
   # dials a local address instead of resolving the original.
   _proxyRedirects ? { },
@@ -50,6 +52,14 @@ let
 
   validatedPublishedPorts = shared.validatePublishedPorts publishedPorts;
 
+  validatedUseHostResolver =
+    if !builtins.isBool useHostResolver then
+      builtins.throw "agent-sandbox: useHostResolver must be a boolean"
+    else if useHostResolver && (platform != "linux" || allowedDomains != null) then
+      builtins.throw "agent-sandbox: useHostResolver requires Linux and open-network mode"
+    else
+      useHostResolver;
+
   validatedAllowUnixSockets = shared.validateAllowUnixSockets {
     allowNix = allowNix;
     allowUnixSockets = allowUnixSockets;
@@ -81,6 +91,7 @@ let
         workspaceDir = validatedWorkspaceDir;
         allowedHostPorts = validatedAllowedHostPorts;
         publishedPorts = validatedPublishedPorts;
+        useHostResolver = validatedUseHostResolver;
         allowUnixSockets = validatedAllowUnixSockets;
         closurePathsFile = closurePathsFile;
         preEntryScript = shared.preEntryScript;
@@ -99,20 +110,22 @@ let
   };
 
 in
-shared.mkWrapper {
-  outName = outName;
-  stub = stub;
-  buildSpec = sandboxBuildSpec;
-  legacyArgs = {
-    restrictNetwork = restrictNetwork;
-    extraEnv = extraEnv;
-    stateDirs = stateDirs;
-    stateFiles = stateFiles;
-    allowedLocalPorts = allowedLocalPorts;
-  };
-  allowedHostPorts = validatedAllowedHostPorts;
-  publishedPorts = validatedPublishedPorts;
-  allowUnixSockets = validatedAllowUnixSockets;
-  workspaceDir = validatedWorkspaceDir;
-  proxyRedirects = validatedProxyRedirects;
-}
+builtins.seq validatedUseHostResolver (
+  shared.mkWrapper {
+    outName = outName;
+    stub = stub;
+    buildSpec = sandboxBuildSpec;
+    legacyArgs = {
+      restrictNetwork = restrictNetwork;
+      extraEnv = extraEnv;
+      stateDirs = stateDirs;
+      stateFiles = stateFiles;
+      allowedLocalPorts = allowedLocalPorts;
+    };
+    allowedHostPorts = validatedAllowedHostPorts;
+    publishedPorts = validatedPublishedPorts;
+    allowUnixSockets = validatedAllowUnixSockets;
+    workspaceDir = validatedWorkspaceDir;
+    proxyRedirects = validatedProxyRedirects;
+  }
+)

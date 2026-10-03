@@ -29,3 +29,16 @@ def test_open_mode_emits_no_reply_accepts() -> None:
     rules = get_nft_rules(GATEWAY_IP, None, ALLOWED_HOST_PORTS, [18944])
 
     assert _reply_accepts(rules) == []
+
+
+def test_host_dns_opens_only_gateway_port_53_for_both_protocols() -> None:
+    default = get_nft_rules(GATEWAY_IP, None, ())
+    enabled = get_nft_rules(GATEWAY_IP, None, (), host_dns=True)
+
+    assert "add rule ip sandbox_filter output ip daddr 10.0.2.2 drop" in default
+    assert enabled[-3:] == [
+        "add rule ip sandbox_filter output ip daddr 10.0.2.2 udp dport 53 accept",
+        "add rule ip sandbox_filter output ip daddr 10.0.2.2 tcp dport 53 accept",
+        "add rule ip sandbox_filter output ip daddr 10.0.2.2 drop",
+    ]
+    assert not any("udp dport 53 accept" in rule for rule in default)

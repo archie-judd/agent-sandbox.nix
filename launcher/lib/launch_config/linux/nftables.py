@@ -8,6 +8,8 @@ def get_nft_rules(
     proxy_port: int | None,
     allowed_host_ports: Sequence[int] | None,
     published_ports: Sequence[int] = (),
+    *,
+    host_dns: bool = False,
 ) -> list[str]:
     """Restricted mode drops everything by default and permits only
     in-namespace loopback and TCP to the proxy. Open mode drops only traffic
@@ -74,6 +76,13 @@ def get_nft_rules(
         f"add rule ip sandbox_filter output ip daddr {gateway_ip} {match} accept"
         for match in matches
     ]
+    if host_dns:
+        # Only this gateway's DNS port; never open UDP to other host services.
+        rules += [
+            f"add rule ip sandbox_filter output ip daddr {gateway_ip} "
+            f"{proto} dport 53 accept"
+            for proto in ("udp", "tcp")
+        ]
     if proxy_port is None:
         rules.append(f"add rule ip sandbox_filter output ip daddr {gateway_ip} drop")
     return rules
