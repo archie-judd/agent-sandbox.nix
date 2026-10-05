@@ -12,9 +12,6 @@ marionette_port="$3"
 websocket_port="$4"
 url="${5:-}"
 base="http://127.0.0.1:$driver_port"
-# With allowedDomains set, the sandbox env carries proxy variables, and curl
-# would send these loopback calls to the allowlist proxy, which answers 403.
-export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
 driver_log="$TMPDIR/webdriver.log"
 binary="${BROWSER_BINARY:?BROWSER_BINARY is not set}"
 
