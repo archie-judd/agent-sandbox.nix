@@ -217,7 +217,10 @@ def _get_computed_env(
     if host.term is not None:
         pairs.insert(1, f"TERM={host.term}")
     if "chromium" in spec.allow_headless_browsers:
-        pairs.append(f"MAC_CHROMIUM_TMPDIR={session.sandbox_tmpdir}")
+        pairs += [
+            f"MAC_CHROMIUM_TMPDIR={session.sandbox_tmpdir}",
+            f"CFFIXED_USER_HOME={session.sandbox_home}",
+        ]
     if "firefox" in spec.allow_headless_browsers:
         library = session.sandbox_home / "Library"
         pairs += [
