@@ -45,3 +45,11 @@ jobs:
 
       - name: Run sandbox tests
         run: bash tests/run-all.sh
+
+      - name: Sandbox denials and OS version (macOS, on failure)
+        if: failure() && runner.os == 'macOS'
+        run: |
+          sw_vers
+          /usr/bin/log show --last 20m --style compact \
+            --predicate 'eventMessage CONTAINS "deny(1)" AND (eventMessage CONTAINS "Chrome" OR eventMessage CONTAINS "chromedriver" OR eventMessage CONTAINS "google-chrome")' \
+            | sed -E 's/.*Sandbox: ([^(]+)\([0-9]+\) /\1 /' | sort | uniq -c | sort -rn | head -60

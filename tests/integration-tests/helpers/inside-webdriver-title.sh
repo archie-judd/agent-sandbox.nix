@@ -28,7 +28,7 @@ fi
 case "$browser" in
 chrome | chromium)
   chromedriver --port="$driver_port" --log-path="$driver_log" >>"$driver_log" 2>&1 &
-  caps=$(printf '{"capabilities":{"alwaysMatch":{%s"goog:chromeOptions":{"binary":"%s","args":["--headless=new","--no-sandbox","--disable-gpu","--remote-debugging-pipe"]}}}}' "$proxy_caps" "$binary")
+  caps=$(printf '{"capabilities":{"alwaysMatch":{%s"goog:chromeOptions":{"binary":"%s","args":["--headless=new","--no-sandbox","--disable-gpu","--remote-debugging-pipe","--enable-logging=stderr","--v=1"]}}}}' "$proxy_caps" "$binary")
   ;;
 firefox)
   geckodriver --port "$driver_port" --marionette-port "$marionette_port" \
@@ -56,7 +56,7 @@ case "$session" in
   echo "no session (curl exit $curl_status): $session" >&2
   echo "caps: $caps" >&2
   echo "driver log:" >&2
-  tail -n 40 "$driver_log" >&2 || true
+  grep -v "^ " "$driver_log" | tail -n 120 >&2 || true
   exit 1
   ;;
 esac
