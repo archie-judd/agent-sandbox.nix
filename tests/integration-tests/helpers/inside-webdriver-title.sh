@@ -32,7 +32,7 @@ chrome | chromium)
   if [ "$(uname -s)" = "Darwin" ]; then
     no_sandbox_arg='"--no-sandbox",'
   fi
-  caps=$(printf '{"capabilities":{"alwaysMatch":{%s"goog:chromeOptions":{"binary":"%s","args":["--headless=new",%s"--disable-gpu","--remote-debugging-pipe","--enable-logging=stderr","--v=1"]}}}}' "$proxy_caps" "$binary" "$no_sandbox_arg")
+  caps=$(printf '{"capabilities":{"alwaysMatch":{%s"goog:chromeOptions":{"binary":"%s","args":["--headless=new",%s"--disable-gpu","--remote-debugging-pipe"]}}}}' "$proxy_caps" "$binary" "$no_sandbox_arg")
   ;;
 firefox)
   geckodriver --port "$driver_port" --marionette-port "$marionette_port" \
