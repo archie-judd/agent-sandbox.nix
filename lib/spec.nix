@@ -37,6 +37,8 @@ let
   # does not carry nix in its closure.
   nixBinary = if allowNix then "${pkgs.nix}/bin/nix" else null;
 
+  certutilBinary = if builtins.elem "chromium" allowHeadlessBrowsers then "${pkgs.nssTools}/bin/certutil" else null;
+
   dependencies =
     if platform == "linux" then
       {
@@ -47,6 +49,7 @@ let
         env = "${pkgs.coreutils}/bin/env";
         python = "${pkgs.python3}/bin/python3";
         nix = nixBinary;
+        certutil = certutilBinary;
       }
     else
       {

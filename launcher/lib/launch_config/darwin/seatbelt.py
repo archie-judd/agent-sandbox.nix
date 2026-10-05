@@ -55,10 +55,16 @@ MACH_IPC = (
 HEADLESS_BROWSERS = (
     "",
     ";; Headless browsers (allowHeadlessBrowsers)",
-    '(allow mach-lookup (global-name-prefix "com.google.Chrome.MachPortRendezvousServer."))',
-    '(allow mach-lookup (global-name-prefix "org.mozilla.machname."))',
     '(allow mach-lookup (global-name "com.apple.coreservices.launchservicesd"))',
     '(allow iokit-open (iokit-user-client-class "RootDomainUserClient"))',
+)
+
+HEADLESS_BROWSERS_CHROMIUM = (
+    '(allow mach-lookup (global-name-prefix "com.google.Chrome.MachPortRendezvousServer."))',
+)
+
+HEADLESS_BROWSERS_FIREFOX = (
+    '(allow mach-lookup (global-name-prefix "org.mozilla.machname."))',
 )
 
 # /Library/Preferences is deliberately absent: its plists leak host identity.

@@ -118,8 +118,19 @@ let
 
   validateAllowHeadlessBrowsers =
     allowHeadlessBrowsers:
-    if !(builtins.isBool allowHeadlessBrowsers) then
-      builtins.throw "${errorPrefix} allowHeadlessBrowsers must be a boolean"
+    let
+      engines = [
+        "chromium"
+        "firefox"
+      ];
+      quoted = builtins.concatStringsSep ", " (map (engine: ''"${engine}"'') engines);
+    in
+    if !(builtins.isList allowHeadlessBrowsers) then
+      builtins.throw "${errorPrefix} allowHeadlessBrowsers must be a list of browser engines (${quoted}), not a boolean or other value"
+    else if !(builtins.all (entry: builtins.elem entry engines) allowHeadlessBrowsers) then
+      builtins.throw "${errorPrefix} allowHeadlessBrowsers entries must each be one of ${quoted}. Got: ${builtins.toJSON allowHeadlessBrowsers}"
+    else if pkgs.lib.unique allowHeadlessBrowsers != allowHeadlessBrowsers then
+      builtins.throw "${errorPrefix} allowHeadlessBrowsers must not repeat an engine. Got: ${builtins.toJSON allowHeadlessBrowsers}"
     else
       allowHeadlessBrowsers;
 

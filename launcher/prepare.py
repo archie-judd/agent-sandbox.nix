@@ -37,10 +37,12 @@ from launcher.lib.session_state import (
     SessionStateDarwin,
     create_darwin_sandbox_home,
     create_darwin_sandbox_tmpdir,
+    create_firefox_policies,
+    create_nss_db,
     create_proxy_state,
     create_session_dir,
     kill_proxy,
-    remove_darwin_sandbox_dir,
+    remove_sandbox_dir,
 )
 
 
@@ -73,7 +75,18 @@ def _prepare_launch_linux(spec: SandboxBuildSpecLinux, session_dir: Path) -> Pat
         proxy = create_proxy_state(spec, session_dir)
         stack.callback(kill_proxy, proxy)
 
-        session = SessionState(session_dir=session_dir, proxy=proxy)
+        nss_db = create_nss_db(spec, session_dir)
+        if nss_db is not None:
+            stack.callback(remove_sandbox_dir, nss_db)
+
+        firefox_policies = create_firefox_policies(spec, session_dir)
+
+        session = SessionState(
+            session_dir=session_dir,
+            proxy=proxy,
+            nss_db=nss_db,
+            firefox_policies=firefox_policies,
+        )
         config = linux_compute.compute_launch_config(spec, host, session)
         write_launch_config_linux(config, session)
         # Committed: from here the proxy is cleanup_launch's to kill, off the
@@ -92,15 +105,17 @@ def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> P
 
     with ExitStack() as stack:
         sandbox_home = create_darwin_sandbox_home(session_dir)
-        stack.callback(remove_darwin_sandbox_dir, sandbox_home)
+        stack.callback(remove_sandbox_dir, sandbox_home)
         sandbox_tmpdir = create_darwin_sandbox_tmpdir(session_dir)
-        stack.callback(remove_darwin_sandbox_dir, sandbox_tmpdir)
+        stack.callback(remove_sandbox_dir, sandbox_tmpdir)
         proxy = create_proxy_state(spec, session_dir)
         stack.callback(kill_proxy, proxy)
 
         session = SessionStateDarwin(
             session_dir=session_dir,
             proxy=proxy,
+            nss_db=None,
+            firefox_policies=None,
             sandbox_home=sandbox_home,
             sandbox_tmpdir=sandbox_tmpdir,
         )

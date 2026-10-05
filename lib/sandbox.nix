@@ -7,7 +7,7 @@
   allowedPackages,
   allowNix ? false,
   allowUnixSockets ? false,
-  allowHeadlessBrowsers ? false,
+  allowHeadlessBrowsers ? [ ],
   rwDirs ? [ ],
   rwFiles ? [ ],
   roDirs ? [ ],

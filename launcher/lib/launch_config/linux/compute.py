@@ -13,6 +13,7 @@ from launcher.lib.constants import (
     NETWORK,
     NO_PROXY_HOSTS,
     PASSWD,
+    SANDBOX_CA_CERT,
     SECCOMP_FD,
     SECCOMP_FILTER,
 )
@@ -45,8 +46,8 @@ SANDBOX_TMPDIR = Path("/tmp")
 # Fixed paths rather than the session directory's own, so nothing inside the
 # sandbox learns where that is.
 SANDBOX_CA_BUNDLE = Path("/tmp/sandbox-ca-bundle.pem")
-SANDBOX_CA_CERT = Path("/tmp/sandbox-ca-cert.pem")
 SANDBOX_PASSWD = Path("/etc/passwd")
+SANDBOX_FIREFOX_POLICIES = Path("/etc/firefox/policies/policies.json")
 
 # pasta forwards <gateway>:<port> to 127.0.0.1:<port> on the host, which is
 # both how the sandbox reaches the proxy and why the gateway has to be
@@ -207,6 +208,8 @@ def _get_bwrap_args(
     args += ["--dev", "/dev"]
     args += ["--tmpfs", str(SANDBOX_TMPDIR)]
     args += ["--tmpfs", str(host.real_home)]
+    if session.nss_db is not None:
+        args += ["--bind", str(session.nss_db), str(host.real_home / ".pki" / "nssdb")]
 
     # Withheld at a work tree root, where the workspace bind below already
     # covers the work tree. Must stay in step with get_bound_prefixes, which
@@ -242,6 +245,12 @@ def _get_bwrap_args(
         cert = session.session_dir / CA_CERT
         args += ["--ro-bind", str(bundle), str(SANDBOX_CA_BUNDLE)]
         args += ["--ro-bind", str(cert), str(SANDBOX_CA_CERT)]
+        if session.firefox_policies is not None:
+            args += [
+                "--ro-bind",
+                str(session.firefox_policies),
+                str(SANDBOX_FIREFOX_POLICIES),
+            ]
 
     args += ["--symlink", str(spec.shell), "/bin/sh"]
     args += ["--symlink", str(spec.dependencies.env), "/usr/bin/env"]
@@ -327,7 +336,7 @@ def compute_launch_config(
         argv_after_env=tuple(argv_after_env),
         passwd=f"user:x:{host.uid}:{host.gid}:sandbox user:{host.real_home}:/bin/sh\n",
         ca_bundle=ca_bundle,
-        cleanup=(),
+        cleanup=() if session.nss_db is None else (session.nss_db,),
         cleanup_if_empty=tuple(masked),
         warnings=tuple(warnings) + binds.warnings,
         bwrap_args=tuple(bwrap_args),

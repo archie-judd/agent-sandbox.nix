@@ -216,10 +216,11 @@ def _get_computed_env(
     ]
     if host.term is not None:
         pairs.insert(1, f"TERM={host.term}")
-    if spec.allow_headless_browsers:
+    if "chromium" in spec.allow_headless_browsers:
+        pairs.append(f"MAC_CHROMIUM_TMPDIR={session.sandbox_tmpdir}")
+    if "firefox" in spec.allow_headless_browsers:
         library = session.sandbox_home / "Library"
         pairs += [
-            f"MAC_CHROMIUM_TMPDIR={session.sandbox_tmpdir}",
             f"MOZ_APP_DATA={library / 'Application Support' / 'Firefox'}",
             f"MOZ_LOCAL_APP_DATA={library / 'Caches' / 'Firefox'}",
             "MOZ_DISABLE_CONTENT_SANDBOX=1",
@@ -280,6 +281,10 @@ def _get_profile_lines(
     lines += seatbelt.MACH_IPC
     if spec.allow_headless_browsers:
         lines += seatbelt.HEADLESS_BROWSERS
+        if "chromium" in spec.allow_headless_browsers:
+            lines += seatbelt.HEADLESS_BROWSERS_CHROMIUM
+        if "firefox" in spec.allow_headless_browsers:
+            lines += seatbelt.HEADLESS_BROWSERS_FIREFOX
 
     if session.proxy is None:
         lines += seatbelt.network_open(spec.allowed_host_ports)
