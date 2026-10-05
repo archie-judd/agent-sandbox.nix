@@ -1,5 +1,8 @@
 {
   browser ? "chrome",
+  httpbinPort ? null,
+  allowHeadlessBrowsers ? null,
+  allowUnixSockets ? pkgs.stdenv.hostPlatform.isLinux,
   pkgs ? import ../../pinned-nixpkgs.nix {
     config = {
       allowUnfreePredicate = pkg: (pkg.pname or "") == "google-chrome";
@@ -13,11 +16,13 @@ let
       browser = pkgs.google-chrome;
       binary = pkgs.lib.getExe pkgs.google-chrome;
       driver = pkgs.chromedriver;
+      engine = "chromium";
     };
     chromium = {
       browser = pkgs.chromium;
       binary = pkgs.lib.getExe pkgs.chromium;
       driver = pkgs.chromedriver;
+      engine = "chromium";
     };
     firefox = {
       browser = pkgs.firefox;
@@ -27,6 +32,7 @@ let
         else
           pkgs.lib.getExe pkgs.firefox;
       driver = pkgs.geckodriver;
+      engine = "firefox";
     };
   };
   selected = browsers.${browser};
@@ -51,8 +57,10 @@ sandbox.mkSandbox {
   env = {
     BROWSER_BINARY = selected.binary;
   };
-  allowedDomains = [ ];
-  allowHeadlessBrowsers = true;
+  allowedDomains = if httpbinPort == null then [ ] else [ "httpbin.test" ];
+  _proxyRedirects = if httpbinPort == null then { } else { "httpbin.test" = "127.0.0.1:${httpbinPort}"; };
+  allowUnixSockets = allowUnixSockets;
+  allowHeadlessBrowsers = if allowHeadlessBrowsers == null then [ selected.engine ] else allowHeadlessBrowsers;
   publishedPorts = darwinPorts;
   allowedHostPorts = darwinPorts;
 }
