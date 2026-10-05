@@ -27,12 +27,12 @@ fi
 
 case "$browser" in
 chrome | chromium)
-  chromedriver --port="$driver_port" --log-path="$driver_log" >>"$driver_log" 2>&1 &
+  chromedriver --port="$driver_port" --log-path="$driver_log" --enable-chrome-logs >>"$driver_log" 2>&1 &
   no_sandbox_arg=""
   if [ "$(uname -s)" = "Darwin" ]; then
     no_sandbox_arg='"--no-sandbox",'
   fi
-  caps=$(printf '{"capabilities":{"alwaysMatch":{%s"goog:chromeOptions":{"binary":"%s","args":["--headless=new",%s"--disable-gpu","--remote-debugging-pipe"]}}}}' "$proxy_caps" "$binary" "$no_sandbox_arg")
+  caps=$(printf '{"capabilities":{"alwaysMatch":{%s"goog:chromeOptions":{"binary":"%s","args":["--headless=new",%s"--disable-gpu","--remote-debugging-pipe","--enable-logging=stderr","--v=1"]}}}}' "$proxy_caps" "$binary" "$no_sandbox_arg")
   ;;
 firefox)
   geckodriver --port "$driver_port" --marionette-port "$marionette_port" \
