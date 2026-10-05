@@ -453,6 +453,7 @@ Add the browser and its driver to `allowedPackages`. Take both from the same nix
 
 - **Linux:** set `allowUnixSockets = true`. Without it, the launch is refused. Browsers lock their profile with a UNIX-domain socket, and on Linux the sandbox cannot allow a single socket path, only all of them. See [UNIX-domain sockets](#unix-domain-sockets).
 - **macOS, with `allowedDomains` set:** localhost is shared with the host (see [Linux vs macOS](#linux-vs-macos)). Every port that a process in the sandbox listens on must therefore be in both `publishedPorts` and `allowedHostPorts`. This includes the driver's port, Firefox's Marionette and WebSocket ports, and the port of the app server under test. Random ports do not work, so pin each one.
+- **macOS, with `allowedDomains` unset:** processes in the sandbox can listen on any port, but connections to localhost are refused except to ports in `allowedHostPorts`. Put the same pinned ports in `allowedHostPorts`. `publishedPorts` is not needed.
 
 ### Driver configuration
 
@@ -471,7 +472,7 @@ Driver and session settings:
 
 | Setting | Linux | macOS, `allowedDomains` set | macOS, `allowedDomains` unset |
 | --- | --- | --- | --- |
-| Fixed driver ports: `chromedriver --port`, or `geckodriver --port`, `--marionette-port` and `--websocket-port` | no | yes | no |
+| Fixed driver ports: `chromedriver --port`, or `geckodriver --port`, `--marionette-port` and `--websocket-port` | no | yes | yes |
 | The `proxy` capability: `manual`, with `httpProxy` and `sslProxy` set to `$HTTPS_PROXY` without the `http://` | yes, if `allowedDomains` is set | yes | no |
 | The `acceptInsecureCerts: true` capability | no | yes | no |
 
