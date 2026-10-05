@@ -9,14 +9,8 @@ on:
 jobs:
   test:
     strategy:
-      fail-fast: false
       matrix:
-        # os: [ubuntu-22.04, ubuntu-22.04-arm]
-        include:
-          - os: macos-latest
-            warmup: register-all
-          - os: macos-latest
-            warmup: full
+        os: [ubuntu-22.04, ubuntu-22.04-arm, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -48,41 +42,6 @@ jobs:
           # inherits that trust and nix documents it as root on the host, so
           # the nix suite would have nothing left to exercise.
           trust-runner-user: false
-
-      - name: Move preinstalled Chrome aside (temporary)
-        if: runner.os == 'macOS'
-        run: |
-          ls -d /Applications/*Chrome* || true
-          for app in "/Applications/Google Chrome.app" "/Applications/Google Chrome for Testing.app"; do
-            /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -u "$app" || true
-          done
-          sudo mv "/Applications/Google Chrome.app" "/Applications/Google Chrome for Testing.app" /tmp/ || true
-          ls -d /Applications/*Chrome* || true
-
-      - name: Register Chrome and its helper apps with LaunchServices (temporary)
-        if: runner.os == 'macOS' && matrix.warmup == 'register-all'
-        run: |
-          P='(import ./tests/pinned-nixpkgs.nix { config.allowUnfreePredicate = p: (p.pname or "") == "google-chrome"; })'
-          CHROME=$(nix-build --no-out-link -E "$P.google-chrome")
-          LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
-          "$LSREGISTER" -R -f "$CHROME/Applications/Google Chrome.app"
-          find "$CHROME/Applications/Google Chrome.app/Contents/Frameworks" \
-            -path '*/Helpers/Google Chrome Helper*.app' -prune -print0 |
-            while IFS= read -r -d '' app; do
-              echo "== registering $app"
-              "$LSREGISTER" -f "$app"
-            done
-          "$LSREGISTER" -dump | grep -c "Google Chrome Helper" || true
-
-      - name: Chrome outside the sandbox (temporary)
-        if: runner.os == 'macOS' && matrix.warmup == 'full'
-        run: |
-          P='(import ./tests/pinned-nixpkgs.nix { config.allowUnfreePredicate = p: (p.pname or "") == "google-chrome"; })'
-          CHROME=$(nix-build --no-out-link -E "$P.google-chrome")
-          DRIVER=$(nix-build --no-out-link -E "$P.chromedriver")
-          export TMPDIR=$(mktemp -d)
-          BROWSER_BINARY="$CHROME/bin/google-chrome-stable" PATH="$DRIVER/bin:$PATH" \
-            bash tests/integration-tests/helpers/inside-webdriver-title.sh chrome 18960 18961 18962 || true
 
       - name: Run sandbox tests
         run: bash tests/run-all.sh
