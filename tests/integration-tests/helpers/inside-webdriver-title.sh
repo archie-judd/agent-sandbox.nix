@@ -71,7 +71,7 @@ if [ -n "$url" ]; then
   *'"error"'*) status=1 ;;
   *)
     curl -s -H 'Content-Type: application/json' \
-      -d '{"script":"return document.body.innerText","args":[]}' \
+      -d '{"script":"return document.body.textContent","args":[]}' \
       "$base/session/$id/execute/sync" || status=1
     ;;
   esac
