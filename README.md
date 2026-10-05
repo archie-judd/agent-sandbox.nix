@@ -458,12 +458,19 @@ Add the browser and its driver to `allowedPackages`. Take both from the same nix
 
 These settings go in your test suite's driver configuration. Commit them with your project, so the agent does not have to find them.
 
+Chrome flags:
+
+| Flag | Linux | macOS, `allowedDomains` set | macOS, `allowedDomains` unset |
+| --- | --- | --- | --- |
+| `--no-sandbox` | no | yes | yes |
+| `--remote-debugging-pipe` | no | yes | no |
+
+Firefox needs no flags beyond `-headless`. On macOS, `pkgs.firefox` has no `bin/`: set its `binary` to `<pkgs.firefox>/Applications/Firefox.app/Contents/MacOS/firefox`, where `<pkgs.firefox>` is the package's store path.
+
+Driver and session settings:
+
 | Setting | Linux | macOS, `allowedDomains` set | macOS, `allowedDomains` unset |
 | --- | --- | --- | --- |
-| The browser's `binary` as a store path. On macOS, Firefox has no `bin/`: use `Applications/Firefox.app/Contents/MacOS/firefox` inside the package. | yes | yes | yes |
-| Headless mode: `--headless=new` (Chrome), `-headless` (Firefox) | yes | yes | yes |
-| Chrome: `--no-sandbox` | no | yes | yes |
-| Chrome: `--remote-debugging-pipe` | no | yes | no |
 | Fixed driver ports: `chromedriver --port`, or `geckodriver --port`, `--marionette-port` and `--websocket-port` | no | yes | no |
 | The `proxy` capability: `manual`, with `httpProxy` and `sslProxy` set to `$HTTPS_PROXY` without the `http://` | yes, if `allowedDomains` is set | yes | no |
 | The `acceptInsecureCerts: true` capability | no | yes | no |
