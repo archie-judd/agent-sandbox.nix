@@ -216,6 +216,19 @@ def _get_computed_env(
     ]
     if host.term is not None:
         pairs.insert(1, f"TERM={host.term}")
+    if spec.allow_headless_browsers:
+        library = session.sandbox_home / "Library"
+        pairs += [
+            f"MAC_CHROMIUM_TMPDIR={session.sandbox_tmpdir}",
+            f"MOZ_APP_DATA={library / 'Application Support' / 'Firefox'}",
+            f"MOZ_LOCAL_APP_DATA={library / 'Caches' / 'Firefox'}",
+            "MOZ_DISABLE_CONTENT_SANDBOX=1",
+            "MOZ_DISABLE_GMP_SANDBOX=1",
+            "MOZ_DISABLE_RDD_SANDBOX=1",
+            "MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1",
+            "MOZ_DISABLE_GPU_SANDBOX=1",
+            "MOZ_DISABLE_UTILITY_SANDBOX=1",
+        ]
 
     if session.proxy is None:
         pairs += [
@@ -265,6 +278,8 @@ def _get_profile_lines(
     lines += seatbelt.SYSCTLS
     lines += seatbelt.process_exec(host.workspace_dir)
     lines += seatbelt.MACH_IPC
+    if spec.allow_headless_browsers:
+        lines += seatbelt.HEADLESS_BROWSERS
 
     if session.proxy is None:
         lines += seatbelt.network_open(spec.allowed_host_ports)
@@ -285,6 +300,8 @@ def _get_profile_lines(
             scope.nested_ro_dirs,
             scope.nested_ro_files,
         )
+    elif spec.allow_headless_browsers:
+        lines += seatbelt.unix_sockets((session.sandbox_tmpdir,), (), (), (), ())
 
     if host.nix_daemon_socket is not None:
         lines += seatbelt.nix_support(host.nix_daemon_socket)

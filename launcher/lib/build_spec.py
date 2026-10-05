@@ -100,6 +100,7 @@ class SandboxBuildSpec:
     pkg_config_path: str
     allow_nix: bool
     allow_unix_sockets: bool
+    allow_headless_browsers: bool
     # Unexpanded: "$HOME/.claude" is not a path yet. They become Path in
     # host_state.
     rw_dirs: tuple[str, ...]
@@ -146,6 +147,7 @@ class _CommonBuildSpec(TypedDict):
     pkg_config_path: str
     allow_nix: bool
     allow_unix_sockets: bool
+    allow_headless_browsers: bool
     rw_dirs: tuple[str, ...]
     rw_files: tuple[str, ...]
     ro_dirs: tuple[str, ...]
@@ -187,6 +189,7 @@ def _common_build_spec(data: Mapping[str, Any]) -> _CommonBuildSpec:
         pkg_config_path=data["pkg_config_path"],
         allow_nix=data["allow_nix"],
         allow_unix_sockets=data["allow_unix_sockets"],
+        allow_headless_browsers=data["allow_headless_browsers"],
         rw_dirs=tuple(data["rw_dirs"]),
         rw_files=tuple(data["rw_files"]),
         ro_dirs=tuple(data["ro_dirs"]),

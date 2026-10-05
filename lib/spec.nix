@@ -10,6 +10,7 @@
   pkgConfigPath,
   allowNix,
   allowUnixSockets,
+  allowHeadlessBrowsers,
   rwDirs,
   rwFiles,
   roDirs,
@@ -87,6 +88,7 @@ let
     pkg_config_path = pkgConfigPath;
     allow_nix = allowNix;
     allow_unix_sockets = allowUnixSockets;
+    allow_headless_browsers = allowHeadlessBrowsers;
     rw_dirs = rwDirs;
     rw_files = rwFiles;
     ro_dirs = roDirs;

@@ -7,6 +7,7 @@
   allowedPackages,
   allowNix ? false,
   allowUnixSockets ? false,
+  allowHeadlessBrowsers ? false,
   rwDirs ? [ ],
   rwFiles ? [ ],
   roDirs ? [ ],
@@ -55,6 +56,8 @@ let
     allowUnixSockets = allowUnixSockets;
   };
 
+  validatedAllowHeadlessBrowsers = shared.validateAllowHeadlessBrowsers allowHeadlessBrowsers;
+
   validatedWorkspaceDir = shared.validateWorkspaceDir workspaceDir;
 
   validatedProxyRedirects = shared.validateProxyRedirects _proxyRedirects;
@@ -82,6 +85,7 @@ let
         allowedHostPorts = validatedAllowedHostPorts;
         publishedPorts = validatedPublishedPorts;
         allowUnixSockets = validatedAllowUnixSockets;
+        allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;
         closurePathsFile = closurePathsFile;
         preEntryScript = shared.preEntryScript;
         allowedDomains = allowedDomains;
@@ -113,6 +117,7 @@ shared.mkWrapper {
   allowedHostPorts = validatedAllowedHostPorts;
   publishedPorts = validatedPublishedPorts;
   allowUnixSockets = validatedAllowUnixSockets;
+  allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;
   workspaceDir = validatedWorkspaceDir;
   proxyRedirects = validatedProxyRedirects;
 }

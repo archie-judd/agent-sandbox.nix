@@ -116,6 +116,13 @@ let
     else
       allowUnixSockets;
 
+  validateAllowHeadlessBrowsers =
+    allowHeadlessBrowsers:
+    if !(builtins.isBool allowHeadlessBrowsers) then
+      builtins.throw "${errorPrefix} allowHeadlessBrowsers must be a boolean"
+    else
+      allowHeadlessBrowsers;
+
   # The launcher joins these into SANDBOX_PROXY_REDIRECT as "host=addr[,...]"
   # and the proxy splits them back apart, so a "," in either half, or an "="
   # in the host, would forge an entry no caller wrote.
@@ -249,6 +256,7 @@ let
       allowedHostPorts,
       publishedPorts,
       allowUnixSockets,
+      allowHeadlessBrowsers,
       workspaceDir,
       proxyRedirects,
     }:
@@ -256,15 +264,17 @@ let
       builtins.seq allowedHostPorts (
         builtins.seq publishedPorts (
           builtins.seq allowUnixSockets (
-            builtins.seq workspaceDir (
-              builtins.seq proxyRedirects (
-                pkgs.runCommand outName { } ''
-                  mkdir -p $out/bin
-                  install -m755 ${stub} $out/bin/${outName}
-                ''
-                // {
-                  buildSpec = buildSpec;
-                }
+            builtins.seq allowHeadlessBrowsers (
+              builtins.seq workspaceDir (
+                builtins.seq proxyRedirects (
+                  pkgs.runCommand outName { } ''
+                    mkdir -p $out/bin
+                    install -m755 ${stub} $out/bin/${outName}
+                  ''
+                  // {
+                    buildSpec = buildSpec;
+                  }
+                )
               )
             )
           )
@@ -280,6 +290,7 @@ in
   validateAllowedHostPorts = validateAllowedHostPorts;
   validatePublishedPorts = validatePublishedPorts;
   validateAllowUnixSockets = validateAllowUnixSockets;
+  validateAllowHeadlessBrowsers = validateAllowHeadlessBrowsers;
   validateWorkspaceDir = validateWorkspaceDir;
   validateProxyRedirects = validateProxyRedirects;
   preEntryScript = preEntryScript;

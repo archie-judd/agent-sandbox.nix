@@ -85,6 +85,7 @@ def write_launch_request(
             _field("network", network),
             _field("allowNix", str(spec.allow_nix).lower()),
             _field("allowUnixSockets", str(spec.allow_unix_sockets).lower()),
+            _field("allowHeadlessBrowsers", str(spec.allow_headless_browsers).lower()),
             _field("allowedHostPorts", host_ports),
             _field("publishedPorts", published_ports),
             # Keys only. The values must never land here: keeping them out is
