@@ -286,12 +286,10 @@ def _get_profile_lines(
     lines += seatbelt.SYSCTLS
     lines += seatbelt.process_exec(host.workspace_dir)
     lines += seatbelt.MACH_IPC
-    if spec.allow_headless_browsers:
-        lines += seatbelt.HEADLESS_BROWSERS
-        if "chromium" in spec.allow_headless_browsers:
-            lines += seatbelt.HEADLESS_BROWSERS_CHROMIUM
-        if "firefox" in spec.allow_headless_browsers:
-            lines += seatbelt.HEADLESS_BROWSERS_FIREFOX
+    if "chromium" in spec.allow_headless_browsers:
+        lines += seatbelt.HEADLESS_BROWSERS_CHROMIUM
+    if "firefox" in spec.allow_headless_browsers:
+        lines += seatbelt.HEADLESS_BROWSERS_FIREFOX
 
     if session.proxy is None:
         lines += seatbelt.network_open(spec.allowed_host_ports)
@@ -312,7 +310,7 @@ def _get_profile_lines(
             scope.nested_ro_dirs,
             scope.nested_ro_files,
         )
-    elif spec.allow_headless_browsers:
+    elif "chromium" in spec.allow_headless_browsers:
         lines += seatbelt.unix_sockets((session.sandbox_tmpdir,), (), (), (), ())
 
     if host.nix_daemon_socket is not None:
