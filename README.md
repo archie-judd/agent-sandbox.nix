@@ -473,7 +473,7 @@ Driver and session settings:
 | Setting | Linux | macOS, `allowedDomains` set | macOS, `allowedDomains` unset |
 | --- | --- | --- | --- |
 | Fixed driver ports: `chromedriver --port`, or `geckodriver --port`, `--marionette-port` and `--websocket-port` | no | yes | yes |
-| The `proxy` capability: `manual`, with `httpProxy` and `sslProxy` set to `$HTTPS_PROXY` without the `http://` | yes, if `allowedDomains` is set | yes | no |
+| The `proxy` capability: `manual`, with `httpProxy` and `sslProxy` set to `$HTTPS_PROXY` without the `http://` | no | yes | no |
 | The `acceptInsecureCerts: true` capability | no | yes | no |
 
 Chrome's `--no-sandbox` can also be built into the package, with `pkgs.google-chrome.override { commandLineArgs = "--no-sandbox"; }`. Every launch of that build then runs without Chrome's own sandbox, so use the build only for tests.
