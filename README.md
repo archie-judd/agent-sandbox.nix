@@ -463,7 +463,7 @@ Chrome flags:
 | Flag | Linux | macOS, `allowedDomains` set | macOS, `allowedDomains` unset |
 | --- | --- | --- | --- |
 | `--no-sandbox` | no | yes | yes |
-| `--remote-debugging-pipe` | no | yes | no |
+| `--remote-debugging-pipe` | no | yes | yes |
 
 Firefox needs no flags beyond `-headless`. On macOS, `pkgs.firefox` has no `bin/`: set its `binary` to `<pkgs.firefox>/Applications/Firefox.app/Contents/MacOS/firefox`, where `<pkgs.firefox>` is the package's store path.
 
