@@ -20,11 +20,14 @@ if [ -n "$url" ]; then
   proxy_addr="${HTTPS_PROXY:?HTTPS_PROXY is not set}"
   proxy_addr="${proxy_addr#*://}"
   proxy_caps=$(printf '"proxy":{"proxyType":"manual","httpProxy":"%s","sslProxy":"%s"},' "$proxy_addr" "$proxy_addr")
+  if [ "$(uname -s)" = "Darwin" ]; then
+    proxy_caps="$proxy_caps\"acceptInsecureCerts\":true,"
+  fi
 fi
 
 case "$browser" in
 chrome | chromium)
-  chromedriver --port="$driver_port" --log-path="$driver_log" &
+  chromedriver --port="$driver_port" --log-path="$driver_log" >>"$driver_log" 2>&1 &
   caps=$(printf '{"capabilities":{"alwaysMatch":{%s"goog:chromeOptions":{"binary":"%s","args":["--headless=new","--no-sandbox","--disable-gpu","--remote-debugging-pipe"]}}}}' "$proxy_caps" "$binary")
   ;;
 firefox)
@@ -66,7 +69,11 @@ if [ -n "$url" ]; then
   printf '%s\n' "$nav"
   case "$nav" in
   *'"error"'*) status=1 ;;
-  *) curl -s "$base/session/$id/source" || status=1 ;;
+  *)
+    curl -s -H 'Content-Type: application/json' \
+      -d '{"script":"return document.body.innerText","args":[]}' \
+      "$base/session/$id/execute/sync" || status=1
+    ;;
   esac
 else
   curl -s -H 'Content-Type: application/json' \
