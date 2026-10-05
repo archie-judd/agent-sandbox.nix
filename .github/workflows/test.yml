@@ -43,6 +43,16 @@ jobs:
           # the nix suite would have nothing left to exercise.
           trust-runner-user: false
 
+      - name: Move preinstalled Chrome aside (temporary)
+        if: runner.os == 'macOS'
+        run: |
+          ls -d /Applications/*Chrome* || true
+          for app in "/Applications/Google Chrome.app" "/Applications/Google Chrome for Testing.app"; do
+            /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -u "$app" || true
+          done
+          sudo mv "/Applications/Google Chrome.app" "/Applications/Google Chrome for Testing.app" /tmp/ || true
+          ls -d /Applications/*Chrome* || true
+
       - name: Run sandbox tests
         run: bash tests/run-all.sh
 

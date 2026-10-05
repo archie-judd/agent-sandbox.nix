@@ -60,7 +60,9 @@ case "$session" in
   echo "no session (curl exit $curl_status): $session" >&2
   echo "caps: $caps" >&2
   echo "driver log:" >&2
-  grep -v "^ " "$driver_log" | tail -n 120 >&2 || true
+  while IFS= read -r line; do
+    [ "${line# }" = "$line" ] && printf '%s\n' "$line"
+  done <"$driver_log" | tail -n 120 >&2 || true
   exit 1
   ;;
 esac
