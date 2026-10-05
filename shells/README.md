@@ -6,6 +6,7 @@ Worked `shell.nix` examples for [agent-sandbox.nix](../README.md). Run one with
 | Shell | Demonstrates |
 | --- | --- |
 | [`claude.shell.nix`](claude.shell.nix) | The `claude` template written as a plain `shell.nix`, for projects that do not use flakes |
+| [`claude-chromium.shell.nix`](claude-chromium.shell.nix) | `allowHeadlessBrowsers`: browser tests against a headless Chromium-engine browser inside the sandbox |
 | [`claude-docker.shell.nix`](claude-docker.shell.nix) | `publishedPorts`: a docker container on the host drives a dev server the agent runs |
 | [`claude-nix.shell.nix`](claude-nix.shell.nix) | `allowNix` and `allowUnixSockets`: letting the agent run nix inside the sandbox |
 | [`claude-uv.shell.nix`](claude-uv.shell.nix) | uv and Python: the cache directories and library paths uv needs |
