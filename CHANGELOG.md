@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.4.1...v5.5.0) (2026-10-06)
+
+
+### Features
+
+* allowHeadlessBrowsers ([#179](https://github.com/archie-judd/agent-sandbox.nix/issues/179)) ([bfad3a1](https://github.com/archie-judd/agent-sandbox.nix/commit/bfad3a1818d36c62257e0bac3c4b3852b8b7b5c2))
+
 ## [5.4.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.4.0...v5.4.1) (2026-09-29)
 
 
