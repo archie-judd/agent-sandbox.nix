@@ -457,7 +457,7 @@ Add the browser and its driver to `allowedPackages`. Take both from the same nix
 
 ### Driver configuration
 
-These settings go in your test suite's driver configuration. Commit them with your project, so the agent does not have to find them.
+These are the settings your driver needs, by platform and mode. The browser's store path changes when nixpkgs updates, so read it from an environment variable, like the example shells' `CHROME_BIN`, rather than hard-coding it.
 
 Chrome flags:
 
@@ -476,7 +476,7 @@ Driver and session settings:
 | The `proxy` capability: `manual`, with `httpProxy` and `sslProxy` set to `$HTTPS_PROXY` without the `http://` | no | yes | no |
 | The `acceptInsecureCerts: true` capability | no | yes | no |
 
-Chrome's `--no-sandbox` can also be built into the package, with `pkgs.google-chrome.override { commandLineArgs = "--no-sandbox"; }`. Every launch of that build then runs without Chrome's own sandbox, so use the build only for tests.
+Chrome's `--no-sandbox` can also be built into the package, with `pkgs.google-chrome.override { commandLineArgs = "--no-sandbox"; }`. Every launch of that build then runs without Chrome's own sandbox, so use the build only for tests. `--remote-debugging-pipe` cannot go there: chromedriver has to see it in the session's arguments to use the pipe.
 
 A complete example is at [`shells/claude-chromium.shell.nix`](shells/claude-chromium.shell.nix).
 
