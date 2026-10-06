@@ -5,6 +5,7 @@
       "release-type": "simple",
       "extra-files": [
         "shells/claude-docker.shell.nix",
+        "shells/claude-chromium.shell.nix",
         "shells/claude-nix.shell.nix",
         "shells/claude-uv.shell.nix",
         "shells/claude.shell.nix",
