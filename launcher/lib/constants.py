@@ -13,6 +13,11 @@ SECCOMP_FD = 9
 PASSWD = "passwd"
 CA_BUNDLE = "ca-bundle.pem"
 CA_CERT = "ca-cert.pem"
+NSS_DB = "nssdb"
+FIREFOX_POLICIES = "firefox-policies.json"
+# Fixed rather than the session directory's own, so nothing inside the sandbox
+# learns where that is.
+SANDBOX_CA_CERT = "/tmp/sandbox-ca-cert.pem"
 PROXY_PID = "proxy.pid"
 PROXY_LOG = "proxy.log"
 LAUNCH_LOG = "launch.log"

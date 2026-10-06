@@ -24,6 +24,7 @@ SPEC = SandboxBuildSpecDarwin(
     pkg_config_path="",
     allow_nix=True,
     allow_unix_sockets=True,
+    allow_headless_browsers=(),
     rw_dirs=(),
     rw_files=(),
     ro_dirs=(),

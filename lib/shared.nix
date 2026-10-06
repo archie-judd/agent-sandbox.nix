@@ -116,6 +116,24 @@ let
     else
       allowUnixSockets;
 
+  validateAllowHeadlessBrowsers =
+    allowHeadlessBrowsers:
+    let
+      engines = [
+        "chromium"
+        "firefox"
+      ];
+      quoted = builtins.concatStringsSep ", " (map (engine: ''"${engine}"'') engines);
+    in
+    if !(builtins.isList allowHeadlessBrowsers) then
+      builtins.throw "${errorPrefix} allowHeadlessBrowsers must be a list of browser engines (${quoted}), not a boolean or other value"
+    else if !(builtins.all (entry: builtins.elem entry engines) allowHeadlessBrowsers) then
+      builtins.throw "${errorPrefix} allowHeadlessBrowsers entries must each be one of ${quoted}. Got: ${builtins.toJSON allowHeadlessBrowsers}"
+    else if pkgs.lib.unique allowHeadlessBrowsers != allowHeadlessBrowsers then
+      builtins.throw "${errorPrefix} allowHeadlessBrowsers must not repeat an engine. Got: ${builtins.toJSON allowHeadlessBrowsers}"
+    else
+      allowHeadlessBrowsers;
+
   # The launcher joins these into SANDBOX_PROXY_REDIRECT as "host=addr[,...]"
   # and the proxy splits them back apart, so a "," in either half, or an "="
   # in the host, would forge an entry no caller wrote.
@@ -249,6 +267,7 @@ let
       allowedHostPorts,
       publishedPorts,
       allowUnixSockets,
+      allowHeadlessBrowsers,
       workspaceDir,
       proxyRedirects,
     }:
@@ -256,15 +275,17 @@ let
       builtins.seq allowedHostPorts (
         builtins.seq publishedPorts (
           builtins.seq allowUnixSockets (
-            builtins.seq workspaceDir (
-              builtins.seq proxyRedirects (
-                pkgs.runCommand outName { } ''
-                  mkdir -p $out/bin
-                  install -m755 ${stub} $out/bin/${outName}
-                ''
-                // {
-                  buildSpec = buildSpec;
-                }
+            builtins.seq allowHeadlessBrowsers (
+              builtins.seq workspaceDir (
+                builtins.seq proxyRedirects (
+                  pkgs.runCommand outName { } ''
+                    mkdir -p $out/bin
+                    install -m755 ${stub} $out/bin/${outName}
+                  ''
+                  // {
+                    buildSpec = buildSpec;
+                  }
+                )
               )
             )
           )
@@ -280,6 +301,7 @@ in
   validateAllowedHostPorts = validateAllowedHostPorts;
   validatePublishedPorts = validatePublishedPorts;
   validateAllowUnixSockets = validateAllowUnixSockets;
+  validateAllowHeadlessBrowsers = validateAllowHeadlessBrowsers;
   validateWorkspaceDir = validateWorkspaceDir;
   validateProxyRedirects = validateProxyRedirects;
   preEntryScript = preEntryScript;

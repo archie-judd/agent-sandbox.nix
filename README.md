@@ -43,6 +43,9 @@ Everything else is denied. Only changes to the project directory and declared rw
     * [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
     * [Read-only paths in the git directory](#read-only-paths-in-the-git-directory)
 * [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
+* [Using headless browsers inside the sandbox](#using-headless-browsers-inside-the-sandbox)
+    * [Sandbox configuration](#sandbox-configuration)
+    * [Driver configuration](#driver-configuration)
 * [Troubleshooting](#troubleshooting)
     * [Session directories](#session-directories)
     * [Probe the sandbox interactively](#probe-the-sandbox-interactively)
@@ -140,6 +143,7 @@ Set `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `~/.claude.jso
 | `allowedHostPorts` | no | Host-local TCP ports the sandbox can reach. Defaults to `[ ]`. Set it to `null` to allow all host-local TCP ports. Otherwise, entries must be integers from `1` to `65535`. |
 | `publishedPorts` | no | Host TCP ports forwarded INTO the sandbox, so services the agent runs are reachable from outside. Defaults to `[ ]`. Entries are an integer port (bound to `127.0.0.1`) or `{ port = <int>; bindAddr = "<ipv4>"; }`. There is no `null` form. See [Published ports](#published-ports). |
 | `allowNix` | no | If `true`, the sandbox exposes the host's `nix-daemon` socket and the full Nix store. The agent can then run `nix build`, `nix run`, `nix develop`, and similar commands. The sandbox adds `pkgs.nix` to PATH. Requires `allowUnixSockets = true` and a running `nix-daemon`. The launch is refused if you are one of the daemon's `trusted-users`, and asks for confirmation if the daemon does not sandbox its builds. Defaults to `false`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox). |
+| `allowHeadlessBrowsers` | no | Headless browser engines for the sandbox to accommodate: `"chromium"` (Google Chrome and Chromium) and `"firefox"`. Defaults to `[ ]`. On Linux, requires `allowUnixSockets = true`. See [Using headless browsers inside the sandbox](#using-headless-browsers-inside-the-sandbox). |
 
 The library also exports `commonTools`, a list of standard CLI tools. See [`default.nix`](default.nix) for the full list.
 
@@ -431,6 +435,52 @@ What you need to configure:
 A complete example is at [`shells/claude-nix.shell.nix`](shells/claude-nix.shell.nix).
 
 > **Security note:** `allowNix = true` weakens the security posture of the sandbox. The full Nix store is exposed, and the agent can run any executable in it. `allowedPackages` then limits only what is on `PATH`, not what the agent can execute. The `nix-daemon` runs outside the sandbox, so its own network activity does not obey `allowedDomains`. This activity includes downloads of prebuilt packages from the caches in the daemon's configuration.
+
+## Using headless browsers inside the sandbox
+
+Set `allowHeadlessBrowsers` to let the agent run browser tests against a headless browser inside the sandbox.
+
+| Engine | Browsers | Driver |
+| --- | --- | --- |
+| `"chromium"` | Google Chrome (`pkgs.google-chrome`) on Linux and macOS. Chromium (`pkgs.chromium`) on Linux: nixpkgs does not build Chromium for macOS. | `pkgs.chromedriver` |
+| `"firefox"` | Firefox (`pkgs.firefox`) | `pkgs.geckodriver` |
+
+Other browsers, such as Safari, WebKit, Edge and Brave, are not supported.
+
+Add the browser and its driver to `allowedPackages`. Take both from the same nixpkgs: chromedriver only drives a browser with the same major version.
+
+### Sandbox configuration
+
+- **Linux:** set `allowUnixSockets = true`. Without it, the launch is refused. Browsers lock their profile with a UNIX-domain socket, and on Linux the sandbox cannot allow a single socket path, only all of them. See [UNIX-domain sockets](#unix-domain-sockets).
+- **macOS, with `allowedDomains` set:** localhost is shared with the host (see [Linux vs macOS](#linux-vs-macos)). Every port that a process in the sandbox listens on must therefore be in both `publishedPorts` and `allowedHostPorts`. This includes the driver's port, Firefox's Marionette and WebSocket ports, and the port of the app server under test. Random ports do not work, so pin each one.
+- **macOS, with `allowedDomains` unset:** processes in the sandbox can listen on any port, but connections to localhost are refused except to ports in `allowedHostPorts`. Put the same pinned ports in `allowedHostPorts`. `publishedPorts` is not needed.
+
+### Driver configuration
+
+These are the settings your driver needs, by platform and mode. The browser's store path changes when nixpkgs updates, so read it from an environment variable, like the example shells' `CHROME_BIN`, rather than hard-coding it.
+
+Chrome flags:
+
+| Flag | Linux | macOS, `allowedDomains` set | macOS, `allowedDomains` unset |
+| --- | --- | --- | --- |
+| `--no-sandbox` | no | yes | yes |
+| `--remote-debugging-pipe` | no | yes | yes |
+
+Firefox needs no flags beyond `-headless`. On macOS, `pkgs.firefox` has no `bin/`: set its `binary` to `<pkgs.firefox>/Applications/Firefox.app/Contents/MacOS/firefox`, where `<pkgs.firefox>` is the package's store path.
+
+Driver and session settings:
+
+| Setting | Linux | macOS, `allowedDomains` set | macOS, `allowedDomains` unset |
+| --- | --- | --- | --- |
+| Fixed driver ports: `chromedriver --port`, or `geckodriver --port`, `--marionette-port` and `--websocket-port` | no | yes | yes |
+| The `proxy` capability: `manual`, with `httpProxy` and `sslProxy` set to `$HTTPS_PROXY` without the `http://` | no | yes | no |
+| The `acceptInsecureCerts: true` capability | no | yes | no |
+
+Chrome's `--no-sandbox` can also be built into the package, with `pkgs.google-chrome.override { commandLineArgs = "--no-sandbox"; }`. Every launch of that build then runs without Chrome's own sandbox, so use the build only for tests. `--remote-debugging-pipe` cannot go there: chromedriver has to see it in the session's arguments to use the pipe.
+
+A complete example is at [`shells/claude-chromium.shell.nix`](shells/claude-chromium.shell.nix).
+
+> **Security note:** on macOS, the browsers' own sandboxes are switched off: Chrome by `--no-sandbox`, Firefox by the `MOZ_DISABLE_*_SANDBOX` variables that the sandbox sets. Page content therefore runs with the agent's permissions. This sandbox still confines it. Set `acceptInsecureCerts` only when `allowedDomains` is set. Without the proxy, it turns off certificate checking.
 
 ## Troubleshooting
 

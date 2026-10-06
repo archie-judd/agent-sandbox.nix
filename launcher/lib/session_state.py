@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import select
@@ -9,13 +10,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from launcher.lib.build_spec import ProxySpec, SandboxBuildSpec
+from launcher.lib.build_spec import ProxySpec, SandboxBuildSpec, SandboxBuildSpecLinux
 from launcher.lib.constants import (
     CA_CERT,
     ERROR_PREFIX,
+    FIREFOX_POLICIES,
+    NSS_DB,
     PROXY_LISTEN_HOST,
     PROXY_LOG,
     PROXY_STARTUP_TIMEOUT_SECONDS,
+    SANDBOX_CA_CERT,
     SESSION_RETENTION,
     STUB_PID,
 )
@@ -46,6 +50,8 @@ class ProxyState:
 class SessionState:
     session_dir: Path
     proxy: ProxyState | None
+    nss_db: Path | None
+    firefox_policies: Path | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -142,7 +148,7 @@ def create_darwin_sandbox_tmpdir(session_dir: Path) -> Path:
     return _create_sandbox_dir(session_dir, SANDBOX_TMPDIR_NAME)
 
 
-def remove_darwin_sandbox_dir(directory: Path) -> None:
+def remove_sandbox_dir(directory: Path) -> None:
     shutil.rmtree(directory, ignore_errors=True)
 
 
@@ -227,3 +233,49 @@ def create_proxy_state(spec: SandboxBuildSpec, session_dir: Path) -> ProxyState 
             process.kill()
         raise
     return ProxyState(port=port, pid=process.pid)
+
+
+def create_nss_db(spec: SandboxBuildSpecLinux, session_dir: Path) -> Path | None:
+    certutil = spec.dependencies.certutil
+    if (
+        "chromium" not in spec.allow_headless_browsers
+        or spec.proxy is None
+        or certutil is None
+    ):
+        return None
+
+    nss_db = _create_sandbox_dir(session_dir, NSS_DB)
+    database = f"sql:{nss_db}"
+    for args in (
+        ["-N", "--empty-password"],
+        ["-A", "-t", "C,,", "-n", "sandbox-proxy", "-i", str(session_dir / CA_CERT)],
+    ):
+        result = subprocess.run(
+            [str(certutil), "-d", database, *args],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise SystemExit(
+                f"{ERROR_PREFIX} could not trust the sandbox proxy CA in {nss_db}: "
+                f"certutil {args[0]} exited with status {result.returncode}: "
+                f"{result.stderr.strip()}"
+            )
+    return nss_db
+
+
+def create_firefox_policies(
+    spec: SandboxBuildSpecLinux, session_dir: Path
+) -> Path | None:
+    if "firefox" not in spec.allow_headless_browsers or spec.proxy is None:
+        return None
+
+    policies = session_dir / FIREFOX_POLICIES
+    document = {"policies": {"Certificates": {"Install": [SANDBOX_CA_CERT]}}}
+    try:
+        policies.write_text(json.dumps(document), encoding="utf-8")
+    except OSError as error:
+        raise SystemExit(
+            f"{ERROR_PREFIX} could not write {policies}: {error}"
+        ) from error
+    return policies

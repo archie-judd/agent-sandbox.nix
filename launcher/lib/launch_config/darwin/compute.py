@@ -216,6 +216,23 @@ def _get_computed_env(
     ]
     if host.term is not None:
         pairs.insert(1, f"TERM={host.term}")
+    if "chromium" in spec.allow_headless_browsers:
+        pairs += [
+            f"MAC_CHROMIUM_TMPDIR={session.sandbox_tmpdir}",
+            f"CFFIXED_USER_HOME={session.sandbox_home}",
+        ]
+    if "firefox" in spec.allow_headless_browsers:
+        library = session.sandbox_home / "Library"
+        pairs += [
+            f"MOZ_APP_DATA={library / 'Application Support' / 'Firefox'}",
+            f"MOZ_LOCAL_APP_DATA={library / 'Caches' / 'Firefox'}",
+            "MOZ_DISABLE_CONTENT_SANDBOX=1",
+            "MOZ_DISABLE_GMP_SANDBOX=1",
+            "MOZ_DISABLE_RDD_SANDBOX=1",
+            "MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1",
+            "MOZ_DISABLE_GPU_SANDBOX=1",
+            "MOZ_DISABLE_UTILITY_SANDBOX=1",
+        ]
 
     if session.proxy is None:
         pairs += [
@@ -240,7 +257,11 @@ def _get_computed_env(
     # Only when a port is actually open: with none, a loopback request is
     # better refused by the proxy, which says so in proxy.log, than dropped
     # by the seatbelt, which says nothing.
-    if spec.allowed_host_ports is None or spec.allowed_host_ports:
+    if (
+        spec.allowed_host_ports is None
+        or spec.allowed_host_ports
+        or spec.allow_headless_browsers
+    ):
         pairs += [
             f"NO_PROXY={NO_PROXY_HOSTS}",
             f"no_proxy={NO_PROXY_HOSTS}",
@@ -265,6 +286,10 @@ def _get_profile_lines(
     lines += seatbelt.SYSCTLS
     lines += seatbelt.process_exec(host.workspace_dir)
     lines += seatbelt.MACH_IPC
+    if "chromium" in spec.allow_headless_browsers:
+        lines += seatbelt.HEADLESS_BROWSERS_CHROMIUM
+    if "firefox" in spec.allow_headless_browsers:
+        lines += seatbelt.HEADLESS_BROWSERS_FIREFOX
 
     if session.proxy is None:
         lines += seatbelt.network_open(spec.allowed_host_ports)
@@ -285,6 +310,8 @@ def _get_profile_lines(
             scope.nested_ro_dirs,
             scope.nested_ro_files,
         )
+    elif "chromium" in spec.allow_headless_browsers:
+        lines += seatbelt.unix_sockets((session.sandbox_tmpdir,), (), (), (), ())
 
     if host.nix_daemon_socket is not None:
         lines += seatbelt.nix_support(host.nix_daemon_socket)
