@@ -42,6 +42,7 @@ jobs:
           # inherits that trust and nix documents it as root on the host, so
           # the nix suite would have nothing left to exercise.
           trust-runner-user: false
+          extra-conf: ${{ runner.os == 'macOS' && 'sandbox = true' || '' }}
 
       - name: Run sandbox tests
         run: bash tests/run-all.sh
