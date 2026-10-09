@@ -70,3 +70,13 @@ def test_nothing_under_usr_bin_is_executable_but_env() -> None:
     assert [line for line in exec_lines if "/usr/bin" in line] == [
         '(allow process-exec (literal "/usr/bin/env"))'
     ]
+
+
+def test_git_is_told_never_to_invent_an_identity() -> None:
+    env = _env()
+
+    assert (env["GIT_CONFIG_COUNT"], env["GIT_CONFIG_KEY_0"], env["GIT_CONFIG_VALUE_0"]) == (
+        "1",
+        "user.useConfigOnly",
+        "true",
+    )

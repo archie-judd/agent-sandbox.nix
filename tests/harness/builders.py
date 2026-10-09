@@ -7,6 +7,7 @@ from launcher.lib.build_spec import (
     SandboxBuildSpecDarwin,
     SandboxBuildSpecLinux,
 )
+from launcher.lib.git_state import GitState
 from launcher.lib.host_state import DeclaredPath, HostStateDarwin, HostStateLinux
 from launcher.lib.session_state import SessionState, SessionStateDarwin
 
@@ -97,6 +98,7 @@ def make_host_darwin(
     real_home: Path = _HOME,
     has_controlling_terminal: bool = False,
     declared: tuple[DeclaredPath, ...] = (),
+    git: GitState | None = None,
     nix_daemon_socket: Path | None = None,
     nix_sandbox_setting: Literal["true", "false", "relaxed"] | None = None,
     nix_user_is_trusted: bool | None = None,
@@ -111,7 +113,7 @@ def make_host_darwin(
         term="xterm",
         has_controlling_terminal=has_controlling_terminal,
         declared=declared,
-        git=None,
+        git=git,
         closure_paths=(),
         nix_daemon_socket=nix_daemon_socket,
         nix_sandbox_setting=nix_sandbox_setting,

@@ -8,5 +8,5 @@ in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "sandboxed-bash-git-topologies";
-  allowedPackages = [ pkgs.coreutils pkgs.git ];
+  allowedPackages = [ pkgs.coreutils pkgs.git pkgs.python3Minimal ];
 }
