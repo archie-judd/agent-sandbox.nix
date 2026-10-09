@@ -9,6 +9,7 @@ from harness.launch import Launch
 from harness.probes import PathOp, probe_paths
 
 READ_ONLY = {"linux": "EROFS", "darwin": "EPERM"}[sys.platform]
+READ_ONLY_MODE = {"linux": "EACCES", "darwin": "EPERM"}[sys.platform]
 
 
 def _git(*args: str) -> None:
@@ -64,26 +65,32 @@ def test_persistence_vectors_are_read_only_from_a_worktree(
         ("write", common / "hooks" / "post-checkout"),
         ("write", common / "hooks" / "pre-commit"),
         ("write", common / "config"),
-        ("write", common / "config.worktree"),
-        ("write", common / "worktrees" / "feat" / "config.worktree"),
         ("write", common / "worktrees" / "feat" / "commondir"),
         ("write", worktree / ".git"),
         ("write", submodule / "hooks" / "pre-commit"),
         ("write", submodule / "config"),
+    ]
+    masked: list[tuple[PathOp, Path]] = [
+        ("write", common / "config.worktree"),
+        ("write", common / "worktrees" / "feat" / "config.worktree"),
         ("write", common / "objects" / "info" / "alternates"),
         ("write", submodule / "objects" / "info" / "alternates"),
     ]
     allowed: list[tuple[PathOp, Path]] = [("read", common / "config"), ("list", common / "hooks")]
     config_before = (common / "config").read_text()
 
-    outcomes = probe_paths(launch, sandbox, [*denied, *allowed], cwd=worktree)
+    outcomes = probe_paths(launch, sandbox, [*denied, *masked, *allowed], cwd=worktree)
     renamed = launch(
         sandbox,
         f"touch '{common}/config.sandbox-evil' && mv '{common}/config.sandbox-evil' '{common}/config'",
         cwd=worktree,
     )
 
-    assert outcomes == {**{check: READ_ONLY for check in denied}, **{check: "ok" for check in allowed}}
+    assert outcomes == {
+        **{check: READ_ONLY for check in denied},
+        **{check: READ_ONLY_MODE for check in masked},
+        **{check: "ok" for check in allowed},
+    }
     assert renamed.returncode != 0
     assert (common / "config").read_text() == config_before
 
@@ -111,20 +118,26 @@ def test_persistence_vectors_are_read_only_from_the_repo_root(
     denied: list[tuple[PathOp, Path]] = [
         ("write", common / "hooks" / "post-checkout"),
         ("write", common / "config"),
-        ("write", common / "config.worktree"),
         ("write", submodule / "hooks" / "pre-commit"),
-        ("write", common / "objects" / "info" / "alternates"),
         ("write", main_repo / "vendor" / "sub" / ".git"),
         ("write", worktree / ".git"),
+    ]
+    masked: list[tuple[PathOp, Path]] = [
+        ("write", common / "config.worktree"),
+        ("write", common / "objects" / "info" / "alternates"),
     ]
     allowed: list[tuple[PathOp, Path]] = [
         ("write", main_repo / "file.txt"),
         ("create", nested_hook),
     ]
 
-    outcomes = probe_paths(launch, sandbox, [*denied, *allowed], cwd=main_repo)
+    outcomes = probe_paths(launch, sandbox, [*denied, *masked, *allowed], cwd=main_repo)
 
-    assert outcomes == {**{check: READ_ONLY for check in denied}, **{check: "ok" for check in allowed}}
+    assert outcomes == {
+        **{check: READ_ONLY for check in denied},
+        **{check: READ_ONLY_MODE for check in masked},
+        **{check: "ok" for check in allowed},
+    }
 
 
 def test_git_keeps_working_from_the_repo_root(

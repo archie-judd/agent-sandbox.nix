@@ -11,7 +11,7 @@ from harness.launch import Launch
 from harness.probes import PathOp, probe_paths
 
 HIDDEN = {"linux": "ENOENT", "darwin": "EPERM"}[sys.platform]
-READ_ONLY = {"linux": "EROFS", "darwin": "EPERM"}[sys.platform]
+READ_ONLY_MODE = {"linux": "EACCES", "darwin": "EPERM"}[sys.platform]
 
 
 @pytest.fixture
@@ -85,10 +85,10 @@ def test_a_ro_file_symlink_grants_only_its_store_target_read_only(
         ("write", target),
         ("read", store["NONCLOSURE_STORE_FILE2"]),
     ]
-    expected = {checks[0]: "ok", checks[1]: READ_ONLY, checks[2]: HIDDEN}
+    expected = {checks[0]: "ok", checks[1]: READ_ONLY_MODE, checks[2]: HIDDEN}
     if sys.platform == "linux":
         checks += [("read", Path("$HOME/.test-ro-file")), ("write", Path("$HOME/.test-ro-file"))]
-        expected |= {checks[3]: "ok", checks[4]: "EROFS"}
+        expected |= {checks[3]: "ok", checks[4]: "EACCES"}
     else:
         checks.append(("exec", target))
         expected |= {checks[3]: "EPERM"}
@@ -110,7 +110,7 @@ def test_an_rw_dir_symlink_grants_only_its_store_target(
 
     outcomes = probe_paths(launch, symlinks, checks)
 
-    assert outcomes == {checks[0]: "ok", checks[1]: READ_ONLY, checks[2]: HIDDEN}
+    assert outcomes == {checks[0]: "ok", checks[1]: READ_ONLY_MODE, checks[2]: HIDDEN}
 
 
 def test_an_out_of_bounds_symlink_is_ignored_with_a_warning(

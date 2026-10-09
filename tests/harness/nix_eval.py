@@ -36,8 +36,10 @@ _OMITTED = _Omitted()
 
 
 def _system(platform: Literal["linux", "darwin"] | None) -> str:
-    architecture = _ARCHITECTURES[host_platform.machine()]
-    return f"{architecture}-{sys.platform if platform is None else platform}"
+    os_name = sys.platform if platform is None else platform
+    if os_name == "darwin":
+        return "aarch64-darwin"
+    return f"{_ARCHITECTURES[host_platform.machine()]}-{os_name}"
 
 
 def nix_eval(

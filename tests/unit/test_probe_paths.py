@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -130,7 +131,10 @@ def test_probe_paths_maps_each_check_to_its_outcome(tmp_path: Path) -> None:
     present.write_text("content")
     checks: list[tuple[PathOp, Path]] = [("read", present), ("read", tmp_path / "missing")]
 
-    outcomes = probe_paths(_local_launch, Path("/bin/bash"), checks)
+    bash = shutil.which("bash")
+    assert bash is not None
+
+    outcomes = probe_paths(_local_launch, Path(bash), checks)
 
     assert outcomes == {checks[0]: "ok", checks[1]: "ENOENT"}
 

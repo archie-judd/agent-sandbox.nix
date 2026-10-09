@@ -91,7 +91,7 @@ def test_only_the_published_port_reaches_the_sandbox(
     with launch_background(
         sandbox,
         f"{SERVE} {INSIDE_BIND} {PUBLISHED_PORT} {UNDECLARED_PORT}",
-        ready_at=("127.0.0.1", PUBLISHED_PORT),
+        is_ready=lambda: _status("127.0.0.1", PUBLISHED_PORT) == 200,
         cwd=workspace,
         home=fake_home,
         sessions_root=sessions_root,
@@ -143,7 +143,7 @@ def test_the_bind_address_scopes_who_reaches_a_published_port(
             launch_background(
                 loopback,
                 f"{SERVE} 0.0.0.0 {PUBLISHED_PORT}",
-                ready_at=("127.0.0.1", PUBLISHED_PORT),
+                is_ready=lambda: _status("127.0.0.1", PUBLISHED_PORT) == 200,
                 cwd=workspace,
                 home=fake_home,
                 sessions_root=sessions_root,
@@ -153,7 +153,7 @@ def test_the_bind_address_scopes_who_reaches_a_published_port(
             launch_background(
                 wildcard,
                 f"{SERVE} 0.0.0.0 {NONLOCAL_PUBLISHED_PORT}",
-                ready_at=(address, NONLOCAL_PUBLISHED_PORT),
+                is_ready=lambda: _status(address, NONLOCAL_PUBLISHED_PORT) == 200,
                 cwd=workspace,
                 home=fake_home,
                 sessions_root=sessions_root,

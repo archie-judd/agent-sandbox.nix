@@ -156,7 +156,7 @@ def test_restricted_mode_resolves_no_names_and_drops_udp_and_icmp(
     )
 
     assert outcomes[checks[0]].startswith("EAI_")
-    assert outcomes[checks[1]] == "ok"
+    assert outcomes[checks[1]] == "EPERM"
     assert received == []
     if "loopback" not in ping.stdout:
         pytest.skip("unprivileged ping is not available in this namespace")

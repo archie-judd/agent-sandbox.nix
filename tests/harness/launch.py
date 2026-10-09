@@ -1,10 +1,9 @@
 import os
 import pty
 import signal
-import socket
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping, Protocol
@@ -87,7 +86,7 @@ def launch_background(
     binary: Path,
     script: str,
     *,
-    ready_at: tuple[str, int],
+    is_ready: Callable[[], bool],
     cwd: Path,
     home: Path,
     sessions_root: Path,
@@ -110,12 +109,13 @@ def launch_background(
                 output = process.stdout.read() if process.stdout else ""
                 raise AssertionError(f"background sandbox exited {process.returncode}:\n{output}")
             try:
-                socket.create_connection(ready_at, timeout=0.5).close()
-                break
+                if is_ready():
+                    break
             except OSError:
-                if time.monotonic() > deadline:
-                    raise AssertionError(f"nothing answered on {ready_at} within 30s")
-                time.sleep(0.1)
+                pass
+            if time.monotonic() > deadline:
+                raise AssertionError("background sandbox was not ready within 30s")
+            time.sleep(0.1)
         yield process
     finally:
         try:
