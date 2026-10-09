@@ -47,6 +47,14 @@ jobs:
       - name: Run sandbox tests
         run: bash tests/run-all.sh
 
+      - name: Run pytest suite
+        if: ${{ !cancelled() }}
+        run: nix develop -c pytest
+
+      - name: Type-check
+        if: ${{ !cancelled() }}
+        run: nix develop -c mypy
+
       - name: Sandbox denials and OS version (macOS, on failure)
         if: failure() && runner.os == 'macOS'
         run: |

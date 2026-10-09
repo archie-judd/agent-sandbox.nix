@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/../lib.sh"
 # every time and its failure output is the subject rather than an error.
 build_with_ports() {
 	local ports="$1"
-	nix-build --no-out-link --arg ports "$ports" "$SCRIPT_DIR/../fixtures/allowed-host-ports.nix" 2>&1
+	nix-build --no-out-link --arg ports "$ports" "$SCRIPT_DIR/../../integration/fixtures/allowed-host-ports.nix" 2>&1
 }
 
 expect_ok_ports() {

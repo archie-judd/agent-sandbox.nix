@@ -44,7 +44,7 @@ _build_memoised() {
 build_fixture() {
 	local fixture="$1"
 	shift
-	_build_memoised "$fixture $*" "$TESTS_DIR/fixtures/$fixture" "$@"
+	_build_memoised "$fixture $*" "$TESTS_DIR/../integration/fixtures/$fixture" "$@"
 }
 
 # build_host_pkg <attr> — for the host-side tools tests run outside the

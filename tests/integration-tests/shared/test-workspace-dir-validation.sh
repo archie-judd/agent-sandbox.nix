@@ -14,7 +14,7 @@ source "$SCRIPT_DIR/../lib.sh"
 # Not build_fixture: the build is what this file asserts on, so it must run
 # every time and its failure output is the subject rather than an error.
 build_with() {
-	nix-build --no-out-link "$@" "$SCRIPT_DIR/../fixtures/workspace-dir.nix" 2>&1
+	nix-build --no-out-link "$@" "$SCRIPT_DIR/../../integration/fixtures/workspace-dir.nix" 2>&1
 }
 
 expect_valid() {

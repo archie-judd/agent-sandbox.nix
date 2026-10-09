@@ -10,7 +10,7 @@ source "$SCRIPT_DIR/../lib.sh"
 # every time and its failure output is the subject rather than an error.
 build_with_redirects() {
 	local redirects="$1"
-	nix-build --no-out-link --arg redirects "$redirects" "$SCRIPT_DIR/../fixtures/proxy-redirects.nix" 2>&1
+	nix-build --no-out-link --arg redirects "$redirects" "$SCRIPT_DIR/../../integration/fixtures/proxy-redirects.nix" 2>&1
 }
 
 expect_ok_redirects() {

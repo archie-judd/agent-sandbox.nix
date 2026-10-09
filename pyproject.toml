@@ -7,7 +7,16 @@ strict = true
 # 3.11 for the -P interpreter flag, which the stub relies on to keep cwd and
 # the script directory off sys.path while still honouring PYTHONPATH.
 python_version = "3.11"
-files = ["launcher"]
+files = ["launcher", "tests"]
+mypy_path = ["tests"]
+explicit_package_bases = true
+exclude = ["^tests/integration-tests/"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit-tests/python"]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+addopts = ["--strict-markers", "-p", "no:cacheprovider"]
+markers = [
+    "linux: runs only on Linux",
+    "darwin: runs only on macOS",
+]

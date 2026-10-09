@@ -61,5 +61,24 @@
           };
         }
       );
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              (pkgs.python3.withPackages (ps: [
+                ps.pytest
+                ps.pytest-xdist
+                ps.pytest-timeout
+                ps.mypy
+              ]))
+              pkgs.go
+            ];
+          };
+        }
+      );
     };
 }
