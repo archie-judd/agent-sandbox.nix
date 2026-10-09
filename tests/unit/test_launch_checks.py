@@ -13,6 +13,7 @@ import pytest
 
 from harness.builders import make_host_darwin, make_spec_darwin
 from launcher.lib.host_state import DeclaredPath, _get_declared_paths
+from launcher.lib import launch_checks
 from launcher.lib.launch_checks import get_launch_refusals
 
 SOCKET = Path("/nix/var/nix/daemon-socket/socket")
@@ -151,5 +152,54 @@ def test_existing_binds_launch(home: Path) -> None:
     (home / "binds" / "dir").mkdir()
     (home / "binds" / "file").touch()
     host = make_host_darwin(declared=_declared_binds())
+
+    assert get_launch_refusals(make_spec_darwin(), host) == ()
+
+
+HOME = Path("/home/someone")
+
+
+def test_a_home_launch_without_a_terminal_is_refused() -> None:
+    host = make_host_darwin(workspace_dir=HOME, real_home=HOME)
+
+    assert get_launch_refusals(make_spec_darwin(), host) == (
+        f"refusing to launch from your home directory ({HOME}) "
+        "with no terminal to confirm on.",
+    )
+
+
+def test_a_declined_home_launch_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launch_checks, "_confirm_on_terminal", lambda: False)
+    host = make_host_darwin(workspace_dir=HOME, real_home=HOME, has_controlling_terminal=True)
+
+    assert get_launch_refusals(make_spec_darwin(), host) == (
+        f"launching from your home directory ({HOME}) was declined.",
+    )
+
+
+def test_a_confirmed_home_launch_warns_and_proceeds(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(launch_checks, "_confirm_on_terminal", lambda: True)
+    host = make_host_darwin(workspace_dir=HOME, real_home=HOME, has_controlling_terminal=True)
+
+    assert get_launch_refusals(make_spec_darwin(), host) == ()
+    assert "Your home is not masked in this session." in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("workspace_dir", [Path("/"), Path("/home")], ids=["root", "parent"])
+def test_a_launch_above_home_is_refused(workspace_dir: Path) -> None:
+    host = make_host_darwin(
+        workspace_dir=workspace_dir, real_home=HOME, has_controlling_terminal=True
+    )
+
+    refusals = get_launch_refusals(make_spec_darwin(), host)
+
+    assert len(refusals) == 1
+    assert "sits above your home directory" in refusals[0]
+
+
+def test_a_launch_below_home_needs_no_confirmation() -> None:
+    host = make_host_darwin(workspace_dir=HOME / "project", real_home=HOME)
 
     assert get_launch_refusals(make_spec_darwin(), host) == ()

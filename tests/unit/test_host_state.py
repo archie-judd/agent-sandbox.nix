@@ -7,6 +7,7 @@ import pytest
 from launcher.lib.host_state import (
     _parse_nix_sandbox_setting,
     _parse_nix_user_is_trusted,
+    _get_workspace_dir,
     _path_is_socket,
     get_nix_daemon_socket_path,
 )
@@ -94,3 +95,12 @@ def test_a_listening_socket_is_a_socket(
         listener.bind("socket")
 
         assert _path_is_socket(tmp_path / "socket")
+
+
+def test_a_symlinked_workspace_resolves_to_its_physical_path(tmp_path: Path) -> None:
+    real = Path(os.path.realpath(tmp_path)) / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+
+    assert _get_workspace_dir("$PWD", {"PWD": str(link)}) == real

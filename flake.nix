@@ -77,6 +77,9 @@
               ]))
               pkgs.go
             ];
+            shellHook = ''
+              unset PYTHONPATH
+            '';
           };
         }
       );

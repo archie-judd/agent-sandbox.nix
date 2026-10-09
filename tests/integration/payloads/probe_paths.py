@@ -55,7 +55,7 @@ _OPERATIONS = {
 
 def _outcome(op: str, path: str) -> str:
     try:
-        _OPERATIONS[op](path)
+        _OPERATIONS[op](os.path.expandvars(path))
     except OSError as error:
         if error.errno is None:
             return type(error).__name__

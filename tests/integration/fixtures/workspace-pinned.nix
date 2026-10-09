@@ -6,6 +6,6 @@ in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "sandboxed-bash-workspace-pinned";
-  allowedPackages = [ pkgs.coreutils pkgs.git ];
+  allowedPackages = [ pkgs.coreutils pkgs.git pkgs.python3Minimal ];
   workspaceDir = "$HOME/pinned";
 }

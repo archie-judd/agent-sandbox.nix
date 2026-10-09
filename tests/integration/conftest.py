@@ -64,3 +64,10 @@ def launch(tmp_path: Path, fake_home: Path, sessions_root: Path) -> Launch:
         )
 
     return run
+
+
+@pytest.fixture
+def basic_sandbox(build_sandbox: BuildSandbox, fake_home: Path) -> Path:
+    (fake_home / ".test-state-dir").mkdir()
+    (fake_home / ".test-state-file").touch()
+    return build_sandbox("basic-sandbox")

@@ -30,6 +30,15 @@ def test_outcomes_follow_the_order_of_the_checks(tmp_path: Path) -> None:
     assert _probe(("read", tmp_path / "missing"), ("read", present)) == ["ENOENT", "ok"]
 
 
+def test_paths_expand_variables_where_they_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "file").touch()
+    monkeypatch.setenv("PROBE_DIR", str(tmp_path))
+
+    assert _probe(("read", Path("$PROBE_DIR/file"))) == ["ok"]
+
+
 def test_read_and_stat_and_list(tmp_path: Path) -> None:
     file = tmp_path / "file"
     file.write_text("content")
