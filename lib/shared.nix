@@ -108,11 +108,17 @@ let
   # Raised on macOS too, where the combination would technically work, so
   # the two platforms accept the same configurations.
   validateAllowUnixSockets =
-    { allowNix, allowUnixSockets }:
+    {
+      allowNix,
+      allowUnixSockets,
+      allowHeadlessBrowsers,
+    }:
     if !(builtins.isBool allowUnixSockets) then
       builtins.throw "${errorPrefix} allowUnixSockets must be a boolean"
     else if allowNix && !allowUnixSockets then
       builtins.throw "${errorPrefix} allowNix = true requires allowUnixSockets = true: the nix daemon is reached over an AF_UNIX socket, which the sandbox denies by default."
+    else if pkgs.stdenv.hostPlatform.isLinux && allowHeadlessBrowsers != [ ] && !allowUnixSockets then
+      builtins.throw "${errorPrefix} allowHeadlessBrowsers requires allowUnixSockets = true on Linux: browsers lock their profile with a UNIX-domain socket. For a config shared with macOS, set allowUnixSockets = !pkgs.stdenv.hostPlatform.isDarwin."
     else
       allowUnixSockets;
 

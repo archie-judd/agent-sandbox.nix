@@ -51,12 +51,13 @@ let
 
   validatedPublishedPorts = shared.validatePublishedPorts publishedPorts;
 
+  validatedAllowHeadlessBrowsers = shared.validateAllowHeadlessBrowsers allowHeadlessBrowsers;
+
   validatedAllowUnixSockets = shared.validateAllowUnixSockets {
     allowNix = allowNix;
     allowUnixSockets = allowUnixSockets;
+    allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;
   };
-
-  validatedAllowHeadlessBrowsers = shared.validateAllowHeadlessBrowsers allowHeadlessBrowsers;
 
   validatedWorkspaceDir = shared.validateWorkspaceDir workspaceDir;
 

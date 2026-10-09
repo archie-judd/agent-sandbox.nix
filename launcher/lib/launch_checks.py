@@ -242,21 +242,6 @@ def get_launch_refusals(
             f"allowUnixSockets = true to launch without the denial."
         )
 
-    # Browsers lock their profile with a UNIX-domain socket and abort without
-    # one, and the seccomp filter cannot admit a single path. Refused rather
-    # than lifted, so the AF_UNIX grant stays visible in the config.
-    if (
-        spec.platform == "linux"
-        and spec.allow_headless_browsers
-        and not spec.allow_unix_sockets
-    ):
-        refusals.append(
-            "allowHeadlessBrowsers needs allowUnixSockets = true on "
-            "Linux: browsers create a UNIX-domain socket for their profile "
-            "lock and abort when the default AF_UNIX denial blocks it, and "
-            "that denial cannot be scoped to one path."
-        )
-
     # Refused rather than warned: the store grant allowNix trades away is
     # already paid by launch time, and nothing inside would say why nix fails.
     if spec.allow_nix and host.nix_daemon_socket is None:
