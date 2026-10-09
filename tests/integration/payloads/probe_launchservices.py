@@ -32,24 +32,26 @@ cs.LSCopyApplicationURLsForBundleIdentifier.argtypes = [c_void_p, c_void_p]
 cs.LSCopyApplicationURLsForBundleIdentifier.restype = c_void_p
 
 
-def file_url(path):
+def file_url(path: str) -> int | None:
     raw = path.encode()
-    return cf.CFURLCreateFromFileSystemRepresentation(None, raw, len(raw), True)
+    ref: int | None = cf.CFURLCreateFromFileSystemRepresentation(None, raw, len(raw), True)
+    return ref
 
 
-def url(text):
+def url(text: str) -> int | None:
     raw = text.encode()
-    return cf.CFURLCreateWithBytes(None, raw, len(raw), UTF8, None)
+    ref: int | None = cf.CFURLCreateWithBytes(None, raw, len(raw), UTF8, None)
+    return ref
 
 
-def url_path(ref):
+def url_path(ref: int | None) -> str:
     buf = ctypes.create_string_buffer(4096)
     if not cf.CFURLGetFileSystemRepresentation(ref, True, buf, len(buf)):
         return "<unprintable>"
     return buf.value.decode()
 
 
-def main():
+def main() -> int:
     if len(sys.argv) != 3:
         print("usage: inside-launchservices-probe.py open|register|handler|bundle <arg>", file=sys.stderr)
         return 2
