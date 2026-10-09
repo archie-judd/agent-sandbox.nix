@@ -15,15 +15,15 @@ _HOME = Path("/home/someone")
 _SESSION_DIR = Path("/sessions/20260101-000000-1-sandboxed-agent")
 
 
-def make_spec_linux() -> SandboxBuildSpecLinux:
+def make_spec_linux(*, allow_nix: bool = False) -> SandboxBuildSpecLinux:
     return SandboxBuildSpecLinux(
         version="0.0.0",
         platform="linux",
         out_name="sandboxed-agent",
         sandbox_path="/bin",
         pkg_config_path="",
-        allow_nix=False,
-        allow_unix_sockets=False,
+        allow_nix=allow_nix,
+        allow_unix_sockets=allow_nix,
         allow_headless_browsers=(),
         rw_dirs=(),
         rw_files=(),
@@ -49,7 +49,7 @@ def make_spec_linux() -> SandboxBuildSpecLinux:
             nft=Path("/nix/store/nftables/bin/nft"),
             env=Path("/nix/store/coreutils/bin/env"),
             python=Path("/nix/store/python3/bin/python3"),
-            nix=None,
+            nix=Path("/nix/store/nix/bin/nix") if allow_nix else None,
             certutil=None,
         ),
     )
@@ -99,6 +99,7 @@ def make_host_darwin(
     has_controlling_terminal: bool = False,
     declared: tuple[DeclaredPath, ...] = (),
     git: GitState | None = None,
+    closure_paths: tuple[Path, ...] = (),
     nix_daemon_socket: Path | None = None,
     nix_sandbox_setting: Literal["true", "false", "relaxed"] | None = None,
     nix_user_is_trusted: bool | None = None,
@@ -114,7 +115,7 @@ def make_host_darwin(
         has_controlling_terminal=has_controlling_terminal,
         declared=declared,
         git=git,
-        closure_paths=(),
+        closure_paths=closure_paths,
         nix_daemon_socket=nix_daemon_socket,
         nix_sandbox_setting=nix_sandbox_setting,
         nix_user_is_trusted=nix_user_is_trusted,
@@ -122,7 +123,12 @@ def make_host_darwin(
     )
 
 
-def make_host_linux(*, declared: tuple[DeclaredPath, ...] = ()) -> HostStateLinux:
+def make_host_linux(
+    *,
+    declared: tuple[DeclaredPath, ...] = (),
+    closure_paths: tuple[Path, ...] = (),
+    nix_daemon_socket: Path | None = None,
+) -> HostStateLinux:
     return HostStateLinux(
         workspace_dir=_HOME / "project",
         workspace_dir_exists=True,
@@ -134,8 +140,8 @@ def make_host_linux(*, declared: tuple[DeclaredPath, ...] = ()) -> HostStateLinu
         has_controlling_terminal=False,
         declared=declared,
         git=None,
-        closure_paths=(),
-        nix_daemon_socket=None,
+        closure_paths=closure_paths,
+        nix_daemon_socket=nix_daemon_socket,
         nix_sandbox_setting=None,
         nix_user_is_trusted=None,
         resolv_conf_names_loopback=False,

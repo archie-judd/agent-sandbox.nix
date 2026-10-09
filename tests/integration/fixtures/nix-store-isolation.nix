@@ -11,6 +11,10 @@ in sandbox.mkSandbox {
   pkg = pkgs.bash;
   binName = "bash";
   outName = "sandboxed-bash-store-isolation";
-  allowedPackages = [ pkgs.coreutils pkgs.bash ];
-  env = { DISALLOWED_STORE_PATH = "${disallowedPkg}"; };
+  allowedPackages = [ pkgs.coreutils pkgs.bash pkgs.nix pkgs.python3Minimal ];
+  env = {
+    DISALLOWED_STORE_PATH = "${disallowedPkg}";
+    NIXPKGS_SRC = "${pkgs.path}";
+    NIX_CONFIG = "experimental-features = nix-command flakes";
+  };
 }

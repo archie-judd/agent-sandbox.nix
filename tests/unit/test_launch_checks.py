@@ -222,3 +222,34 @@ def test_a_bind_nested_inside_another_is_refused(home: Path) -> None:
         "also declared as rwDir. Nested binds are not supported. "
         '(declared as "$HOME/.agent-sandbox-nested-binds/git/config")',
     )
+
+
+def test_a_declined_unsandboxed_daemon_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launch_checks, "_confirm_on_terminal", lambda: False)
+    spec = make_spec_darwin(allow_nix=True, allow_unix_sockets=True)
+    host = make_host_darwin(
+        has_controlling_terminal=True,
+        nix_daemon_socket=SOCKET,
+        nix_sandbox_setting="false",
+        nix_user_is_trusted=False,
+    )
+
+    assert get_launch_refusals(spec, host) == (
+        "launching with allowNix = true against the host's nix daemon (sandbox = false) was declined.",
+    )
+
+
+def test_a_confirmed_unsandboxed_daemon_warns_how_to_fix_the_host(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(launch_checks, "_confirm_on_terminal", lambda: True)
+    spec = make_spec_darwin(allow_nix=True, allow_unix_sockets=True)
+    host = make_host_darwin(
+        has_controlling_terminal=True,
+        nix_daemon_socket=SOCKET,
+        nix_sandbox_setting="false",
+        nix_user_is_trusted=False,
+    )
+
+    assert get_launch_refusals(spec, host) == ()
+    assert "set sandbox = true in /etc/nix/nix.conf" in capsys.readouterr().err

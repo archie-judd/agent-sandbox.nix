@@ -80,3 +80,23 @@ def test_git_is_told_never_to_invent_an_identity() -> None:
         "user.useConfigOnly",
         "true",
     )
+
+
+def test_allow_nix_grants_the_store_and_the_daemon_socket_only_with_a_socket() -> None:
+    socket = Path("/nix/var/nix/daemon-socket/socket")
+    closure = (Path("/nix/store/aaa-coreutils"),)
+
+    with_nix = compute_launch_config(
+        make_spec_darwin(allow_nix=True, allow_unix_sockets=True),
+        make_host_darwin(nix_daemon_socket=socket, closure_paths=closure),
+        make_session_darwin(),
+    ).seatbelt_profile_lines
+    without_nix = compute_launch_config(
+        make_spec_darwin(), make_host_darwin(closure_paths=closure), make_session_darwin()
+    ).seatbelt_profile_lines
+
+    assert '(allow file-read* (subpath "/nix/store"))' in with_nix
+    assert f'  (remote unix-socket (path-literal "{socket}")))' in with_nix
+    assert '(allow file-read* (subpath "/nix/store"))' not in without_nix
+    assert not any("/nix/var" in line for line in without_nix)
+    assert '(allow file-read* (subpath "/nix/store/aaa-coreutils"))' in without_nix
