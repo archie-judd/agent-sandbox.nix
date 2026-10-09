@@ -12,7 +12,7 @@ in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "sandboxed-bash-deep-statedir";
-  allowedPackages = [ pkgs.coreutils ];
+  allowedPackages = [ pkgs.coreutils pkgs.python3Minimal ];
   rwDirs = [ "$HOME/.tmp-test-deep-statedir/a/b/c/data" ];
   rwFiles = [ "$HOME/.tmp-test-deep-statedir/a/b/c/config.json" ];
 }
