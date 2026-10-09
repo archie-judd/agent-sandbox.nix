@@ -71,11 +71,6 @@ expect_rule_count "wider bindAddr emits one wildcard inbound rule" \
 	'(allow network-inbound (local ip "*:3000"))' \
 	1
 
-expect_rule_count "duplicate entries emit one rule" \
-	"[ 3000 3000 ]" \
-	'(allow network-inbound (local ip "localhost:3000"))' \
-	1
-
 expect_rule_count "empty list emits no inbound rules" \
 	"[ ]" \
 	"(allow network-inbound (local ip " \

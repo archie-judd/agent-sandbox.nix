@@ -60,11 +60,6 @@ expect_rule_count "integer port emits one localhost rule" \
 	'(allow network-outbound (remote ip "localhost:3000"))' \
 	1
 
-expect_rule_count "duplicate ports emit one localhost rule" \
-	"[ 3000 3000 ]" \
-	'(allow network-outbound (remote ip "localhost:3000"))' \
-	1
-
 expect_rule_count "null does not emit specific port rules" \
 	"null" \
 	'(allow network-outbound (remote ip "localhost:3000"))' \

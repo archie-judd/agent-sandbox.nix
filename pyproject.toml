@@ -15,7 +15,7 @@ exclude = ["^tests/integration-tests/"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "tests"]
-addopts = ["--strict-markers", "-p", "no:cacheprovider"]
+addopts = ["--strict-markers", "--import-mode=importlib", "-p", "no:cacheprovider"]
 markers = [
     "linux: runs only on Linux",
     "darwin: runs only on macOS",
