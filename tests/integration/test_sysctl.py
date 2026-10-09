@@ -54,6 +54,8 @@ def _host_sysctl(*mib: int) -> int:
     return 0
 
 
+# Seatbelt does not mediate KERN_PROCARGS(2): the reads succeed even with every
+# sysctl-read denied. The kernel's only gate is a uid match with the target.
 @pytest.mark.xfail(
     strict=True,
     reason="KERN_PROCARGS and KERN_PROCARGS2 are readable by integer MIB; fix pending",
