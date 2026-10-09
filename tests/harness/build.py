@@ -37,6 +37,7 @@ def nix_build_sandbox(fixture: str, args: Mapping[str, object], *, out_link: Pat
         ],
         capture_output=True,
         text=True,
+        errors="replace",
     )
     if result.returncode != 0:
         raise RuntimeError(f"nix-build {fixture} failed:\n{result.stderr}")
