@@ -45,7 +45,7 @@ jobs:
           extra-conf: ${{ runner.os == 'macOS' && 'sandbox = true' || '' }}
 
       - name: Run pytest suite
-        run: nix develop -c pytest
+        run: nix develop -c pytest -n auto --dist loadgroup --durations=20
 
       - name: Run Go tests
         if: ${{ !cancelled() }}

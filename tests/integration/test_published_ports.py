@@ -19,6 +19,8 @@ from harness.ports import (
 )
 from harness.probes import NetworkOp, probe_network
 
+pytestmark = pytest.mark.xdist_group("fixed-ports")
+
 INSIDE_BIND = {"linux": "0.0.0.0", "darwin": "127.0.0.1"}[sys.platform]
 DROPPED = {"linux": "timeout", "darwin": "EPERM"}[sys.platform]
 UNDECLARED_LISTEN = {"linux": "ok", "darwin": "EPERM"}[sys.platform]

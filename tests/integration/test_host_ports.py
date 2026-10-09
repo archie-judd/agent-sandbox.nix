@@ -8,6 +8,8 @@ from harness.listeners import tcp_listener
 from harness.ports import ALLOWED_HOST_PORT, DENIED_HOST_PORT, INSIDE_PORT, NULL_PORT_A, NULL_PORT_B
 from harness.probes import NetworkOp, probe_network
 
+pytestmark = pytest.mark.xdist_group("fixed-ports")
+
 GATEWAY = "10.0.2.2"
 
 

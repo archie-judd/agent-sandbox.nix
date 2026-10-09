@@ -14,6 +14,8 @@ from harness.listeners import tcp_listener, udp_listener
 from harness.ports import HOST_ADDRESS_PORT, HOST_SERVICE_PORT, HTTPBIN_PORT, INSIDE_PORT, UDP_PORT
 from harness.probes import NetworkOp, probe_network
 
+pytestmark = pytest.mark.xdist_group("fixed-ports")
+
 GATEWAY = "10.0.2.2"
 DROPPED = {"linux": "timeout", "darwin": "EPERM"}[sys.platform]
 CURL = "curl -s -o /dev/null --max-time 10 -w '%{http_code} %{http_connect}\\n'"

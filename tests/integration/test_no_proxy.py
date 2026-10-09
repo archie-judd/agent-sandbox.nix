@@ -1,9 +1,13 @@
 from pathlib import Path
 
+import pytest
+
 from harness.build import BuildSandbox
 from harness.launch import Launch
 from harness.listeners import tcp_listener
 from harness.ports import HTTPBIN_PORT, NO_PROXY_PORT
+
+pytestmark = pytest.mark.xdist_group("fixed-ports")
 
 CURL = "curl -s -o /dev/null --max-time 10 -w '%{http_code}\\n'"
 

@@ -15,6 +15,7 @@ explicit_package_bases = true
 testpaths = ["tests"]
 pythonpath = [".", "tests"]
 addopts = ["--strict-markers", "--import-mode=importlib", "-p", "no:cacheprovider"]
+timeout = 900
 markers = [
     "linux: runs only on Linux",
     "darwin: runs only on macOS",

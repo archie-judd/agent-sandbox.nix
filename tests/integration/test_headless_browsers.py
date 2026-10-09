@@ -13,6 +13,8 @@ from harness.launch import Launch
 from harness.listeners import tcp_listener
 from harness.ports import DRIVER_PORT, HTTPBIN_PORT, MARIONETTE_PORT, WEBSOCKET_PORT
 
+pytestmark = pytest.mark.xdist_group("fixed-ports")
+
 PAYLOADS = Path(__file__).resolve().parent / "payloads"
 WEBDRIVER = (PAYLOADS / "inside-webdriver-title.sh").read_text()
 LAUNCHSERVICES_PROBE = PAYLOADS / "probe_launchservices.py"
