@@ -3,6 +3,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 
 class _OkHandler(BaseHTTPRequestHandler):
@@ -71,3 +72,29 @@ def udp_listener(port: int, host: str = "127.0.0.1") -> Iterator[list[bytes]]:
         stop.set()
         thread.join()
         sock.close()
+
+
+@contextmanager
+def unix_listener(path: Path) -> Iterator[None]:
+    if len(str(path)) > 100:
+        raise ValueError(f"socket path exceeds the sun_path budget: {path}")
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(path))
+    server.listen(16)
+
+    def serve() -> None:
+        while True:
+            try:
+                connection, _ = server.accept()
+            except OSError:
+                return
+            with connection:
+                while connection.recv(4096):
+                    pass
+
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        yield
+    finally:
+        server.close()
+        path.unlink(missing_ok=True)

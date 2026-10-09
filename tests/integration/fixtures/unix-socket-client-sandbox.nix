@@ -1,5 +1,5 @@
 # Test fixture: filtered-network sandbox (allowedDomains set) with a
-# UNIX-socket-capable client (socat) in PATH. Used to assert that connect()
+# UNIX-socket-capable client (python3) in PATH. Used to assert that connect()
 # to a UNIX-domain socket on the host is denied. See
 # tests/darwin/test-unix-socket-egress-denied.sh.
 #
@@ -17,6 +17,6 @@ in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "sandboxed-bash";
-  allowedPackages = [ pkgs.coreutils pkgs.socat ];
+  allowedPackages = [ pkgs.coreutils pkgs.python3Minimal ];
   allowedDomains = [ "anthropic.com" ];
 }

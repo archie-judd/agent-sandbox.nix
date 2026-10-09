@@ -1,5 +1,9 @@
 import json
+import os
+import shutil
 import subprocess
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Mapping
 
@@ -71,3 +75,10 @@ def basic_sandbox(build_sandbox: BuildSandbox, fake_home: Path) -> Path:
     (fake_home / ".test-state-dir").mkdir()
     (fake_home / ".test-state-file").touch()
     return build_sandbox("basic-sandbox")
+
+
+@pytest.fixture
+def short_tmp() -> Iterator[Path]:
+    directory = Path(os.path.realpath(tempfile.mkdtemp(dir="/tmp", prefix="sbx.")))
+    yield directory
+    shutil.rmtree(directory, ignore_errors=True)

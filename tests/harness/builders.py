@@ -134,6 +134,7 @@ def make_host_linux(
     declared: tuple[DeclaredPath, ...] = (),
     closure_paths: tuple[Path, ...] = (),
     nix_daemon_socket: Path | None = None,
+    machine: str = "x86_64",
 ) -> HostStateLinux:
     return HostStateLinux(
         workspace_dir=_HOME / "project",
@@ -152,7 +153,7 @@ def make_host_linux(
         nix_user_is_trusted=None,
         resolv_conf_names_loopback=False,
         systemd_resolv_conf=None,
-        machine="x86_64",
+        machine=machine,
     )
 
 

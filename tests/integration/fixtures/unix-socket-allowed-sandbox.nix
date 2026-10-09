@@ -1,5 +1,5 @@
 # Test fixture: sandbox with allowUnixSockets = true and UNIX-socket-capable
-# clients (socat, python3) in PATH.
+# clients (python3) in PATH.
 #
 # `open` selects the network mode, so the flag is exercised under both
 # mechanisms (additive in filtered mode, last-match in open mode).
@@ -22,7 +22,7 @@ in sandbox.mkSandbox ({
   pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "sandboxed-bash";
-  allowedPackages = [ pkgs.coreutils pkgs.socat pkgs.python3Minimal ];
+  allowedPackages = [ pkgs.coreutils pkgs.python3Minimal ];
   allowUnixSockets = true;
 } // (if open then { } else { allowedDomains = [ "anthropic.com" ]; })
   // (if nestedRoDir then { roDirs = [ "$PWD/nested-ro" ]; } else { })

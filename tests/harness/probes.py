@@ -7,6 +7,9 @@ from harness.launch import Launch
 
 PathOp = Literal["read", "list", "stat", "write", "create", "delete", "exec"]
 NetworkOp = Literal["connect", "send_udp", "resolve"]
+SocketOp = Literal[
+    "create", "create_dgram", "socketpair", "inet", "roundtrip", "bind", "connect"
+]
 
 _PAYLOADS = Path(__file__).resolve().parent.parent / "integration" / "payloads"
 
@@ -62,4 +65,17 @@ def probe_network(
 ) -> dict[tuple[NetworkOp, str, int], str]:
     request: list[list[object]] = [[op, host, port] for op, host, port in checks]
     outcomes = _run_probe(launch, binary, "probe_network.py", request, cwd=cwd, home=home)
+    return dict(zip(checks, outcomes))
+
+
+def probe_sockets(
+    launch: Launch,
+    binary: Path,
+    checks: Sequence[tuple[SocketOp, Path]],
+    *,
+    cwd: Path | None = None,
+    home: Path | None = None,
+) -> dict[tuple[SocketOp, Path], str]:
+    request: list[list[object]] = [[op, str(path)] for op, path in checks]
+    outcomes = _run_probe(launch, binary, "probe_sockets.py", request, cwd=cwd, home=home)
     return dict(zip(checks, outcomes))

@@ -111,3 +111,13 @@ def test_restricted_mode_leaves_dns_to_the_proxy() -> None:
 
     assert _contains_run(restricted.bwrap_args, ["--ro-bind", "/dev/null", "/etc/resolv.conf"])
     assert _contains_run(open_mode.bwrap_args, ["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"])
+
+
+def test_the_unix_socket_filter_is_loaded_only_when_sockets_are_off() -> None:
+    off = compute_launch_config(make_spec_linux(), make_host_linux(), make_session())
+    on = compute_launch_config(make_spec_linux(allow_nix=True), make_host_linux(), make_session())
+
+    assert "--seccomp" in off.bwrap_args
+    assert off.seccomp_program is not None
+    assert "--seccomp" not in on.bwrap_args
+    assert on.seccomp_program is None

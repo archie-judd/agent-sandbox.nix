@@ -11,7 +11,7 @@ from typing import Literal
 
 import pytest
 
-from harness.builders import make_host_darwin, make_spec_darwin
+from harness.builders import make_host_darwin, make_host_linux, make_spec_darwin, make_spec_linux
 from launcher.lib.host_state import DeclaredPath, _get_declared_paths
 from launcher.lib import launch_checks
 from launcher.lib.launch_checks import get_launch_refusals
@@ -253,3 +253,10 @@ def test_a_confirmed_unsandboxed_daemon_warns_how_to_fix_the_host(
 
     assert get_launch_refusals(spec, host) == ()
     assert "set sandbox = true in /etc/nix/nix.conf" in capsys.readouterr().err
+
+
+def test_a_machine_without_a_unix_socket_filter_is_refused() -> None:
+    refusals = get_launch_refusals(make_spec_linux(), make_host_linux(machine="riscv64"))
+
+    assert len(refusals) == 1
+    assert "no AF_UNIX seccomp filter is available for this machine (riscv64" in refusals[0]
