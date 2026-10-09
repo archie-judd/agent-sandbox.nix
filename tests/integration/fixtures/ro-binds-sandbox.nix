@@ -8,7 +8,7 @@ in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "sandboxed-bash-ro-binds";
-  allowedPackages = [ pkgs.coreutils ];
-  roDirs = [ "$HOME/.test-ro-dir" ];
-  roFiles = [ "$HOME/.test-ro-file" ];
+  allowedPackages = [ pkgs.coreutils pkgs.python3Minimal ];
+  roDirs = [ "$HOME/.test-ro-dir" "$HOME/.agent-sandbox-nested-ro/vendor" ];
+  roFiles = [ "$HOME/.test-ro-file" "$HOME/.agent-sandbox-nested-ro/pinned.txt" ];
 }

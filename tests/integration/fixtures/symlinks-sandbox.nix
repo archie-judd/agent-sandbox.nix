@@ -6,11 +6,11 @@ in sandbox.mkSandbox {
   pkg = pkgs.bashInteractive;
   binName = "bash";
   outName = "sandboxed-bash-symlinks";
-  allowedPackages = [ pkgs.coreutils ];
+  allowedPackages = [ pkgs.coreutils pkgs.python3Minimal ];
   # The second is outside $HOME, so Darwin reaches it at its real spelling
   # instead of replanting it into the sandbox home, and on Darwin /tmp is a
   # symlink: resolution passes through a link node no physical-path grant names.
-  rwDirs = [ "$HOME/.test-state-dir" "/tmp/test-parent-link-dir" ];
+  rwDirs = [ "$HOME/.test-state-dir" "$SANDBOX_TEST_PARENT_LINK_DIR" ];
   rwFiles = [ "$HOME/.test-state-file" ];
   roFiles = [ "$HOME/.test-ro-file" ];
   env = {

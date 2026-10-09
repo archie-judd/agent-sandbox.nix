@@ -203,3 +203,22 @@ def test_a_launch_below_home_needs_no_confirmation() -> None:
     host = make_host_darwin(workspace_dir=HOME / "project", real_home=HOME)
 
     assert get_launch_refusals(make_spec_darwin(), host) == ()
+
+
+def test_a_bind_nested_inside_another_is_refused(home: Path) -> None:
+    root = home / ".agent-sandbox-nested-binds"
+    (root / "git").mkdir(parents=True)
+    (home / "dotfiles").mkdir()
+    (home / "dotfiles" / "gitconfig").write_text("[user]\n")
+    (root / "git" / "config").symlink_to(home / "dotfiles" / "gitconfig")
+    declared = (
+        *_get_declared_paths(["$HOME/.agent-sandbox-nested-binds"], "rw", "dir"),
+        *_get_declared_paths(["$HOME/.agent-sandbox-nested-binds/git/config"], "ro", "file"),
+    )
+    host = make_host_darwin(workspace_dir=home / "project", real_home=home, declared=declared)
+
+    assert get_launch_refusals(make_spec_darwin(), host) == (
+        f"{root}/git/config: declared as roFile but it is nested inside {root}, which is "
+        "also declared as rwDir. Nested binds are not supported. "
+        '(declared as "$HOME/.agent-sandbox-nested-binds/git/config")',
+    )
