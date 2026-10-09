@@ -77,6 +77,7 @@
               ]))
               pkgs.go
             ];
+            GOTOOLCHAIN = "local";
             shellHook = ''
               unset PYTHONPATH
             '';

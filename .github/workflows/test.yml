@@ -44,12 +44,12 @@ jobs:
           trust-runner-user: false
           extra-conf: ${{ runner.os == 'macOS' && 'sandbox = true' || '' }}
 
-      - name: Run sandbox tests
-        run: bash tests/run-all.sh
-
       - name: Run pytest suite
-        if: ${{ !cancelled() }}
         run: nix develop -c pytest
+
+      - name: Run Go tests
+        if: ${{ !cancelled() }}
+        run: nix develop -c go -C proxy test ./...
 
       - name: Type-check
         if: ${{ !cancelled() }}

@@ -10,7 +10,6 @@ python_version = "3.11"
 files = ["launcher", "tests"]
 mypy_path = ["tests"]
 explicit_package_bases = true
-exclude = ["^tests/integration-tests/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
