@@ -9,7 +9,7 @@ in sandbox.mkSandbox {
   pkg = pkgs.bash;
   binName = "bash";
   outName = "sandboxed-bash-net";
-  allowedPackages = [ pkgs.coreutils pkgs.bash pkgs.curl ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.iputils ];
+  allowedPackages = [ pkgs.coreutils pkgs.bash pkgs.curl pkgs.python3Minimal ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.iputils ];
   allowedDomains = [ "httpbin.test" ];
   _proxyRedirects = { "httpbin.test" = "127.0.0.1:${httpbinPort}"; };
 }

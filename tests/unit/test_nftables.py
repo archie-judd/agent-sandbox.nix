@@ -29,3 +29,32 @@ def test_open_mode_emits_no_reply_accepts() -> None:
     rules = get_nft_rules(GATEWAY_IP, None, ALLOWED_HOST_PORTS, [18944])
 
     assert _reply_accepts(rules) == []
+
+
+def test_open_mode_drops_only_the_gateway() -> None:
+    rules = get_nft_rules(GATEWAY_IP, None, [])
+
+    assert "policy accept" in rules[1]
+    assert [rule for rule in rules if rule.endswith("drop")] == [
+        f"add rule ip sandbox_filter output ip daddr {GATEWAY_IP} drop"
+    ]
+
+
+def test_restricted_mode_drops_by_default_and_admits_the_proxy() -> None:
+    rules = get_nft_rules(GATEWAY_IP, PROXY_PORT, [])
+
+    assert "policy drop" in rules[1]
+    assert f"add rule ip sandbox_filter output ip daddr {GATEWAY_IP} tcp dport {PROXY_PORT} accept" in rules
+
+
+def test_an_allowed_host_port_is_dnatted_to_the_gateway() -> None:
+    rules = get_nft_rules(GATEWAY_IP, None, [5432])
+
+    assert f"add rule ip sandbox_nat output ip daddr 127.0.0.1 tcp dport 5432 dnat to {GATEWAY_IP}" in rules
+    assert f"add rule ip sandbox_filter output ip daddr {GATEWAY_IP} tcp dport 5432 accept" in rules
+
+
+def test_null_host_ports_dnat_every_tcp_port() -> None:
+    rules = get_nft_rules(GATEWAY_IP, None, None)
+
+    assert f"add rule ip sandbox_nat output ip daddr 127.0.0.1 meta l4proto tcp dnat to {GATEWAY_IP}" in rules

@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Sequence
 
 from harness.builders import make_host_linux, make_session, make_spec_linux
+from launcher.lib.build_spec import PublishedPort
 from launcher.lib.launch_config.linux.compute import compute_launch_config
 
 
@@ -67,3 +68,46 @@ def test_without_allow_nix_only_the_closure_is_bound() -> None:
     for store_path in CLOSURE:
         assert _contains_run(args, ["--ro-bind", str(store_path), str(store_path)])
     assert "/nix/var" not in args
+
+
+def _env(config_argv: Sequence[str]) -> dict[str, str]:
+    return dict(arg.split("=", 1) for arg in config_argv if "=" in arg and not arg.startswith("-"))
+
+
+def test_the_proxy_is_reached_through_the_pasta_gateway() -> None:
+    config = compute_launch_config(make_spec_linux(), make_host_linux(), make_session(proxy_port=12345))
+
+    env = _env(config.argv_before_env)
+    assert env["HTTP_PROXY"] == env["HTTPS_PROXY"] == "http://10.0.2.2:12345"
+
+
+def test_no_proxy_is_set_only_when_a_host_port_is_open() -> None:
+    closed = compute_launch_config(make_spec_linux(), make_host_linux(), make_session(proxy_port=1))
+    opened = compute_launch_config(
+        make_spec_linux(allowed_host_ports=(3000,)), make_host_linux(), make_session(proxy_port=1)
+    )
+
+    assert "NO_PROXY" not in _env(closed.argv_before_env)
+    assert "NO_PROXY" in _env(opened.argv_before_env)
+
+
+def test_published_ports_become_pasta_forwards() -> None:
+    spec = make_spec_linux(
+        published_ports=(
+            PublishedPort(port=3000, bind_addr="127.0.0.1"),
+            PublishedPort(port=4000, bind_addr="0.0.0.0"),
+        )
+    )
+
+    argv = compute_launch_config(spec, make_host_linux(), make_session()).argv_before_env
+
+    assert _contains_run(argv, ["-t", "127.0.0.1/3000", "-t", "0.0.0.0/4000"])
+    assert not _contains_run(argv, ["-t", "none"])
+
+
+def test_restricted_mode_leaves_dns_to_the_proxy() -> None:
+    restricted = compute_launch_config(make_spec_linux(), make_host_linux(), make_session(proxy_port=1))
+    open_mode = compute_launch_config(make_spec_linux(), make_host_linux(), make_session())
+
+    assert _contains_run(restricted.bwrap_args, ["--ro-bind", "/dev/null", "/etc/resolv.conf"])
+    assert _contains_run(open_mode.bwrap_args, ["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"])

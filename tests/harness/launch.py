@@ -1,6 +1,11 @@
 import os
 import pty
+import signal
+import socket
 import subprocess
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping, Protocol
 
@@ -75,3 +80,50 @@ def launch_sandbox(
         text=True,
         start_new_session=True,
     )
+
+
+@contextmanager
+def launch_background(
+    binary: Path,
+    script: str,
+    *,
+    ready_at: tuple[str, int],
+    cwd: Path,
+    home: Path,
+    sessions_root: Path,
+    env: Mapping[str, str] | None = None,
+) -> Iterator[subprocess.Popen[str]]:
+    process = subprocess.Popen(
+        [str(binary), "--norc", "--noprofile", "-c", script],
+        cwd=cwd,
+        env=_launch_env(cwd, home, sessions_root, {} if env is None else env),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while True:
+            if process.poll() is not None:
+                output = process.stdout.read() if process.stdout else ""
+                raise AssertionError(f"background sandbox exited {process.returncode}:\n{output}")
+            try:
+                socket.create_connection(ready_at, timeout=0.5).close()
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise AssertionError(f"nothing answered on {ready_at} within 30s")
+                time.sleep(0.1)
+        yield process
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()

@@ -4,18 +4,24 @@ from typing import Literal
 from launcher.lib.build_spec import (
     DependenciesDarwin,
     DependenciesLinux,
+    PublishedPort,
     SandboxBuildSpecDarwin,
     SandboxBuildSpecLinux,
 )
 from launcher.lib.git_state import GitState
 from launcher.lib.host_state import DeclaredPath, HostStateDarwin, HostStateLinux
-from launcher.lib.session_state import SessionState, SessionStateDarwin
+from launcher.lib.session_state import ProxyState, SessionState, SessionStateDarwin
 
 _HOME = Path("/home/someone")
 _SESSION_DIR = Path("/sessions/20260101-000000-1-sandboxed-agent")
 
 
-def make_spec_linux(*, allow_nix: bool = False) -> SandboxBuildSpecLinux:
+def make_spec_linux(
+    *,
+    allow_nix: bool = False,
+    allowed_host_ports: tuple[int, ...] | None = (),
+    published_ports: tuple[PublishedPort, ...] = (),
+) -> SandboxBuildSpecLinux:
     return SandboxBuildSpecLinux(
         version="0.0.0",
         platform="linux",
@@ -31,8 +37,8 @@ def make_spec_linux(*, allow_nix: bool = False) -> SandboxBuildSpecLinux:
         ro_files=(),
         workspace_dir="$PWD",
         env_keys=(),
-        allowed_host_ports=(),
-        published_ports=(),
+        allowed_host_ports=allowed_host_ports,
+        published_ports=published_ports,
         closure_paths_file=Path("/nix/store/closure"),
         cacert_dir=Path("/nix/store/cacert/etc/ssl/certs"),
         cacert_bundle=Path("/nix/store/cacert/etc/ssl/certs/ca-bundle.crt"),
@@ -150,8 +156,9 @@ def make_host_linux(
     )
 
 
-def make_session() -> SessionState:
-    return SessionState(session_dir=_SESSION_DIR, proxy=None, nss_db=None, firefox_policies=None)
+def make_session(*, proxy_port: int | None = None) -> SessionState:
+    proxy = None if proxy_port is None else ProxyState(port=proxy_port, pid=1)
+    return SessionState(session_dir=_SESSION_DIR, proxy=proxy, nss_db=None, firefox_policies=None)
 
 
 def make_session_darwin() -> SessionStateDarwin:
