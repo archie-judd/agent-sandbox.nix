@@ -49,11 +49,12 @@ def test_process_snooping_sysctls_are_denied_after_the_allow() -> None:
     lines = _profile()
 
     allow = lines.index("(allow sysctl-read)")
-    assert lines[allow + 2 : allow + 6] == [
+    assert lines[allow + 2 : allow + 7] == [
         "(deny sysctl-read",
-        '  (sysctl-name "kern.procargs")',
-        '  (sysctl-name "kern.procargs2")',
+        '  (sysctl-name-prefix "kern.procargs")',
         '  (sysctl-name-regex #"^kern\\.proc\\."))',
+        "(deny process-info* (target others))",
+        "(allow process-info* (target same-sandbox))",
     ]
 
 
