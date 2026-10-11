@@ -19,21 +19,28 @@ PROCESS_CONTROL = (
     "(allow signal)",
 )
 
-# sysctl({1, 49, pid}) (KERN_PROCARGS2) returns the argv+envp of any host-UID
-# process; the name-deny catches integer-MIB callers too, because the kernel
-# resolves those to the same canonical names. Host-identifying OIDs
-# (kern.hostname, kern.uuid, hw.model) are deliberately not denied: seatbelt
-# does not intercept them through this filter, and denying kern.hostname
-# breaks uname(2).
+# Host-identifying OIDs (kern.hostname, kern.uuid, hw.model) are deliberately
+# not denied: seatbelt does not intercept them through this filter, and denying
+# kern.hostname breaks uname(2).
 SYSCTLS = (
     "",
     ";; sysctls",
     "(allow sysctl-read)",
-    ";; These three are the env-var exfil path. Do not remove.",
+    ";; Prevent the sandbox from reading host process info through sysctl.",
     "(deny sysctl-read",
-    '  (sysctl-name "kern.procargs")',
-    '  (sysctl-name "kern.procargs2")',
+    # Match kern.procargs and kern.procargs2 to prevent the sandbox from reading the
+    # args and environment for a given process (kern.procargs2.<pid>).
+    '  (sysctl-name-prefix "kern.procargs")',
+    # Match kern.proc.* to prevent the sandbox from enumerating host processes and
+    # their UIDs.
     '  (sysctl-name-regex #"^kern\\.proc\\."))',
+    # Disallow process-info for anything outside the sandbox, so the sandbox cannot read
+    # details about host processes. This is needed together with the kern.procargs* deny
+    # for some reason.
+    "(deny process-info* (target others))",
+    # Allow process-info for processes in the same sandbox, so the sandbox can read
+    # details about its own processes.
+    "(allow process-info* (target same-sandbox))",
 )
 
 MACH_IPC = (

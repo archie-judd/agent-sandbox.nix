@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from harness.build import BuildSandbox
 from harness.launch import Launch
 
@@ -54,12 +53,6 @@ def _host_sysctl(*mib: int) -> int:
     return 0
 
 
-# Seatbelt does not mediate KERN_PROCARGS(2): the reads succeed even with every
-# sysctl-read denied. The kernel's only gate is a uid match with the target.
-@pytest.mark.xfail(
-    strict=True,
-    reason="KERN_PROCARGS and KERN_PROCARGS2 are readable by integer MIB; fix pending",
-)
 def test_process_snooping_sysctls_are_denied(
     build_sandbox: BuildSandbox, launch: Launch, tmp_path: Path
 ) -> None:
@@ -74,7 +67,9 @@ def test_process_snooping_sysctls_are_denied(
     (workspace / "probe.lua").write_text(PROBE)
 
     result = launch(
-        build_sandbox("sysctl-narrowed-sandbox"), f"luajit probe.lua {pid}", cwd=workspace
+        build_sandbox("sysctl-narrowed-sandbox"),
+        f"luajit probe.lua {pid}",
+        cwd=workspace,
     )
 
     assert result.returncode == 0, result.stderr
