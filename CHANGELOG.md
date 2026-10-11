@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.5.0...v5.5.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **darwin:** block procargs reads of host processes ([#183](https://github.com/archie-judd/agent-sandbox.nix/issues/183)) ([9253163](https://github.com/archie-judd/agent-sandbox.nix/commit/925316356e501ccf3a90f427d4df70c302a0fd92))
+
 ## [5.5.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.4.1...v5.5.0) (2026-10-06)
 
 
