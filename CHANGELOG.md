@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.3](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.5.2...v5.5.3) (2026-10-12)
+
+
+### Bug Fixes
+
+* **darwin:** let the sandbox control its new terminal ([8e1e563](https://github.com/archie-judd/agent-sandbox.nix/commit/8e1e563ca1881d2bb6f0c7606a2b205dbba12827))
+
 ## [5.5.2](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.5.1...v5.5.2) (2026-10-12)
 
 
