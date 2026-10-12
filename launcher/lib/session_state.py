@@ -153,9 +153,8 @@ def remove_sandbox_dir(directory: Path) -> None:
 
 
 def _start_proxy(proxy: ProxySpec, session_dir: Path) -> subprocess.Popen[str]:
-    environ = dict(os.environ)
     pairs = [f"{host}={address}" for host, address in proxy.redirects.items()]
-    environ["SANDBOX_PROXY_REDIRECT"] = ",".join(pairs)
+    environ = {"SANDBOX_PROXY_REDIRECT": ",".join(pairs)}
 
     log = (session_dir / PROXY_LOG).open("a", encoding="utf-8")
     argv = [

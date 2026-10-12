@@ -54,6 +54,7 @@ let
     else
       {
         git = "${pkgs.git}/bin/git";
+        python = "${pkgs.python3}/bin/python3";
         nix = nixBinary;
       };
 

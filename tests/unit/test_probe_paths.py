@@ -117,6 +117,7 @@ def _local_launch(
     home: Path | None = None,
     env: Mapping[str, str] | None = None,
     tty_reply: str | None = None,
+    new_session: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(binary), "--norc", "--noprofile", "-c", script],
@@ -148,6 +149,7 @@ def test_probe_paths_fails_loudly_when_the_launch_fails() -> None:
         home: Path | None = None,
         env: Mapping[str, str] | None = None,
         tty_reply: str | None = None,
+        new_session: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess([], 1, "", "refused")
 

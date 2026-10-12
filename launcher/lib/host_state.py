@@ -82,6 +82,7 @@ class HostStateLinux(HostState):
 @dataclass(frozen=True, kw_only=True)
 class HostStateDarwin(HostState):
     tty: Path | None
+    stdio_is_tty: bool
 
 
 def _path_exists(path: Path) -> bool:
@@ -501,5 +502,9 @@ def read_host_state_linux(spec: SandboxBuildSpecLinux) -> HostStateLinux:
     )
 
 
-def read_host_state_darwin(spec: SandboxBuildSpecDarwin) -> HostStateDarwin:
-    return HostStateDarwin(**_common_host_state(spec), tty=_get_stdin_tty())
+def read_host_state_darwin(
+    spec: SandboxBuildSpecDarwin, stdio_is_tty: bool
+) -> HostStateDarwin:
+    return HostStateDarwin(
+        **_common_host_state(spec), tty=_get_stdin_tty(), stdio_is_tty=stdio_is_tty
+    )

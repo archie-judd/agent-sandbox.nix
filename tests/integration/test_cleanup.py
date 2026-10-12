@@ -21,6 +21,15 @@ def test_the_exit_status_reaches_the_caller(basic_sandbox: Path, launch: Launch)
     assert launch(basic_sandbox, "exit 3").returncode == 3
 
 
+@pytest.mark.darwin
+def test_the_exit_status_survives_the_new_session(basic_sandbox: Path, launch: Launch) -> None:
+    piped = launch(basic_sandbox, "exit 3", new_session=False)
+    on_a_terminal = launch(basic_sandbox, "exit 3", tty_reply="")
+
+    assert piped.returncode == 3, piped.stderr
+    assert on_a_terminal.returncode == 3, on_a_terminal.stdout
+
+
 def test_the_proxy_is_killed_on_exit(
     build_sandbox: BuildSandbox, launch: Launch, sessions_root: Path
 ) -> None:

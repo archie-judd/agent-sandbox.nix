@@ -39,6 +39,22 @@ end
 print(probe(1, 14, 0), probe(1, 38, pid), probe(1, 49, pid))
 """
 
+JOIN_PROBE = (
+    """
+local ffi = require("ffi")
+ffi.cdef[[
+int getpgid(int pid);
+int setpgid(int pid, int pgid);
+]]
+if ffi.C.setpgid(0, ffi.C.getpgid(tonumber(arg[1]))) ~= 0 then
+  io.write(tostring(ffi.errno()), " ")
+else
+  io.write("0 ")
+end
+"""
+    + PROBE
+)
+
 
 def _host_sysctl(*mib: int) -> int:
     libc = ctypes.CDLL(None, use_errno=True)
@@ -74,3 +90,43 @@ def test_process_snooping_sysctls_are_denied(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.split() == [str(errno.EPERM)] * 3
+
+
+def test_a_sandbox_launched_in_the_callers_session_cannot_read_or_join_it(
+    build_sandbox: BuildSandbox, launch: Launch, tmp_path: Path
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "probe.lua").write_text(JOIN_PROBE)
+
+    result = launch(
+        build_sandbox("sysctl-narrowed-sandbox"),
+        f"luajit probe.lua {os.getpid()}",
+        cwd=workspace,
+        new_session=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    joined, *reads = result.stdout.split()
+    assert joined != "0"
+    assert reads == [str(errno.EPERM)] * 3
+
+
+def test_a_sandbox_on_a_terminal_cannot_join_the_launchers_group(
+    build_sandbox: BuildSandbox, launch: Launch, tmp_path: Path
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "probe.lua").write_text(JOIN_PROBE)
+
+    result = launch(
+        build_sandbox("sysctl-narrowed-sandbox"),
+        "luajit probe.lua $PPID",
+        cwd=workspace,
+        tty_reply="",
+    )
+
+    assert result.returncode == 0, result.stdout
+    joined, *reads = result.stdout.split()[-4:]
+    assert joined != "0"
+    assert reads == [str(errno.EPERM)] * 3
