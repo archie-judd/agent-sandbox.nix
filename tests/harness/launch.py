@@ -19,6 +19,7 @@ class Launch(Protocol):
         home: Path | None = None,
         env: Mapping[str, str] | None = None,
         tty_reply: str | None = None,
+        new_session: bool = True,
     ) -> subprocess.CompletedProcess[str]: ...
 
 
@@ -64,6 +65,7 @@ def launch_sandbox(
     sessions_root: Path,
     env: Mapping[str, str],
     tty_reply: str | None,
+    new_session: bool,
 ) -> subprocess.CompletedProcess[str]:
     argv = [str(binary), "--norc", "--noprofile", "-c", script]
     launch_env = _launch_env(cwd, home, sessions_root, env)
@@ -77,7 +79,7 @@ def launch_sandbox(
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
-        start_new_session=True,
+        start_new_session=new_session,
     )
 
 

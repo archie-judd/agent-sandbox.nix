@@ -53,6 +53,7 @@ def launch(tmp_path: Path, fake_home: Path, sessions_root: Path) -> Launch:
         home: Path | None = None,
         env: Mapping[str, str] | None = None,
         tty_reply: str | None = None,
+        new_session: bool = True,
     ) -> subprocess.CompletedProcess[str]:
         if cwd is None:
             cwd = tmp_path / "workspace"
@@ -65,6 +66,7 @@ def launch(tmp_path: Path, fake_home: Path, sessions_root: Path) -> Launch:
             sessions_root=sessions_root,
             env={} if env is None else env,
             tty_reply=tty_reply,
+            new_session=new_session,
         )
 
     return run

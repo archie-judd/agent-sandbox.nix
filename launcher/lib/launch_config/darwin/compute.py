@@ -34,6 +34,8 @@ from launcher.lib.session_state import SessionStateDarwin
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_ENV = Path("/usr/bin/env")
+SYSTEM_SCRIPT = Path("/usr/bin/script")
+SETSID_EXEC = "import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -367,7 +369,21 @@ def compute_launch_config(
     store_targets, target_warnings = get_store_symlink_targets(host.declared, exposed)
     warnings += target_warnings
 
-    argv_before_env = [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)
+    if host.stdio_is_tty:
+        new_session = [str(SYSTEM_SCRIPT), "-q", "/dev/null"]
+    else:
+        new_session = [
+            str(spec.dependencies.python),
+            "-P",
+            "-s",
+            "-S",
+            "-c",
+            SETSID_EXEC,
+        ]
+
+    argv_before_env = (
+        new_session + [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)
+    )
     argv_after_env = [
         str(SANDBOX_EXEC),
         "-f",

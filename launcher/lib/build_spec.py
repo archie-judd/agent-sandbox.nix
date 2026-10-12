@@ -84,13 +84,15 @@ class DependenciesLinux:
 @dataclass(frozen=True, kw_only=True)
 class DependenciesDarwin:
     git: Path
+    python: Path
     nix: Path | None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
         git = Path(data["git"])
+        python = Path(data["python"])
         nix = _get_nix(data)
-        return cls(git=git, nix=nix)
+        return cls(git=git, python=python, nix=nix)
 
 
 @dataclass(frozen=True, kw_only=True)
