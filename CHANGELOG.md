@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.2](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.5.1...v5.5.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **darwin:** start the sandbox in its own session ([#185](https://github.com/archie-judd/agent-sandbox.nix/issues/185)) ([41477e2](https://github.com/archie-judd/agent-sandbox.nix/commit/41477e251b85aca18d3291af73616026a0208435))
+
 ## [5.5.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.5.0...v5.5.1) (2026-10-11)
 
 
