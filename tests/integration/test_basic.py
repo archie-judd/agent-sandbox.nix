@@ -257,3 +257,12 @@ def test_the_terminal_cannot_be_written(basic_sandbox: Path, launch: Launch) -> 
 
     assert "STARTED" in result.stdout
     assert "WROTE" not in result.stdout
+
+
+def test_a_sandbox_on_a_terminal_can_set_its_terminal_modes(
+    basic_sandbox: Path, launch: Launch
+) -> None:
+    result = launch(basic_sandbox, "stty -echo && stty echo && echo MODES-SET", tty_reply="")
+
+    assert result.returncode == 0, result.stdout
+    assert "MODES-SET" in result.stdout

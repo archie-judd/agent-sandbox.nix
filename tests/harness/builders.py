@@ -127,7 +127,7 @@ def make_host_darwin(
         nix_daemon_socket=nix_daemon_socket,
         nix_sandbox_setting=nix_sandbox_setting,
         nix_user_is_trusted=nix_user_is_trusted,
-        tty=None,
+        stdin_is_tty=stdio_is_tty,
         stdio_is_tty=stdio_is_tty,
     )
 

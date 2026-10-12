@@ -36,6 +36,10 @@ SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_ENV = Path("/usr/bin/env")
 SYSTEM_SCRIPT = Path("/usr/bin/script")
 SETSID_EXEC = "import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])"
+SANDBOX_EXEC_WITH_TTY = (
+    "import os, sys; "
+    'os.execv(sys.argv[1], [sys.argv[1], "-D", "TTY=" + os.ttyname(0), *sys.argv[2:]])'
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -318,7 +322,7 @@ def _get_profile_lines(
     if host.nix_daemon_socket is not None:
         lines += seatbelt.nix_support(host.nix_daemon_socket)
 
-    lines += seatbelt.device_nodes(host.tty)
+    lines += seatbelt.device_nodes(host.stdin_is_tty)
     lines += seatbelt.SYSTEM_LIBRARIES
     if session.proxy is None:
         ca_bundle, ca_cert = None, None
@@ -384,7 +388,19 @@ def compute_launch_config(
     argv_before_env = (
         new_session + [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)
     )
-    argv_after_env = [
+    if host.stdin_is_tty:
+        with_tty = [
+            str(spec.dependencies.python),
+            "-P",
+            "-s",
+            "-S",
+            "-c",
+            SANDBOX_EXEC_WITH_TTY,
+        ]
+    else:
+        with_tty = []
+
+    argv_after_env = with_tty + [
         str(SANDBOX_EXEC),
         "-f",
         str(session.session_dir / SEATBELT_PROFILE),
