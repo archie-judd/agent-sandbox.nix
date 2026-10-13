@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import assert_never
 
 from launcher.lib.build_spec import (
+    SandboxBuildSpec,
     SandboxBuildSpecDarwin,
     SandboxBuildSpecLinux,
     load_build_spec,
@@ -56,10 +57,14 @@ def _refuse_launch(session_dir: Path, refusals: tuple[str, ...]) -> None:
     raise SystemExit(1)
 
 
-def _print_workspace(host: HostState) -> None:
+def _print_launch_summary(
+    spec: SandboxBuildSpec, host: HostState, session_dir: Path
+) -> None:
+    print(f"{INFO_PREFIX} version: {spec.version}", file=sys.stderr)
     # The widest grant in the profile, and the only one not written in the
     # config. Printed physical, because that is what the rules match.
     print(f"{INFO_PREFIX} workspace: {host.workspace_dir}", file=sys.stderr)
+    print(f"{INFO_PREFIX} session: {session_dir}", file=sys.stderr)
 
 
 def _print_warnings(warnings: tuple[str, ...]) -> None:
@@ -94,7 +99,7 @@ def _prepare_launch_linux(spec: SandboxBuildSpecLinux, session_dir: Path) -> Pat
         stack.pop_all()
 
     write_launch_outcome(session_dir / LAUNCH_LOG, host, session, config.warnings)
-    _print_workspace(host)
+    _print_launch_summary(spec, host, session_dir)
     _print_warnings(config.warnings)
     return session_dir
 
@@ -126,7 +131,7 @@ def _prepare_launch_darwin(
         stack.pop_all()
 
     write_launch_outcome(session_dir / LAUNCH_LOG, host, session, config.warnings)
-    _print_workspace(host)
+    _print_launch_summary(spec, host, session_dir)
     _print_warnings(config.warnings)
     return session_dir
 
