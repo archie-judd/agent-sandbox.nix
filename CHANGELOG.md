@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.5.3...v5.6.0) (2026-10-13)
+
+
+### Features
+
+* print version and session at launch ([#188](https://github.com/archie-judd/agent-sandbox.nix/issues/188)) ([3cb1e72](https://github.com/archie-judd/agent-sandbox.nix/commit/3cb1e72cf9873b9f2ab4f759fea41be1eff4d22b))
+
 ## [5.5.3](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.5.2...v5.5.3) (2026-10-12)
 
 
