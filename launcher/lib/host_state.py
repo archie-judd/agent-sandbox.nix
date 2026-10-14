@@ -20,6 +20,7 @@ from launcher.lib.git_state import GitState, read_git_state
 from launcher.lib.symlinks import ResolvedPath, Symlink, resolve_path
 
 SYSTEMD_RESOLV_CONF = Path("/run/systemd/resolve/resolv.conf")
+IPV6_SYSCTL_DIR = Path("/proc/sys/net/ipv6")
 RESOLV_CONF = Path("/etc/resolv.conf")
 DEFAULT_NIX_DAEMON_SOCKET = Path("/nix/var/nix/daemon-socket/socket")
 # A wedged daemon would otherwise hang the launch with nothing on screen.
@@ -76,6 +77,7 @@ class HostStateLinux(HostState):
     resolv_conf_names_loopback: bool
     systemd_resolv_conf: Path | None
     machine: str
+    ipv6_available: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -491,6 +493,7 @@ def read_host_state_linux(spec: SandboxBuildSpecLinux) -> HostStateLinux:
         resolv_conf_names_loopback=_resolv_conf_names_loopback(),
         systemd_resolv_conf=systemd_resolv_conf,
         machine=os.uname().machine,
+        ipv6_available=_path_exists(IPV6_SYSCTL_DIR),
     )
 
 

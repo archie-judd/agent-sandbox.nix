@@ -176,6 +176,24 @@ except OSError as error:
 '"""
 
 
+LISTED_INTERFACES = """python3 -c '
+import os
+path = "/proc/net/if_inet6"
+rows = open(path).read().splitlines() if os.path.exists(path) else []
+print(*sorted({row.split()[-1] for row in rows if row.strip()}))
+'"""
+
+
+@pytest.mark.linux
+def test_the_sandbox_has_no_ipv6_address_off_loopback(
+    build_sandbox: BuildSandbox, launch: Launch
+) -> None:
+    result = launch(build_sandbox("network-unrestricted"), LISTED_INTERFACES)
+
+    assert result.returncode == 0, result.stderr
+    assert set(result.stdout.split()) <= {"lo"}
+
+
 @pytest.mark.linux
 def test_open_mode_reaches_beyond_the_host(
     build_sandbox: BuildSandbox, launch: Launch, host_address: str

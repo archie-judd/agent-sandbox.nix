@@ -138,6 +138,7 @@ def make_host_linux(
     closure_paths: tuple[Path, ...] = (),
     nix_daemon_socket: Path | None = None,
     machine: str = "x86_64",
+    ipv6_available: bool = True,
 ) -> HostStateLinux:
     return HostStateLinux(
         workspace_dir=_HOME / "project",
@@ -157,6 +158,7 @@ def make_host_linux(
         resolv_conf_names_loopback=False,
         systemd_resolv_conf=None,
         machine=machine,
+        ipv6_available=ipv6_available,
     )
 
 

@@ -55,6 +55,7 @@ SANDBOX_FIREFOX_POLICIES = Path("/etc/firefox/policies/policies.json")
 PASTA_GATEWAY_IP = "10.0.2.2"
 PASTA_NAMESPACE_IP = "10.0.2.1"
 PASTA_NETMASK = "255.255.255.0"
+PASTA_NS_IFNAME = "eth0"
 PASTA_FLAGS_PREFIX = (
     "-4",
     "--config-net",
@@ -64,6 +65,8 @@ PASTA_FLAGS_PREFIX = (
     PASTA_GATEWAY_IP,
     "-n",
     PASTA_NETMASK,
+    "-I",
+    PASTA_NS_IFNAME,
 )
 PASTA_FLAGS_SUFFIX = (
     "-u",
@@ -96,6 +99,7 @@ ROUTE_LOCALNET_SYSCTLS = (
     "/proc/sys/net/ipv4/conf/all/route_localnet",
     "/proc/sys/net/ipv4/conf/default/route_localnet",
 )
+IPV6_DISABLE_SYSCTL = f"/proc/sys/net/ipv6/conf/{PASTA_NS_IFNAME}/disable_ipv6"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -286,6 +290,8 @@ def compute_launch_config(
         # DNAT from the sandbox's loopback needs route_localnet, which no nft
         # ruleset can express.
         sysctls = {path: "1" for path in ROUTE_LOCALNET_SYSCTLS}
+    if host.ipv6_available:
+        sysctls[IPV6_DISABLE_SYSCTL] = "1"
 
     if spec.allow_unix_sockets:
         seccomp_program = None
