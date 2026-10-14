@@ -121,3 +121,18 @@ def test_the_unix_socket_filter_is_loaded_only_when_sockets_are_off() -> None:
     assert off.seccomp_program is not None
     assert "--seccomp" not in on.bwrap_args
     assert on.seccomp_program is None
+
+
+def test_ipv6_is_disabled_on_the_interface_pasta_names() -> None:
+    config = compute_launch_config(make_spec_linux(), make_host_linux(), make_session())
+
+    assert _contains_run(config.argv_before_env, ["-I", "eth0"])
+    assert config.network.sysctls["/proc/sys/net/ipv6/conf/eth0/disable_ipv6"] == "1"
+
+
+def test_ipv6_is_left_alone_on_a_host_without_it() -> None:
+    host = make_host_linux(ipv6_available=False)
+
+    config = compute_launch_config(make_spec_linux(), host, make_session())
+
+    assert not any("ipv6" in path for path in config.network.sysctls)
