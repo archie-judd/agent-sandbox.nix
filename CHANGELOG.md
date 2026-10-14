@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.0...v5.6.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **linux:** disable IPv6 on the sandbox's network interface ([#190](https://github.com/archie-judd/agent-sandbox.nix/issues/190)) ([427b320](https://github.com/archie-judd/agent-sandbox.nix/commit/427b3207c8ddb385b360d1d02a4c6e93fcef0d5c))
+
 ## [5.6.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.5.3...v5.6.0) (2026-10-13)
 
 
