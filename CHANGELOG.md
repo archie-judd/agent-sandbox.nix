@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.2](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.1...v5.6.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **darwin:** forward terminal resizes to the sandbox ([#192](https://github.com/archie-judd/agent-sandbox.nix/issues/192)) ([1e09e34](https://github.com/archie-judd/agent-sandbox.nix/commit/1e09e348a5b3304801bae0d97290ff972fe3ab1e))
+
 ## [5.6.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.0...v5.6.1) (2026-10-14)
 
 
