@@ -34,7 +34,6 @@ from launcher.lib.session_state import SessionStateDarwin
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_ENV = Path("/usr/bin/env")
-SYSTEM_SCRIPT = Path("/usr/bin/script")
 SETSID_EXEC = "import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])"
 SANDBOX_EXEC_WITH_TTY = (
     "import os, sys; "
@@ -374,7 +373,14 @@ def compute_launch_config(
     warnings += target_warnings
 
     if host.stdio_is_tty:
-        new_session = [str(SYSTEM_SCRIPT), "-q", "/dev/null"]
+        new_session = [
+            str(spec.dependencies.python),
+            "-P",
+            "-s",
+            "-S",
+            "-m",
+            "launcher.pty_relay",
+        ]
     else:
         new_session = [
             str(spec.dependencies.python),
