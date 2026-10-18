@@ -91,6 +91,7 @@ def make_spec_darwin(
         pre_entry_script=Path("/nix/store/pre-entry"),
         sandboxed_binary=Path("/nix/store/agent/bin/agent"),
         proxy=None,
+        job_control_script=Path("/nix/store/job-control"),
         dependencies=DependenciesDarwin(
             git=Path("/nix/store/git/bin/git"),
             python=Path("/nix/store/python3/bin/python3"),

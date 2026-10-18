@@ -406,10 +406,16 @@ def compute_launch_config(
     else:
         with_tty = []
 
+    if host.stdio_is_tty:
+        job_control = [str(spec.job_control_script)]
+    else:
+        job_control = []
+
     argv_after_env = with_tty + [
         str(SANDBOX_EXEC),
         "-f",
         str(session.session_dir / SEATBELT_PROFILE),
+        *job_control,
         str(spec.pre_entry_script),
         str(host.workspace_dir),
         str(spec.sandboxed_binary),

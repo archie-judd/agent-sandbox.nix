@@ -45,6 +45,7 @@ let
     # not in implicitPackages so it does not leak into PATH.
     ++ (if platform == "linux" then [ pkgs.coreutils ] else [ ])
     ++ [ shared.preEntryScript ]
+    ++ (if platform == "darwin" then [ shared.jobControlScript ] else [ ])
   );
 
   validatedAllowedHostPorts = shared.validateAllowedHostPorts allowedHostPorts;
@@ -89,6 +90,7 @@ let
         allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;
         closurePathsFile = closurePathsFile;
         preEntryScript = shared.preEntryScript;
+        jobControlScript = shared.jobControlScript;
         allowedDomains = allowedDomains;
         _proxyRedirects = validatedProxyRedirects;
       };

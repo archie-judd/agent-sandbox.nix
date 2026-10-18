@@ -140,6 +140,7 @@ class SandboxBuildSpecLinux(SandboxBuildSpec):
 @dataclass(frozen=True, kw_only=True)
 class SandboxBuildSpecDarwin(SandboxBuildSpec):
     platform: Literal["darwin"]
+    job_control_script: Path
     dependencies: DependenciesDarwin
 
 
@@ -239,6 +240,7 @@ def load_build_spec(path: Path) -> SandboxBuildSpecLinux | SandboxBuildSpecDarwi
             return SandboxBuildSpecDarwin(
                 **common,
                 platform="darwin",
+                job_control_script=Path(data["job_control_script"]),
                 dependencies=DependenciesDarwin.from_dict(dependencies_data),
             )
         case _:
