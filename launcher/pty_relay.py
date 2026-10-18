@@ -12,6 +12,17 @@ def main() -> None:
     termios.tcsetattr(slave, termios.TCSANOW, saved_attrs)
     termios.tcsetwinsize(slave, termios.tcgetwinsize(0))
 
+    wake_r, wake_w = os.pipe()
+    os.set_blocking(wake_w, False)
+    signal.set_wakeup_fd(wake_w)
+    signal.signal(signal.SIGCHLD, lambda signum, frame: None)
+    signal.signal(
+        signal.SIGWINCH,
+        lambda signum, frame: termios.tcsetwinsize(master, termios.tcgetwinsize(0)),
+    )
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
+    signal.signal(signal.SIGHUP, lambda signum, frame: sys.exit(128 + signum))
+
     pid = os.fork()
     if pid == 0:
         os.close(master)
@@ -23,16 +34,24 @@ def main() -> None:
             os._exit(127)
     os.close(slave)
 
-    signal.signal(
-        signal.SIGWINCH,
-        lambda signum, frame: termios.tcsetwinsize(master, termios.tcgetwinsize(0)),
-    )
-
+    status: int | None = None
     tty.setraw(0)
     try:
-        inputs = [0, master]
+        inputs = [0, master, wake_r]
         while True:
             readable, _, _ = select.select(inputs, [], [])
+            if wake_r in readable:
+                os.read(wake_r, 512)
+                if status is None:
+                    waited, child_status = os.waitpid(pid, os.WNOHANG | os.WUNTRACED)
+                    if waited and os.WIFSTOPPED(child_status):
+                        termios.tcsetattr(0, termios.TCSAFLUSH, saved_attrs)
+                        os.killpg(os.getpgrp(), signal.SIGTSTP)
+                        tty.setraw(0)
+                        termios.tcsetwinsize(master, termios.tcgetwinsize(0))
+                        os.kill(pid, signal.SIGCONT)
+                    elif waited:
+                        status = child_status
             if master in readable:
                 try:
                     data = os.read(master, 65536)
@@ -51,7 +70,8 @@ def main() -> None:
     finally:
         termios.tcsetattr(0, termios.TCSAFLUSH, saved_attrs)
 
-    _, status = os.waitpid(pid, 0)
+    if status is None:
+        _, status = os.waitpid(pid, 0)
     exit_code = os.waitstatus_to_exitcode(status)
     sys.exit(128 - exit_code if exit_code < 0 else exit_code)
 

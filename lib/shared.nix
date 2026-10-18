@@ -208,6 +208,10 @@ let
 
   preEntryScript = pkgs.writeShellScript "pre-entry-script" (builtins.readFile ./pre-entry-script.sh);
 
+  jobControlScript = pkgs.writeShellScript "job-control-script" (
+    builtins.readFile ./job-control-script.sh
+  );
+
   # __pycache__ would otherwise change the store hash from one build to the
   # next depending on whether anything had imported the package in place.
   launcherSource = builtins.filterSource (path: type: baseNameOf path != "__pycache__") ../launcher;
@@ -311,6 +315,7 @@ in
   validateWorkspaceDir = validateWorkspaceDir;
   validateProxyRedirects = validateProxyRedirects;
   preEntryScript = preEntryScript;
+  jobControlScript = jobControlScript;
   launcherPackage = launcherPackage;
   mkImplicitPackages = mkImplicitPackages;
   devOutputs = devOutputs;
