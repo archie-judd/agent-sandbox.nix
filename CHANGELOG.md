@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.3](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.2...v5.6.3) (2026-10-18)
+
+
+### Bug Fixes
+
+* **darwin:** restore resize and Ctrl+Z under the new session ([#194](https://github.com/archie-judd/agent-sandbox.nix/issues/194)) ([407b549](https://github.com/archie-judd/agent-sandbox.nix/commit/407b549e0e1d2440212c5160259a48e26c0af833))
+
 ## [5.6.2](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.1...v5.6.2) (2026-10-17)
 
 
