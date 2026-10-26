@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.4](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.3...v5.6.4) (2026-10-26)
+
+
+### Bug Fixes
+
+* **darwin:** let nix 2.34.9 stat the Rosetta runtime ([42ce94b](https://github.com/archie-judd/agent-sandbox.nix/commit/42ce94b657e85dae6a6d5f30d4ee0ee70399ce9f))
+
 ## [5.6.3](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.2...v5.6.3) (2026-10-18)
 
 
