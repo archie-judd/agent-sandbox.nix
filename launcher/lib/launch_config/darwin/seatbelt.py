@@ -362,6 +362,7 @@ def nix_support(daemon_socket: Path) -> list[str]:
         ";; Nix daemon support",
         '(allow file-read-metadata (subpath "/nix/var"))',
         '(allow file-read-metadata (subpath "/etc/nix") (subpath "/private/etc/nix"))',
+        '(allow file-read-metadata (literal "/Library/Apple/usr/libexec/oah/libRosettaRuntime"))',
         "(allow network-outbound",
         f'  (remote unix-socket (path-literal "{daemon_socket}")))',
         '(allow file-read* (subpath "/nix/store"))',
