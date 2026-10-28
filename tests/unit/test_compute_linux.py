@@ -106,10 +106,13 @@ def test_published_ports_become_pasta_forwards() -> None:
 
 
 def test_restricted_mode_leaves_dns_to_the_proxy() -> None:
-    restricted = compute_launch_config(make_spec_linux(), make_host_linux(), make_session(proxy_port=1))
-    open_mode = compute_launch_config(make_spec_linux(), make_host_linux(), make_session())
+    spec = make_spec_linux()
+    restricted = compute_launch_config(spec, make_host_linux(), make_session(proxy_port=1))
+    open_mode = compute_launch_config(spec, make_host_linux(), make_session())
 
-    assert _contains_run(restricted.bwrap_args, ["--ro-bind", "/dev/null", "/etc/resolv.conf"])
+    assert _contains_run(
+        restricted.bwrap_args, ["--ro-bind", str(spec.empty_file), "/etc/resolv.conf"]
+    )
     assert _contains_run(open_mode.bwrap_args, ["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"])
 
 
