@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.7.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.5...v5.7.0) (2026-10-28)
+
+
+### Features
+
+* **proxy:** allow per-path rules for allowedDomains ([#202](https://github.com/archie-judd/agent-sandbox.nix/issues/202)) ([dbc373b](https://github.com/archie-judd/agent-sandbox.nix/commit/dbc373b49edf2df48626e9360f33e4e76290f4c6))
+
 ## [5.6.5](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.4...v5.6.5) (2026-10-28)
 
 
