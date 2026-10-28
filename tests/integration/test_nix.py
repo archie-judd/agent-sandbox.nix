@@ -31,7 +31,7 @@ nix develop "path:$NIXPKGS_SRC#hello" -c true || echo no-develop
 
 
 def _markers(output: str, expected: list[str]) -> list[str]:
-    plain = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\r", " ", output)
+    plain = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", output).replace("\r", "\n")
     lines = [line.strip() for line in plain.splitlines()]
     return [line for line in lines if line in expected]
 
