@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.5](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.4...v5.6.5) (2026-10-28)
+
+
+### Bug Fixes
+
+* **linux:** bind an empty resolv.conf in restricted mode ([#200](https://github.com/archie-judd/agent-sandbox.nix/issues/200)) ([f90f7af](https://github.com/archie-judd/agent-sandbox.nix/commit/f90f7af92792f9d7aeb0fe159c1c15011fc3dbd3))
+
 ## [5.6.4](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.3...v5.6.4) (2026-10-26)
 
 
