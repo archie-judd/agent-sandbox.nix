@@ -30,8 +30,8 @@ func readRequest(t *testing.T, raw string) *http.Request {
 }
 
 var (
-	getOnlyPolicy  = Config{"example.com": {Methods: map[string]bool{"GET": true, "HEAD": true}}}
-	wildcardPolicy = Config{"example.com": {AllowAll: true}}
+	getOnlyPolicy  = Config{"example.com": {HasBase: true, Methods: map[string]bool{"GET": true, "HEAD": true}}}
+	wildcardPolicy = Config{"example.com": {HasBase: true, AllowAll: true}}
 )
 
 func TestIsBlockedAddr(t *testing.T) {
@@ -232,13 +232,13 @@ func TestApplyFilters(t *testing.T) {
 			// The wildcard makes every name allowlisted, so only the
 			// comparison against the CONNECT host can refuse this.
 			name:   "Host naming another host refused",
-			cfg:    Config{"*": {AllowAll: true}},
+			cfg:    Config{"*": {HasBase: true, AllowAll: true}},
 			raw:    "GET /thing HTTP/1.1\r\nHost: other.example\r\n\r\n",
 			status: http.StatusForbidden,
 		},
 		{
 			name:   "Host bracketing the CONNECT host refused",
-			cfg:    Config{"*": {AllowAll: true}},
+			cfg:    Config{"*": {HasBase: true, AllowAll: true}},
 			raw:    "GET /thing HTTP/1.1\r\nHost: [example.com]\r\n\r\n",
 			status: http.StatusForbidden,
 		},
@@ -262,14 +262,14 @@ func TestApplyFilters(t *testing.T) {
 		},
 		{
 			name:   "IPv6 CONNECT host matched through its brackets",
-			cfg:    Config{"2606:4700:4700::1111": {AllowAll: true}},
+			cfg:    Config{"2606:4700:4700::1111": {HasBase: true, AllowAll: true}},
 			host:   "2606:4700:4700::1111",
 			raw:    "GET /thing HTTP/1.1\r\nHost: [2606:4700:4700::1111]:443\r\n\r\n",
 			status: 0,
 		},
 		{
 			name:   "request without a Host refused",
-			cfg:    Config{"*": {AllowAll: true}},
+			cfg:    Config{"*": {HasBase: true, AllowAll: true}},
 			raw:    "GET /thing HTTP/1.0\r\n\r\n",
 			status: http.StatusBadRequest,
 		},
@@ -278,7 +278,7 @@ func TestApplyFilters(t *testing.T) {
 			// ASCII and a Host that only folds onto it under Unicode is a
 			// different name: it reaches the origin punycoded as a third.
 			name:   "Host folding onto the CONNECT host under Unicode refused",
-			cfg:    Config{"*": {AllowAll: true}},
+			cfg:    Config{"*": {HasBase: true, AllowAll: true}},
 			host:   "k.example",
 			raw:    "GET /thing HTTP/1.1\r\nHost: \u212A.example\r\n\r\n",
 			status: http.StatusForbidden,
@@ -304,7 +304,7 @@ func TestApplyFilters(t *testing.T) {
 // from one address, while the allowlist was applied to the CONNECT host.
 func TestApplyFiltersReportsHostMismatch(t *testing.T) {
 	req := readRequest(t, "GET /thing HTTP/1.1\r\nHost: other.example\r\n\r\n")
-	status, reason := applyFilters(req, "example.com", Config{"*": {AllowAll: true}})
+	status, reason := applyFilters(req, "example.com", Config{"*": {HasBase: true, AllowAll: true}})
 	if status != http.StatusForbidden {
 		t.Fatalf("applyFilters = (%d, %q), want 403", status, reason)
 	}
@@ -377,7 +377,7 @@ func TestHasNonASCII(t *testing.T) {
 }
 
 func TestLookupPolicyFoldsOnlyASCII(t *testing.T) {
-	cfg := Config{"k.example": {AllowAll: true}, "i.example": {AllowAll: true}}
+	cfg := Config{"k.example": {HasBase: true, AllowAll: true}, "i.example": {HasBase: true, AllowAll: true}}
 	for _, host := range []string{"\u212A.example", "\u0130.example", "sub.\u212A.example"} {
 		if isDomainAllowed(host, cfg) {
 			t.Errorf("isDomainAllowed(%q) = true, want false: it is not the allowlisted name", host)
@@ -568,15 +568,86 @@ func TestWebSocketTunnel(t *testing.T) {
 }
 
 func TestFirstContact(t *testing.T) {
-	host := "first-contact.test"
-	if !firstContact(host) {
-		t.Errorf("firstContact(%q) = false on first call, want true", host)
+	key := "GET first-contact.test/"
+	if !firstContact(key) {
+		t.Errorf("firstContact(%q) = false on first call, want true", key)
 	}
-	if firstContact(host) {
-		t.Errorf("firstContact(%q) = true on repeat call, want false", host)
+	if firstContact(key) {
+		t.Errorf("firstContact(%q) = true on repeat call, want false", key)
 	}
-	if !firstContact("other." + host) {
-		t.Errorf("firstContact of an unseen host = false, want true")
+	if !firstContact("GET other.first-contact.test/") {
+		t.Errorf("firstContact of an unseen key = false, want true")
+	}
+}
+
+func TestLogAllowed(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		host string
+		want []string
+	}{
+		{
+			name: "method, host and path",
+			raw:  "POST /graphql HTTP/1.1\r\nHost: log-a.test\r\n\r\n",
+			host: "log-a.test",
+			want: []string{"allowed: POST log-a.test/graphql\n"},
+		},
+		{
+			name: "query string is left out",
+			raw:  "GET /search?q=secret HTTP/1.1\r\nHost: log-b.test\r\n\r\n",
+			host: "log-b.test",
+			want: []string{"allowed: GET log-b.test/search\n"},
+		},
+		{
+			name: "path is normalised",
+			raw:  "GET /a/../b//c HTTP/1.1\r\nHost: log-c.test\r\n\r\n",
+			host: "log-c.test",
+			want: []string{"allowed: GET log-c.test/b/c\n"},
+		},
+		{
+			name: "unreadable path is logged as sent",
+			raw:  "GET /a%2fb HTTP/1.1\r\nHost: log-d.test\r\n\r\n",
+			host: "log-d.test",
+			want: []string{"allowed: GET log-d.test/a%2fb\n"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			stderr := captureStderr(t)
+			logAllowed(readRequest(t, c.raw), c.host)
+			log := stderr()
+			for _, want := range c.want {
+				if !strings.Contains(log, want) {
+					t.Errorf("stderr = %q, want it to contain %q", log, want)
+				}
+			}
+		})
+	}
+}
+
+func TestLogAllowedLogsEachMethodHostAndPathOnce(t *testing.T) {
+	requests := []struct {
+		raw    string
+		logged bool
+	}{
+		{"GET /x HTTP/1.1\r\nHost: log-once.test\r\n\r\n", true},
+		{"GET /x HTTP/1.1\r\nHost: log-once.test\r\n\r\n", false},
+		{"GET /x/ HTTP/1.1\r\nHost: log-once.test\r\n\r\n", false},
+		{"GET /x?q=1 HTTP/1.1\r\nHost: log-once.test\r\n\r\n", false},
+		{"get /x HTTP/1.1\r\nHost: log-once.test\r\n\r\n", false},
+		{"GET /y HTTP/1.1\r\nHost: log-once.test\r\n\r\n", true},
+		{"POST /x HTTP/1.1\r\nHost: log-once.test\r\n\r\n", true},
+		{"GET /x HTTP/1.1\r\nHost: other.log-once.test\r\n\r\n", true},
+	}
+	for _, r := range requests {
+		stderr := captureStderr(t)
+		req := readRequest(t, r.raw)
+		host, _ := hostOnly(req.Host)
+		logAllowed(req, host)
+		if got := stderr() != ""; got != r.logged {
+			t.Errorf("logAllowed(%q) logged = %v, want %v", r.raw, got, r.logged)
+		}
 	}
 }
 
@@ -698,7 +769,7 @@ func TestHandleRefusesNonASCIIHost(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				handle(server, Config{"k.example": {AllowAll: true}}, ca, Redirects{})
+				handle(server, Config{"k.example": {HasBase: true, AllowAll: true}}, ca, Redirects{})
 			}()
 
 			client.SetDeadline(time.Now().Add(10 * time.Second))
@@ -880,5 +951,346 @@ func TestServeRefusesBeyondMaxConns(t *testing.T) {
 	}
 	if !strings.HasPrefix(status, "HTTP/1.1 503") {
 		t.Errorf("connection %d got %q, want 503 once the cap is reached", maxConns+1, status)
+	}
+}
+
+func mustLoadConfig(t *testing.T, raw string) Config {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "allowlist.json")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	stderr := captureStderr(t)
+	cfg, err := loadConfig(path)
+	stderr()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	return cfg
+}
+
+func TestApplyFiltersPathRules(t *testing.T) {
+	const upgrade = "Connection: Upgrade\r\nUpgrade: websocket\r\n"
+	configs := map[string]string{
+		"github": `{
+			"github.com": ["GET", "HEAD"],
+			"api.github.com/graphql": ["POST"]
+		}`,
+		"narrower than base": `{
+			"wide.example": "*",
+			"wide.example/admin": ["GET"]
+		}`,
+		"path only": `{"only.example/graphql": ["POST"]}`,
+		"path only with catch-all": `{
+			"only.example/graphql": ["POST"],
+			"*": ["GET"]
+		}`,
+		"root path is the base": `{
+			"r.example/": ["GET"],
+			"r.example/x": ["POST"]
+		}`,
+		"nested": `{
+			"n.example/a": ["GET"],
+			"n.example/a/b": ["POST"]
+		}`,
+		"websocket": `{
+			"ws.example": ["GET"],
+			"ws.example/socket": "*"
+		}`,
+	}
+
+	cases := []struct {
+		name   string
+		config string
+		host   string
+		method string
+		target string
+		extra  string
+		allow  bool
+	}{
+		{"path rule allows its method", "github", "api.github.com", "POST", "/graphql", "", true},
+		{"path rule replaces the base methods", "github", "api.github.com", "GET", "/graphql", "", false},
+		{"path rule matches below the prefix", "github", "api.github.com", "POST", "/graphql/sub", "", true},
+		{"trailing slash matches", "github", "api.github.com", "POST", "/graphql/", "", true},
+		{"query string is not part of the path", "github", "api.github.com", "POST", "/graphql?x=/other", "", true},
+		{"prefix stops at a segment boundary", "github", "api.github.com", "POST", "/graphqlfoo", "", false},
+		{"other path falls through to the base", "github", "api.github.com", "GET", "/user", "", true},
+		{"fall-through keeps the base methods", "github", "api.github.com", "POST", "/user", "", false},
+		{"root falls through to the base", "github", "api.github.com", "GET", "/", "", true},
+		{"host folds ASCII case", "github", "API.GITHUB.COM", "POST", "/graphql", "", true},
+		{"dot segments resolve before matching", "github", "api.github.com", "POST", "/graphql/../user", "", false},
+		{"dot segments resolve into the rule", "github", "api.github.com", "POST", "/user/../graphql", "", true},
+		{"unrelated subdomain uses the base", "github", "gist.github.com", "GET", "/graphql", "", true},
+		{"unrelated subdomain does not get the path rule", "github", "gist.github.com", "POST", "/graphql", "", false},
+
+		{"base wider than path rule", "narrower than base", "wide.example", "POST", "/public", "", true},
+		{"path rule narrows the base", "narrower than base", "wide.example", "POST", "/admin", "", false},
+		{"path rule narrows below the prefix", "narrower than base", "wide.example", "POST", "/admin/x", "", false},
+		{"path rule still allows its method", "narrower than base", "wide.example", "GET", "/admin/x", "", true},
+		{"dot segments cannot dodge the rule", "narrower than base", "wide.example", "POST", "/a/../admin", "", false},
+		{"double slash cannot dodge the rule", "narrower than base", "wide.example", "POST", "//admin", "", false},
+		{"encoded letter cannot dodge the rule", "narrower than base", "wide.example", "POST", "/%61dmin", "", false},
+		{"encoded slash is refused", "narrower than base", "wide.example", "POST", "/admin%2fx", "", false},
+		{"encoded slash is refused in either case", "narrower than base", "wide.example", "POST", "/admin%2Fx", "", false},
+		{"encoded dot is refused", "narrower than base", "wide.example", "POST", "/a/%2e%2e/admin", "", false},
+		{"encoded backslash is refused", "narrower than base", "wide.example", "POST", "/admin%5cx", "", false},
+		{"raw backslash is refused", "narrower than base", "wide.example", "POST", "/admin\\x", "", false},
+		{"path parameter is refused", "narrower than base", "wide.example", "POST", "/admin;x", "", false},
+		{"encoded NUL is refused", "narrower than base", "wide.example", "POST", "/admin%00", "", false},
+		{"ambiguous path on a pathless host is unchanged", "github", "gist.github.com", "GET", "/a%2fb", "", true},
+
+		{"path-only host allows its path", "path only", "only.example", "POST", "/graphql", "", true},
+		{"path-only host denies other paths", "path only", "only.example", "GET", "/other", "", false},
+		{"path-only host denies the root", "path only", "only.example", "POST", "/", "", false},
+		{"path-only host denies the wrong method", "path only", "only.example", "GET", "/graphql", "", false},
+		{"path-only host with catch-all is not rescued", "path only with catch-all", "only.example", "GET", "/other", "", false},
+		{"catch-all still serves unlisted hosts", "path only with catch-all", "other.example", "GET", "/other", "", true},
+
+		{"root path key is the base", "root path is the base", "r.example", "GET", "/y", "", true},
+		{"root path base denies other methods", "root path is the base", "r.example", "POST", "/y", "", false},
+		{"path rule beside a root path base", "root path is the base", "r.example", "POST", "/x", "", true},
+		{"path rule replaces the root path base", "root path is the base", "r.example", "GET", "/x", "", false},
+
+		{"shorter path rule", "nested", "n.example", "GET", "/a/c", "", true},
+		{"longest path rule wins", "nested", "n.example", "POST", "/a/b/c", "", true},
+		{"longest path rule replaces the shorter", "nested", "n.example", "GET", "/a/b", "", false},
+		{"no rule and no base", "nested", "n.example", "GET", "/z", "", false},
+
+		{"websocket allowed on a star path rule", "websocket", "ws.example", "GET", "/socket", upgrade, true},
+		{"websocket denied outside the star path rule", "websocket", "ws.example", "GET", "/other", upgrade, false},
+		{"plain GET allowed on the base", "websocket", "ws.example", "GET", "/other", "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := mustLoadConfig(t, configs[c.config])
+			raw := c.method + " " + c.target + " HTTP/1.1\r\nHost: " + c.host + "\r\n" + c.extra + "\r\n"
+			status, reason := applyFilters(readRequest(t, raw), c.host, cfg)
+			if c.allow && status != 0 {
+				t.Errorf("%s %s on %s = (%d, %q), want allowed", c.method, c.target, c.host, status, reason)
+			}
+			if !c.allow && status != http.StatusForbidden {
+				t.Errorf("%s %s on %s = (%d, %q), want 403", c.method, c.target, c.host, status, reason)
+			}
+		})
+	}
+}
+
+func TestNormalisePath(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+		ok   bool
+	}{
+		{"/", "/", true},
+		{"/a", "/a", true},
+		{"/a/", "/a", true},
+		{"/a//b", "/a/b", true},
+		{"/a/./b", "/a/b", true},
+		{"/a/b/..", "/a", true},
+		{"/a/../../b", "/b", true},
+		{"/%61", "/a", true},
+		{"/a%20b", "/a b", true},
+		{"/Admin", "/Admin", true},
+		{"", "", false},
+		{"*", "", false},
+		{"a", "", false},
+		{"/a%2fb", "", false},
+		{"/a%2Fb", "", false},
+		{"/a%2eb", "", false},
+		{"/%2e%2e/a", "", false},
+		{"/a%5Cb", "", false},
+		{`/a\b`, "", false},
+		{"/a;b", "", false},
+		{"/a%00", "", false},
+		{"/a%zz", "", false},
+		{"/a%", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.raw, func(t *testing.T) {
+			got, ok := normalisePath(c.raw)
+			if got != c.want || ok != c.ok {
+				t.Errorf("normalisePath(%q) = (%q, %v), want (%q, %v)", c.raw, got, ok, c.want, c.ok)
+			}
+		})
+	}
+}
+
+func TestIsDomainAllowedForPathOnlyHost(t *testing.T) {
+	cfg := mustLoadConfig(t, `{"only.example/graphql": ["POST"], "github.com": ["GET"], "api.github.com/graphql": ["POST"]}`)
+	cases := []struct {
+		host  string
+		allow bool
+	}{
+		{"only.example", true},
+		{"ONLY.example", true},
+		{"sub.only.example", true},
+		{"other.example", false},
+		{"api.github.com", true},
+		{"gist.github.com", true},
+	}
+	for _, c := range cases {
+		if got := isDomainAllowed(c.host, cfg); got != c.allow {
+			t.Errorf("isDomainAllowed(%q) = %v, want %v", c.host, got, c.allow)
+		}
+	}
+}
+
+func TestLoadConfigPathKeys(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		wantErr string
+		check   func(t *testing.T, cfg Config)
+	}{
+		{
+			name: "base and path share a host entry",
+			raw:  `{"api.github.com": ["GET"], "api.github.com/graphql": ["POST"]}`,
+			check: func(t *testing.T, cfg Config) {
+				p := cfg["api.github.com"]
+				if !p.HasBase || !p.Methods["GET"] {
+					t.Errorf("base = %+v, want HasBase with GET", p)
+				}
+				if rule, ok := p.Paths["/graphql"]; !ok || !rule.Methods["POST"] {
+					t.Errorf("Paths = %+v, want /graphql with POST", p.Paths)
+				}
+			},
+		},
+		{
+			name: "path listed before the base",
+			raw:  `{"api.github.com/graphql": ["POST"], "api.github.com": ["GET"]}`,
+			check: func(t *testing.T, cfg Config) {
+				p := cfg["api.github.com"]
+				if !p.HasBase || len(p.Paths) != 1 {
+					t.Errorf("entry = %+v, want a base and one path rule", p)
+				}
+			},
+		},
+		{
+			name: "path-only host has no base",
+			raw:  `{"api.github.com/graphql": ["POST"]}`,
+			check: func(t *testing.T, cfg Config) {
+				if cfg["api.github.com"].HasBase {
+					t.Error("HasBase = true, want false")
+				}
+			},
+		},
+		{
+			name: "host folds case and path keeps it",
+			raw:  `{"API.GitHub.com/GraphQL": "*"}`,
+			check: func(t *testing.T, cfg Config) {
+				if _, ok := cfg["api.github.com"].Paths["/GraphQL"]; !ok {
+					t.Errorf("cfg = %+v, want api.github.com with /GraphQL", cfg)
+				}
+			},
+		},
+		{
+			name: "path is normalised",
+			raw:  `{"a.example/x/./y/": "*"}`,
+			check: func(t *testing.T, cfg Config) {
+				if _, ok := cfg["a.example"].Paths["/x/y"]; !ok {
+					t.Errorf("Paths = %+v, want /x/y", cfg["a.example"].Paths)
+				}
+			},
+		},
+		{
+			name: "root path is the base",
+			raw:  `{"a.example/": ["GET"]}`,
+			check: func(t *testing.T, cfg Config) {
+				p := cfg["a.example"]
+				if !p.HasBase || len(p.Paths) != 0 {
+					t.Errorf("entry = %+v, want a base and no path rules", p)
+				}
+			},
+		},
+		{name: "catch-all with a path", raw: `{"*/foo": "*"}`, wantErr: "cannot have a path"},
+		{name: "ambiguous path", raw: `{"a.example/x%2fy": "*"}`, wantErr: "ambiguous path"},
+		{name: "parameter in path", raw: `{"a.example/x;y": "*"}`, wantErr: "ambiguous path"},
+		{name: "duplicate after normalising", raw: `{"a.example/x": "*", "a.example/x/": "*"}`, wantErr: "duplicate"},
+		{name: "duplicate root path and base", raw: `{"a.example": "*", "a.example/": "*"}`, wantErr: "duplicate"},
+		{name: "bad policy on a path rule", raw: `{"a.example/x": "nope"}`, wantErr: "a.example/x"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.wantErr == "" {
+				c.check(t, mustLoadConfig(t, c.raw))
+				return
+			}
+			path := filepath.Join(t.TempDir(), "allowlist.json")
+			if err := os.WriteFile(path, []byte(c.raw), 0o600); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+			_, err := loadConfig(path)
+			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+				t.Errorf("loadConfig error = %v, want it to contain %q", err, c.wantErr)
+			}
+		})
+	}
+}
+
+func TestLogBlocked(t *testing.T) {
+	cfg := mustLoadConfig(t, `{
+		"api.github.com/graphql": ["POST"],
+		"read.example": ["GET"]
+	}`)
+	cases := []struct {
+		name string
+		raw  string
+		host string
+		want string
+	}{
+		{
+			name: "path not allowed",
+			raw:  "GET /user HTTP/1.1\r\nHost: api.github.com\r\n\r\n",
+			host: "api.github.com",
+			want: "blocked: GET api.github.com/user (path not allowed)\n",
+		},
+		{
+			name: "method not allowed",
+			raw:  "GET /graphql HTTP/1.1\r\nHost: api.github.com\r\n\r\n",
+			host: "api.github.com",
+			want: "blocked: GET api.github.com/graphql (method not allowed)\n",
+		},
+		{
+			name: "unreadable path",
+			raw:  "GET /a%2fb HTTP/1.1\r\nHost: api.github.com\r\n\r\n",
+			host: "api.github.com",
+			want: "blocked: GET api.github.com/a%2fb (path not allowed)\n",
+		},
+		{
+			name: "query string is left out",
+			raw:  "POST /user?token=secret HTTP/1.1\r\nHost: read.example\r\n\r\n",
+			host: "read.example",
+			want: "blocked: POST read.example/user (method not allowed)\n",
+		},
+		{
+			name: "domain not allowed",
+			raw:  "GET /user HTTP/1.1\r\nHost: github.com\r\n\r\n",
+			host: "github.com",
+			want: "blocked: GET github.com/user (domain not allowed)\n",
+		},
+		{
+			name: "domain not allowed on CONNECT",
+			raw:  "CONNECT github.com:443 HTTP/1.1\r\nHost: github.com:443\r\n\r\n",
+			host: "github.com",
+			want: "blocked: CONNECT github.com (domain not allowed)\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := readRequest(t, c.raw)
+			reason := "domain not allowed"
+			if isDomainAllowed(c.host, cfg) {
+				status, r := applyFilters(req, c.host, cfg)
+				if status != http.StatusForbidden {
+					t.Fatalf("applyFilters = (%d, %q), want 403", status, r)
+				}
+				reason = r
+			}
+			stderr := captureStderr(t)
+			logBlocked(req, c.host, reason)
+			if log := stderr(); !strings.Contains(log, c.want) {
+				t.Errorf("stderr = %q, want it to contain %q", log, c.want)
+			}
+		})
 	}
 }

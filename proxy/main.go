@@ -17,7 +17,9 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -28,6 +30,10 @@ import (
 type DomainPolicy struct {
 	AllowAll bool
 	Methods  map[string]bool
+	// HasBase is false for a host listed only with paths, which then allows
+	// nothing outside them.
+	HasBase bool
+	Paths   map[string]DomainPolicy
 }
 
 // The "*" key matches every host no other entry matches, which is the rest of
@@ -173,6 +179,29 @@ var knownHTTPMethods = map[string]bool{
 	"PATCH": true,
 }
 
+func parsePolicy(key string, val json.RawMessage) (DomainPolicy, error) {
+	var star string
+	if err := json.Unmarshal(val, &star); err == nil {
+		if star != "*" {
+			return DomainPolicy{}, fmt.Errorf("invalid policy for %q: string must be \"*\", got %q", key, star)
+		}
+		return DomainPolicy{AllowAll: true}, nil
+	}
+	var methods []string
+	if err := json.Unmarshal(val, &methods); err != nil {
+		return DomainPolicy{}, fmt.Errorf("invalid policy for %q: expected \"*\" or [\"METHOD\", ...]: %w", key, err)
+	}
+	m := make(map[string]bool)
+	for _, method := range methods {
+		upper := strings.ToUpper(method)
+		if !knownHTTPMethods[upper] {
+			fmt.Fprintf(os.Stderr, "WARNING: unrecognized HTTP method %q for %q\n", method, key)
+		}
+		m[upper] = true
+	}
+	return DomainPolicy{Methods: m}, nil
+}
+
 func loadConfig(path string) (Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -187,7 +216,8 @@ func loadConfig(path string) (Config, error) {
 	}
 
 	cfg := make(Config)
-	for domain, val := range raw {
+	for key, val := range raw {
+		domain, rulePath, hasPath := strings.Cut(key, "/")
 		// A Unicode fold would store such a key under an ASCII name the
 		// operator never wrote, and allow requests to it. Kept as written, it
 		// matches nothing: a non-ASCII host is refused before any lookup.
@@ -195,28 +225,44 @@ func loadConfig(path string) (Config, error) {
 			fmt.Fprintf(os.Stderr, "WARNING: non-ASCII domain %q will never match; write it in punycode\n", domain)
 		}
 		domain = lowerASCII(domain)
-		var star string
-		if err := json.Unmarshal(val, &star); err == nil {
-			if star == "*" {
-				cfg[domain] = DomainPolicy{AllowAll: true}
-			} else {
-				return nil, fmt.Errorf("invalid policy for %q: string must be \"*\", got %q", domain, star)
+		policy, err := parsePolicy(key, val)
+		if err != nil {
+			return nil, err
+		}
+		entry := cfg[domain]
+		if !hasPath {
+			if entry.HasBase {
+				return nil, fmt.Errorf("duplicate entry for %q", key)
 			}
+			policy.Paths = entry.Paths
+			policy.HasBase = true
+			cfg[domain] = policy
 			continue
 		}
-		var methods []string
-		if err := json.Unmarshal(val, &methods); err != nil {
-			return nil, fmt.Errorf("invalid policy for %q: expected \"*\" or [\"METHOD\", ...]: %w", domain, err)
+		if domain == "*" {
+			return nil, fmt.Errorf("invalid entry %q: \"*\" cannot have a path", key)
 		}
-		m := make(map[string]bool)
-		for _, method := range methods {
-			upper := strings.ToUpper(method)
-			if !knownHTTPMethods[upper] {
-				fmt.Fprintf(os.Stderr, "WARNING: unrecognized HTTP method %q for domain %q\n", method, domain)
+		normalised, ok := normalisePath("/" + rulePath)
+		if !ok {
+			return nil, fmt.Errorf("invalid entry %q: ambiguous path", key)
+		}
+		if normalised == "/" {
+			if entry.HasBase {
+				return nil, fmt.Errorf("duplicate entry for %q", key)
 			}
-			m[upper] = true
+			policy.Paths = entry.Paths
+			policy.HasBase = true
+			cfg[domain] = policy
+			continue
 		}
-		cfg[domain] = DomainPolicy{Methods: m}
+		if _, dup := entry.Paths[normalised]; dup {
+			return nil, fmt.Errorf("duplicate entry for %q", key)
+		}
+		if entry.Paths == nil {
+			entry.Paths = make(map[string]DomainPolicy)
+		}
+		entry.Paths[normalised] = policy
+		cfg[domain] = entry
 	}
 	// Named at startup because the matching code is the only other place it is
 	// visible, and "*" reads as a floor under the listed hosts rather than the
@@ -236,47 +282,82 @@ func loadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-// Exactly one entry applies and policies never merge: the exact key, else the
-// longest matching suffix entry, else "*", else deny. A host that matched a
-// name of its own does not also pick up what "*" allows.
-func lookupPolicy(host string, cfg Config) (DomainPolicy, bool) {
+// Exactly one policy applies and policies never merge. Entries naming the
+// host, the exact key then each matching suffix by length, are tried most
+// specific first. Within an entry the longest matching path rule wins, else
+// its base policy if it has one. If no named entry yields a policy the request
+// is denied: "*" is consulted only when no entry names the host at all. An
+// empty path means the request path could not be read unambiguously, which
+// matches nothing in an entry that has path rules.
+func lookupPolicy(host, path string, cfg Config) (DomainPolicy, bool) {
 	host = lowerASCII(host)
-	if p, ok := cfg[host]; ok {
-		return p, true
-	}
-	var bestDomain string
-	var bestPolicy DomainPolicy
-	for d, p := range cfg {
-		if d != "*" && strings.HasSuffix(host, "."+d) {
-			if len(d) > len(bestDomain) {
-				bestDomain = d
-				bestPolicy = p
-			}
+	var names []string
+	for d := range cfg {
+		if d != "*" && (host == d || strings.HasSuffix(host, "."+d)) {
+			names = append(names, d)
 		}
 	}
-	if bestDomain != "" {
-		return bestPolicy, true
+	if len(names) == 0 {
+		p, ok := cfg["*"]
+		return p, ok
 	}
-	if p, ok := cfg["*"]; ok {
-		return p, true
+	sort.Slice(names, func(i, j int) bool { return len(names[i]) > len(names[j]) })
+	for _, d := range names {
+		entry := cfg[d]
+		if len(entry.Paths) > 0 && path == "" {
+			continue
+		}
+		var bestPrefix string
+		var best DomainPolicy
+		for prefix, p := range entry.Paths {
+			if (path == prefix || strings.HasPrefix(path, prefix+"/")) && len(prefix) > len(bestPrefix) {
+				bestPrefix, best = prefix, p
+			}
+		}
+		if bestPrefix != "" {
+			return best, true
+		}
+		if entry.HasBase {
+			return entry, true
+		}
 	}
 	return DomainPolicy{}, false
 }
 
-func isDomainAllowed(host string, cfg Config) bool {
-	_, ok := lookupPolicy(host, cfg)
-	return ok
+// normalisePath returns the path the origin will act on, or false when that
+// cannot be settled. It reads an escaped path. Encoded slashes, dots and
+// backslashes, and ";" parameters, are refused because servers disagree on
+// what they mean. Matching is case-sensitive, so an origin that folds case
+// can serve a path the rules did not match.
+func normalisePath(escaped string) (string, bool) {
+	if !strings.HasPrefix(escaped, "/") || strings.ContainsAny(escaped, `\;`) {
+		return "", false
+	}
+	lowered := strings.ToLower(escaped)
+	for _, enc := range []string{"%2f", "%2e", "%5c"} {
+		if strings.Contains(lowered, enc) {
+			return "", false
+		}
+	}
+	decoded, err := url.PathUnescape(escaped)
+	if err != nil || strings.ContainsRune(decoded, 0) {
+		return "", false
+	}
+	return path.Clean(decoded), true
 }
 
-func isMethodAllowed(host, method string, cfg Config) bool {
-	policy, ok := lookupPolicy(host, cfg)
-	if !ok {
-		return false
-	}
-	if policy.AllowAll {
+func isDomainAllowed(host string, cfg Config) bool {
+	host = lowerASCII(host)
+	if _, ok := cfg[host]; ok {
 		return true
 	}
-	return policy.Methods[strings.ToUpper(method)]
+	for d := range cfg {
+		if d != "*" && strings.HasSuffix(host, "."+d) {
+			return true
+		}
+	}
+	_, ok := cfg["*"]
+	return ok
 }
 
 // lookupRedirect matches like lookupPolicy, so a subdomain that passes the
@@ -471,7 +552,12 @@ func applyFilters(req *http.Request, host string, cfg Config) (int, string) {
 	// Normalised once and used for every check below, so "-X get" cannot
 	// satisfy a GET policy and then skip the GET/HEAD restrictions.
 	normalizedMethod := strings.ToUpper(req.Method)
-	if !isMethodAllowed(host, normalizedMethod, cfg) {
+	reqPath, _ := normalisePath(req.URL.EscapedPath())
+	policy, ok := lookupPolicy(host, reqPath, cfg)
+	if !ok {
+		return http.StatusForbidden, "path not allowed"
+	}
+	if !policy.AllowAll && !policy.Methods[normalizedMethod] {
 		return http.StatusForbidden, "method not allowed"
 	}
 	if requestURLLength(req) > maxURLBytes {
@@ -483,7 +569,6 @@ func applyFilters(req *http.Request, host string, cfg Config) (int, string) {
 		return http.StatusForbidden, "body not allowed on this method"
 	}
 	if isWebSocketUpgrade(req) {
-		policy, _ := lookupPolicy(host, cfg)
 		if !policy.AllowAll {
 			return http.StatusForbidden, "WebSocket not allowed"
 		}
@@ -534,23 +619,36 @@ func tunnel(clientR io.Reader, clientW io.Writer, upstreamR io.Reader, upstreamW
 // that was attempted and failed, so callers answer 403 rather than 502.
 var errBlockedAddress = errors.New("host resolves to a blocked address")
 
-// Hosts already recorded as allowed. A session touches few hosts but makes
-// many requests, so the log records first contact per host: a line per
-// request would bury the denials it sits beside.
-var allowedHosts sync.Map
+// Requests already recorded as allowed. A session repeats the same requests
+// many times, so the log records the first of each method, host and path: a
+// line per request would bury the denials it sits beside.
+var allowedRequests sync.Map
 
-// firstContact reports whether host has not been allowed before, and marks it
-// allowed. It is called only after a request has passed the filters, so a host
-// whose every request is refused never appears as allowed.
-func firstContact(host string) bool {
-	_, seen := allowedHosts.LoadOrStore(host, struct{}{})
+// firstContact reports whether key has not been allowed before, and marks it
+// allowed. It is called only after a request has passed the filters, so a
+// request that is always refused never appears as allowed.
+func firstContact(key string) bool {
+	_, seen := allowedRequests.LoadOrStore(key, struct{}{})
 	return !seen
 }
 
-func logAllowed(host string) {
-	if firstContact(host) {
-		fmt.Fprintf(os.Stderr, "%s allowed: %s\n", time.Now().Format(time.RFC3339), host)
+func describeRequest(req *http.Request, host string) string {
+	reqPath, ok := normalisePath(req.URL.EscapedPath())
+	if !ok {
+		reqPath = req.URL.EscapedPath()
 	}
+	return strings.ToUpper(req.Method) + " " + host + reqPath
+}
+
+func logAllowed(req *http.Request, host string) {
+	line := describeRequest(req, host)
+	if firstContact(line) {
+		fmt.Fprintf(os.Stderr, "%s allowed: %s\n", time.Now().Format(time.RFC3339), line)
+	}
+}
+
+func logBlocked(req *http.Request, host, reason string) {
+	fmt.Fprintf(os.Stderr, "%s blocked: %s (%s)\n", time.Now().Format(time.RFC3339), describeRequest(req, host), reason)
 }
 
 // isBlockedAddr reports whether ip is an address the proxy must never dial.
@@ -727,7 +825,7 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 			return
 		}
 		if !isDomainAllowed(host, cfg) {
-			fmt.Fprintf(os.Stderr, "%s blocked domain: %s\n", time.Now().Format(time.RFC3339), req.Host)
+			logBlocked(req, host, "domain not allowed")
 			fmt.Fprintf(conn, "HTTP/1.1 403 Forbidden\r\n\r\n")
 			return
 		}
@@ -740,17 +838,16 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 			return
 		}
 		if !isDomainAllowed(host, cfg) {
-			fmt.Fprintf(os.Stderr, "%s blocked domain: %s\n", time.Now().Format(time.RFC3339), req.Host)
+			logBlocked(req, host, "domain not allowed")
 			fmt.Fprintf(conn, "HTTP/1.1 403 Forbidden\r\n\r\n")
 			return
 		}
 		if code, reason := applyFilters(req, host, cfg); code != 0 {
-			fmt.Fprintf(os.Stderr, "%s blocked %s %s (%s, host: %s)\n",
-				time.Now().Format(time.RFC3339), req.Method, req.URL, reason, req.Host)
+			logBlocked(req, host, reason)
 			fmt.Fprintf(conn, "HTTP/1.1 %d %s\r\n\r\n", code, http.StatusText(code))
 			return
 		}
-		logAllowed(host)
+		logAllowed(req, host)
 		if req.URL.Host == "" {
 			req.URL.Host = req.Host
 		}
@@ -770,8 +867,7 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 			vetted, err := resolveVetted(host, "80")
 			if err != nil {
 				code := dialFailureStatus(err)
-				fmt.Fprintf(os.Stderr, "%s blocked %s %s (%v)\n",
-					time.Now().Format(time.RFC3339), req.Method, req.URL, err)
+				logBlocked(req, host, err.Error())
 				fmt.Fprintf(conn, "HTTP/1.1 %d %s\r\n\r\n", code, http.StatusText(code))
 				return
 			}
@@ -882,12 +978,11 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		}
 
 		if code, reason := applyFilters(req, host, cfg); code != 0 {
-			fmt.Fprintf(os.Stderr, "%s blocked %s https://%s%s (%s)\n",
-				time.Now().Format(time.RFC3339), req.Method, host, req.URL.Path, reason)
+			logBlocked(req, host, reason)
 			writeStatus(clientTLS, code)
 			return
 		}
-		logAllowed(host)
+		logAllowed(req, host)
 
 		if err := dialUpstream(); err != nil {
 			fmt.Fprintf(os.Stderr, "%s upstream dial error for %s: %v\n", time.Now().Format(time.RFC3339), hostPort, err)

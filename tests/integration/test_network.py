@@ -89,8 +89,9 @@ def test_the_proxy_admits_allowed_domains_and_refuses_the_rest(
     }
     assert codes["connect-8080"].split()[1] == "403"
     log = _proxy_log(sessions_root)
-    assert "allowed: httpbin.test" in log
-    assert "blocked domain: blocked.test" in log
+    assert "allowed: GET httpbin.test/get" in log
+    assert "allowed: POST httpbin.test/post" in log
+    assert "blocked: GET blocked.test/ (domain not allowed)" in log
     assert "blocked non-443 CONNECT: httpbin.test:8080" in log
     assert "blocked non-80 plaintext: httpbin.test:8081" in log
 
@@ -101,7 +102,7 @@ def test_an_empty_allowlist_refuses_everything(
     codes = _curl(launch, build_sandbox("network-blocked"), {"http": "http://httpbin.test/get"})
 
     assert codes == {"http": "403 000"}
-    assert "blocked domain: httpbin.test" in _proxy_log(sessions_root)
+    assert "blocked: GET httpbin.test/get (domain not allowed)" in _proxy_log(sessions_root)
 
 
 def test_subdomains_match_but_shared_suffixes_do_not(

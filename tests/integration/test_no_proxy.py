@@ -32,6 +32,6 @@ def test_allowed_host_ports_bypass_the_proxy_and_domains_still_use_it(
     assert result.stdout.split() == ["env", "200", "200", "200", "403"], result.stderr
     (session,) = sessions_root.iterdir()
     log = (session / "proxy.log").read_text()
-    assert "allowed: httpbin.test" in log
-    assert "blocked domain: blocked.test" in log
+    assert "allowed: GET httpbin.test/get" in log
+    assert "blocked: GET blocked.test/ (domain not allowed)" in log
     assert f":{NO_PROXY_PORT}" not in log

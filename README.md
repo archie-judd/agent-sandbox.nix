@@ -31,6 +31,7 @@ Everything else is denied. Only changes to the project directory and declared rw
 * [NixOS, Nix Darwin, or Home Manager](#nixos-nix-darwin-or-home-manager)
 * [Network restrictions](#network-restrictions)
     * [Domain and internet access](#domain-and-internet-access)
+        * [Path rules](#path-rules)
     * [Host ports](#host-ports)
     * [Published ports](#published-ports)
 * [UNIX-domain sockets](#unix-domain-sockets)
@@ -226,6 +227,8 @@ To restrict internet access, set `allowedDomains`, which routes HTTP and HTTPS t
 - Attrset (recommended): map each domain to `"*"` (all HTTP methods allowed) or to a list of permitted methods (for example `[ "GET" "HEAD" ]`).
 - List: `[ "anthropic.com" "sentry.io" ]`. This allows all methods for each domain.
 
+In the attrset, a key may include a path, for example `"api.github.com/graphql" = [ "POST" ];`. See [Path rules](#path-rules).
+
 Domains must be ASCII. Write an internationalized domain in its punycode form (`xn--...`): the proxy refuses a request whose host is not ASCII, and logs a warning at startup for an allowlist entry that is not, since such an entry can never match.
 
 The sandbox matches domains by suffix, so `"anthropic.com"` also matches all `*.anthropic.com` subdomains. One entry decides each request, and entries never combine: the exact domain, else the longest matching suffix, else `"*"`, else blocked. So in `{ "github.com" = [ "GET" "HEAD" "POST" ]; "*" = [ "GET" "HEAD" ]; }`, `github.com` matches its own entry and may POST, while every other domain on the internet gets GET and HEAD.
@@ -234,7 +237,24 @@ To route everything through the proxy and allow everything, use `{ "*" = "*"; }`
 
 WebSocket connections are permitted only to a domain whose policy is `"*"`.
 
-The proxy logs each allowed or denied host contact to `proxy.log` in the sandbox's [session directory](#session-directories). Only the first allow is logged to reduce noise.
+#### Path rules
+
+Add a path to a key to give part of a domain its own policy:
+
+```nix
+allowedDomains = {
+  "api.github.com" = [ "GET" "HEAD" ];
+  "api.github.com/graphql" = [ "POST" ];
+};
+```
+
+Here `GET` and `HEAD` work everywhere on `api.github.com`, and `POST` works only on `/graphql`. A path rule replaces the domain's policy for that path, so `GET /graphql` is blocked.
+
+- `/graphql` covers `/graphql/x` but not `/graphqlfoo`. The longest matching path wins.
+- A request that matches no path rule gets the domain's policy without a path. If the domain has only path rules, any other path is denied, unless a shorter domain entry matches. For example, with `"github.com"` and `"api.github.com/graphql"` listed, `api.github.com/user` uses the `github.com` policy. With only `"api.github.com/graphql"` listed, it is denied.
+- Paths are case-sensitive. A server that ignores case can serve a path the rule did not match.
+
+The proxy logs allowed and denied requests to `proxy.log` in the sandbox's [session directory](#session-directories). An allow is logged as `allowed: GET api.github.com/graphql`, once for each method, host and path, to reduce noise. A denial is logged on every request, as `blocked: GET api.github.com/user (path not allowed)`. The reason is `domain not allowed`, `path not allowed` or `method not allowed`. The log leaves out the query string.
 
 ### Host ports
 
@@ -553,7 +573,7 @@ allowedDomains = { "*" = "*"; };
 
 The agent works normally, and the log names each host on first contact. Replace the `"*"` entry with what you saw, then run again and confirm nothing is blocked.
 
-Keep the methods as narrow as the agent allows. Use `[ "GET" "HEAD" ]` for anything it only reads from. An agent that uses WebSockets (Codex does) needs `"*"` for that domain.
+Keep the methods as narrow as the agent allows. Use `[ "GET" "HEAD" ]` for anything it only reads from. Use [path rules](#path-rules) to allow writes to only the paths it needs. An agent that uses WebSockets (Codex does) needs `"*"` for that domain.
 
 ### macOS: system denial log
 
