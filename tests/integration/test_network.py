@@ -163,6 +163,17 @@ def test_restricted_mode_resolves_no_names_and_drops_udp_and_icmp(
     assert "gateway-dropped" in ping.stdout
 
 
+@pytest.mark.linux
+def test_restricted_mode_leaves_resolv_conf_readable_and_empty(
+    build_sandbox: BuildSandbox, launch: Launch
+) -> None:
+    sandbox = build_sandbox("network-allowed", {"httpbinPort": str(HTTPBIN_PORT)})
+
+    result = launch(sandbox, "test -f /etc/resolv.conf && wc -c < /etc/resolv.conf")
+
+    assert result.stdout == "0\n", result.stderr
+
+
 INSIDE_LOOPBACK = f"""python3 -c '
 import errno, socket
 server = socket.socket()

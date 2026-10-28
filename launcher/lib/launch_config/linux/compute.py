@@ -195,7 +195,7 @@ def _get_bwrap_args(
         args += ["--ro-bind", str(resolv_conf), "/etc/resolv.conf"]
     else:
         # DNS is the proxy's job in restricted mode.
-        args += ["--ro-bind", "/dev/null", "/etc/resolv.conf"]
+        args += ["--ro-bind", str(spec.empty_file), "/etc/resolv.conf"]
 
     if spec.allow_nix:
         args += ["--ro-bind", str(NIX_STORE), str(NIX_STORE)]
