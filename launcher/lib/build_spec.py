@@ -114,7 +114,7 @@ class SandboxBuildSpec:
     ro_files: tuple[str, ...]
     # Unexpanded too, and defaulted to "$PWD" by mkSandbox.
     workspace_dir: str
-    # Keys only. The values are shell expressions the stub resolves; they
+    # Keys only. The values are shell expressions launch.sh resolves; they
     # never enter this process.
     env_keys: tuple[str, ...]
     # None means every host-local TCP port; the empty tuple means none.

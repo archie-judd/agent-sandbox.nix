@@ -3,7 +3,7 @@ from pathlib import Path
 
 from harness.build import BuildSandbox
 from harness.launch import Launch
-from launcher.lib.constants import LAUNCH_LOG, STUB_PID
+from launcher.lib.constants import LAUNCH_LOG, LAUNCH_PID
 
 VERSION = (Path(__file__).resolve().parent.parent.parent / "version.txt").read_text().strip()
 
@@ -63,10 +63,10 @@ def test_an_rw_dir_holding_the_sessions_root_warns_and_logs(
     assert warning in _launch_log(root)
 
 
-def test_the_stub_records_its_pid(
+def test_launch_records_its_pid(
     basic_sandbox: Path, launch: Launch, sessions_root: Path
 ) -> None:
     assert launch(basic_sandbox, "true").returncode == 0
 
     (session,) = sessions_root.iterdir()
-    assert int((session / STUB_PID).read_text()) > 0
+    assert int((session / LAUNCH_PID).read_text()) > 0

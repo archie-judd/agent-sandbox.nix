@@ -1,4 +1,4 @@
-"""First entry point. Prints the session directory and nothing else: the stub
+"""First entry point. Prints the session directory and nothing else: launch.sh
 captures stdout."""
 
 import os

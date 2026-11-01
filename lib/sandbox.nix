@@ -100,7 +100,7 @@ let
     env = env;
   };
 
-  stub = shared.mkStub {
+  launchScript = shared.mkLaunchScript {
     spec = sandboxBuildSpec;
     envFragment = envFragment;
   };
@@ -108,7 +108,7 @@ let
 in
 shared.mkWrapper {
   outName = outName;
-  stub = stub;
+  launchScript = launchScript;
   buildSpec = sandboxBuildSpec;
   legacyArgs = {
     restrictNetwork = restrictNetwork;

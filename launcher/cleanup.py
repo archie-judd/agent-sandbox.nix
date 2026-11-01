@@ -1,4 +1,4 @@
-"""Second entry point, called from the stub's EXIT trap. Best effort
+"""Second entry point, called from launch.sh's EXIT trap. Best effort
 throughout: failing here would turn a successful run into a failed one."""
 
 import os

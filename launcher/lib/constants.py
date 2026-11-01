@@ -1,4 +1,4 @@
-# The artifact filenames are a contract with stub.sh, which finds what it
+# The artifact filenames are a contract with launch.sh, which finds what it
 # needs by name.
 
 ARGV_BEFORE_ENV = "argv-before-env"
@@ -23,7 +23,7 @@ PROXY_LOG = "proxy.log"
 LAUNCH_LOG = "launch.log"
 CLEANUP = "cleanup"
 CLEANUP_IF_EMPTY = "cleanup-if-empty"
-STUB_PID = "stub.pid"
+LAUNCH_PID = "launch.pid"
 
 PROXY_LISTEN_HOST = "127.0.0.1"
 # The proxy runs on the host, so it refuses every loopback address: honouring

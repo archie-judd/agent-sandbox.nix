@@ -11,7 +11,7 @@ NIX_STORE = Path("/nix/store")
 @dataclass(frozen=True, kw_only=True)
 class SandboxLaunchConfig:
     # Two segments because the declared environment is injected between them
-    # by the stub; those values never enter Python.
+    # by launch.sh; those values never enter Python.
     argv_before_env: tuple[str, ...]
     argv_after_env: tuple[str, ...]
     passwd: str

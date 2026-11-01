@@ -1,5 +1,5 @@
 # Test fixture: `env` values that reference host variables. The test sets some
-# and leaves others unset, which exercises the stub's declare_env gate: every
+# and leaves others unset, which exercises launch.sh's declare_env gate: every
 # value that cannot be resolved is reported against the attribute it came from.
 #
 # The literal and the spaced value are controls for the quoting the gate has to

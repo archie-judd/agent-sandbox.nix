@@ -62,7 +62,7 @@ fi
 # This shell does not exec, so it is the sandbox's parent until the session
 # ends; its pid is how a later launch's prune tells a finished session from a
 # running one.
-echo $$ >"$SESSION_DIR/stub.pid"
+echo $$ >"$SESSION_DIR/launch.pid"
 
 # Armed only now: before this point there is no session to clean up, and
 # prepare tears down its own failures. $? is captured first because it is the

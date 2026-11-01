@@ -101,7 +101,7 @@ let
     ro_dirs = roDirs;
     ro_files = roFiles;
     # Keys only. The values are runtime shell expressions, emitted as a
-    # fragment the stub sources; they never reach Python.
+    # fragment launch.sh sources; they never reach Python.
     env_keys = builtins.attrNames env;
     workspace_dir = workspaceDir;
     allowed_host_ports = allowedHostPorts;

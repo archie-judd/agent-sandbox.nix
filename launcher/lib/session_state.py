@@ -21,7 +21,7 @@ from launcher.lib.constants import (
     PROXY_STARTUP_TIMEOUT_SECONDS,
     SANDBOX_CA_CERT,
     SESSION_RETENTION,
-    STUB_PID,
+    LAUNCH_PID,
 )
 
 # Deliberately undocumented; used by the test suite. XDG_STATE_HOME is the
@@ -79,7 +79,7 @@ def _is_session_live(session_dir: Path) -> bool:
     # Both error directions fall towards live: a finished session surviving
     # until the next launch is harmless, deleting a running one is not.
     try:
-        pid = int((session_dir / STUB_PID).read_text(encoding="utf-8").strip())
+        pid = int((session_dir / LAUNCH_PID).read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         return False
     # Zero and negative pids address process groups rather than a process.

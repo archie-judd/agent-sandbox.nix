@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from launcher.lib.build_spec import ProxySpec
-from launcher.lib.constants import SESSION_RETENTION, STUB_PID
+from launcher.lib.constants import LAUNCH_PID, SESSION_RETENTION
 from launcher.lib.session_state import _prune_sessions_root, _start_proxy
 
 SESSION_COUNT = SESSION_RETENTION + 5
@@ -39,7 +39,7 @@ def test_the_oldest_sessions_beyond_the_limit_are_removed(tmp_path: Path) -> Non
 
 def test_a_running_session_survives_however_old(tmp_path: Path) -> None:
     _populate(tmp_path)
-    (_session(tmp_path, 1) / STUB_PID).write_text(str(os.getpid()))
+    (_session(tmp_path, 1) / LAUNCH_PID).write_text(str(os.getpid()))
 
     _prune_sessions_root(tmp_path)
 
@@ -48,7 +48,7 @@ def test_a_running_session_survives_however_old(tmp_path: Path) -> None:
 
 def test_a_session_with_a_dead_pid_is_removed(tmp_path: Path) -> None:
     _populate(tmp_path)
-    (_session(tmp_path, 2) / STUB_PID).write_text(str(_dead_pid()))
+    (_session(tmp_path, 2) / LAUNCH_PID).write_text(str(_dead_pid()))
 
     _prune_sessions_root(tmp_path)
 

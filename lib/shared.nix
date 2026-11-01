@@ -255,9 +255,9 @@ let
       ) (builtins.attrNames env)
     );
 
-  mkStub =
+  mkLaunchScript =
     { spec, envFragment }:
-    pkgs.replaceVars ./stub.sh {
+    pkgs.replaceVars ./launch.sh {
       bash = "${pkgs.bashInteractive}/bin/bash";
       python = "${pkgs.python3}/bin/python3";
       launcher = "${launcherPackage}";
@@ -271,7 +271,7 @@ let
   mkWrapper =
     {
       outName,
-      stub,
+      launchScript,
       buildSpec,
       legacyArgs,
       allowedHostPorts,
@@ -290,7 +290,7 @@ let
                 builtins.seq proxyRedirects (
                   pkgs.runCommand outName { } ''
                     mkdir -p $out/bin
-                    install -m755 ${stub} $out/bin/${outName}
+                    install -m755 ${launchScript} $out/bin/${outName}
                   ''
                   // {
                     buildSpec = buildSpec;
@@ -321,6 +321,6 @@ in
   devOutputs = devOutputs;
   mkPkgConfigPathStr = mkPkgConfigPathStr;
   mkEnvFragment = mkEnvFragment;
-  mkStub = mkStub;
+  mkLaunchScript = mkLaunchScript;
   mkWrapper = mkWrapper;
 }
