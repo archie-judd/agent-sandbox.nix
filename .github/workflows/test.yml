@@ -49,7 +49,7 @@ jobs:
 
       - name: Run Go tests
         if: ${{ !cancelled() }}
-        run: nix develop -c go -C proxy test ./...
+        run: nix develop -c go -C src/proxy test ./...
 
       - name: Type-check
         if: ${{ !cancelled() }}

@@ -1,6 +1,6 @@
 # Emits the JSON the launcher reads at startup. Keys are snake_case so the
 # Python side needs no per-field name mapping.
-{ pkgs, shared }:
+{ pkgs }:
 {
   platform,
   outName,
@@ -22,10 +22,30 @@
   closurePathsFile,
   preEntryScript,
   jobControlScript,
+  bashWrapper,
   allowedDomains,
   _proxyRedirects ? { },
 }:
 let
+  sandboxProxy = import ./proxy.nix { pkgs = pkgs; };
+  # The proxy's JSON config: { "domain": "*" | ["GET","HEAD"], ... }. A
+  # plain list means every domain gets "*".
+  mkAllowlistFile =
+    allowedDomains:
+    let
+      attrset =
+        if builtins.isList allowedDomains then
+          builtins.listToAttrs (
+            map (d: {
+              name = d;
+              value = "*";
+            }) allowedDomains
+          )
+        else
+          allowedDomains;
+    in
+    pkgs.writeText "sandbox-allowlist.json" (builtins.toJSON attrset);
+
   emptyFile = pkgs.writeText "sandbox-empty" "";
 
   hostsFile = pkgs.writeText "sandbox-hosts" ''
@@ -66,8 +86,8 @@ let
       null
     else
       {
-        binary = "${shared.sandboxProxy}/bin/sandbox-proxy";
-        allowlist_file = "${shared.mkAllowlistFile allowedDomains}";
+        binary = "${sandboxProxy}/bin/sandbox-proxy";
+        allowlist_file = "${mkAllowlistFile allowedDomains}";
         redirects = _proxyRedirects;
       };
 
@@ -88,7 +108,7 @@ let
     # last release the tree descends from, so a wrapper built from an
     # unreleased or modified checkout reports that release rather than what it
     # actually contains.
-    version = pkgs.lib.fileContents ../version.txt;
+    version = pkgs.lib.fileContents ../../version.txt;
     platform = platform;
     out_name = outName;
     sandbox_path = sandboxPath;
@@ -112,7 +132,7 @@ let
     closure_paths_file = "${closurePathsFile}";
     cacert_dir = "${pkgs.cacert}/etc/ssl/certs";
     cacert_bundle = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
-    shell = "${shared.bashWrapper}/bin/bash";
+    shell = "${bashWrapper}/bin/bash";
     pre_entry_script = "${preEntryScript}";
     sandboxed_binary = "${pkg}/bin/${binName}";
     proxy = proxy;

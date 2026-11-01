@@ -1,12 +1,6 @@
 { pkgs }:
-let
-  shared = import ./lib/shared.nix { pkgs = pkgs; };
-in
 {
-  mkSandbox = import ./lib/sandbox.nix {
-    pkgs = pkgs;
-    shared = shared;
-  };
+  mkSandbox = import ./src/nix/sandbox.nix { pkgs = pkgs; };
   commonTools = [
     pkgs.coreutils
     pkgs.curl

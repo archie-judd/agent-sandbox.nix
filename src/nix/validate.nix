@@ -1,40 +1,5 @@
-{ pkgs }:
+{ pkgs, errorPrefix }:
 let
-  errorPrefix = "[ERROR][agent-sandbox.nix]";
-  sandboxProxy = import ../proxy { pkgs = pkgs; };
-  # Forces --norc --noprofile however bash is reached (SHELL, /bin/sh,
-  # direct exec), so the sandboxed process cannot source /etc/bashrc or
-  # /etc/profile.
-  bashWrapper =
-    pkgs.runCommand "bash-norc"
-      {
-        nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
-      }
-      # bash
-      ''
-        mkdir -p $out/bin
-        makeBinaryWrapper ${pkgs.bashInteractive}/bin/bash $out/bin/bash \
-          --add-flags "--norc" \
-          --add-flags "--noprofile"
-        ln -s bash $out/bin/sh
-      '';
-  # The proxy's JSON config: { "domain": "*" | ["GET","HEAD"], ... }. A
-  # plain list means every domain gets "*".
-  mkAllowlistFile =
-    allowedDomains:
-    let
-      attrset =
-        if builtins.isList allowedDomains then
-          builtins.listToAttrs (
-            map (d: {
-              name = d;
-              value = "*";
-            }) allowedDomains
-          )
-        else
-          allowedDomains;
-    in
-    pkgs.writeText "sandbox-allowlist.json" (builtins.toJSON attrset);
   # Shared by the host-port and published-port validators.
   validPort = port: builtins.isInt port && port >= 1 && port <= 65535;
   validateAllowedHostPorts =
@@ -205,108 +170,8 @@ let
       builtins.throw throwMsg
     else
       null;
-
-  preEntryScript = pkgs.writeShellScript "pre-entry-script" (builtins.readFile ./pre-entry-script.sh);
-
-  jobControlScript = pkgs.writeShellScript "job-control-script" (
-    builtins.readFile ./job-control-script.sh
-  );
-
-  # __pycache__ would otherwise change the store hash from one build to the
-  # next depending on whether anything had imported the package in place.
-  launcherSource = builtins.filterSource (path: type: baseNameOf path != "__pycache__") ../launcher;
-
-  launcherPackage = pkgs.runCommand "agent-sandbox-launcher" { } ''
-    mkdir -p $out
-    cp -r ${launcherSource} $out/launcher
-  '';
-
-  mkImplicitPackages =
-    allowNix:
-    [
-      pkgs.cacert
-      bashWrapper
-    ]
-    ++ (if allowNix then [ pkgs.nix ] else [ ]);
-
-  devOutputs = packages: pkgs.lib.unique (map pkgs.lib.getDev packages);
-
-  mkPkgConfigPathStr =
-    packages:
-    builtins.concatStringsSep ":" (
-      builtins.concatMap (out: [
-        "${out}/lib/pkgconfig"
-        "${out}/share/pkgconfig"
-      ]) (devOutputs packages)
-    );
-
-  # One declare_env line per declared variable. toJSON supplies the double
-  # quotes the value expands inside, so a value containing spaces stays one
-  # word; escapeShellArg carries the fragment through unexpanded until
-  # declare_env evals it.
-  mkEnvFragment =
-    { outName, env }:
-    pkgs.writeText "${outName}-env" (
-      pkgs.lib.concatMapStrings (
-        name:
-        "declare_env ${pkgs.lib.escapeShellArg name} ${
-          pkgs.lib.escapeShellArg (builtins.toJSON env.${name})
-        }\n"
-      ) (builtins.attrNames env)
-    );
-
-  mkLaunchScript =
-    { spec, envFragment }:
-    pkgs.replaceVars ./launch.sh {
-      bash = "${pkgs.bashInteractive}/bin/bash";
-      python = "${pkgs.python3}/bin/python3";
-      launcher = "${launcherPackage}";
-      spec = "${spec}";
-      envFragment = "${envFragment}";
-      errorPrefix = errorPrefix;
-    };
-
-  # The seqs force the validations at eval time; nothing else does, so
-  # without them the errors would only surface when the agent is launched.
-  mkWrapper =
-    {
-      outName,
-      launchScript,
-      buildSpec,
-      legacyArgs,
-      allowedHostPorts,
-      publishedPorts,
-      allowUnixSockets,
-      allowHeadlessBrowsers,
-      workspaceDir,
-      proxyRedirects,
-    }:
-    builtins.seq (assertNoLegacyArgs legacyArgs) (
-      builtins.seq allowedHostPorts (
-        builtins.seq publishedPorts (
-          builtins.seq allowUnixSockets (
-            builtins.seq allowHeadlessBrowsers (
-              builtins.seq workspaceDir (
-                builtins.seq proxyRedirects (
-                  pkgs.runCommand outName { } ''
-                    mkdir -p $out/bin
-                    install -m755 ${launchScript} $out/bin/${outName}
-                  ''
-                  // {
-                    buildSpec = buildSpec;
-                  }
-                )
-              )
-            )
-          )
-        )
-      )
-    );
 in
 {
-  bashWrapper = bashWrapper;
-  mkAllowlistFile = mkAllowlistFile;
-  sandboxProxy = sandboxProxy;
   assertNoLegacyArgs = assertNoLegacyArgs;
   validateAllowedHostPorts = validateAllowedHostPorts;
   validatePublishedPorts = validatePublishedPorts;
@@ -314,13 +179,4 @@ in
   validateAllowHeadlessBrowsers = validateAllowHeadlessBrowsers;
   validateWorkspaceDir = validateWorkspaceDir;
   validateProxyRedirects = validateProxyRedirects;
-  preEntryScript = preEntryScript;
-  jobControlScript = jobControlScript;
-  launcherPackage = launcherPackage;
-  mkImplicitPackages = mkImplicitPackages;
-  devOutputs = devOutputs;
-  mkPkgConfigPathStr = mkPkgConfigPathStr;
-  mkEnvFragment = mkEnvFragment;
-  mkLaunchScript = mkLaunchScript;
-  mkWrapper = mkWrapper;
 }

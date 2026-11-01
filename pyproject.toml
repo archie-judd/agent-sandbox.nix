@@ -7,13 +7,13 @@ strict = true
 # 3.11 for the -P interpreter flag, which launch.sh relies on to keep cwd and
 # the script directory off sys.path while still honouring PYTHONPATH.
 python_version = "3.11"
-files = ["launcher", "tests"]
-mypy_path = ["tests"]
+files = ["src/launcher", "tests"]
+mypy_path = ["src", "tests"]
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = [".", "tests"]
+pythonpath = ["src", "tests"]
 addopts = ["--strict-markers", "--import-mode=importlib", "-p", "no:cacheprovider"]
 timeout = 900
 markers = [
