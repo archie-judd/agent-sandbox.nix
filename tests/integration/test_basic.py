@@ -1,5 +1,8 @@
+import fcntl
 import os
+import pty
 import socket
+import termios
 import sys
 import tempfile
 from collections.abc import Iterator
@@ -10,6 +13,19 @@ from harness.launch import Launch
 from harness.probes import PathOp, probe_paths
 
 HIDDEN = {"linux": "ENOENT", "darwin": "EPERM"}[sys.platform]
+
+
+def _host_allows_tiocsti() -> bool:
+    pid, fd = pty.fork()
+    if pid == 0:
+        try:
+            fcntl.ioctl(0, termios.TIOCSTI, b"x")
+        except OSError:
+            os._exit(1)
+        os._exit(0)
+    _, status = os.waitpid(pid, 0)
+    os.close(fd)
+    return os.waitstatus_to_exitcode(status) == 0
 
 
 @pytest.fixture
@@ -266,3 +282,24 @@ def test_a_sandbox_on_a_terminal_can_set_its_terminal_modes(
 
     assert result.returncode == 0, result.stdout
     assert "MODES-SET" in result.stdout
+
+
+def test_a_sandbox_on_a_terminal_cannot_inject_input(
+    basic_sandbox: Path, launch: Launch
+) -> None:
+    if not _host_allows_tiocsti():
+        pytest.skip("the host kernel refuses TIOCSTI")
+
+    result = launch(
+        basic_sandbox,
+        "python3 -c 'import fcntl, termios\n"
+        "try:\n"
+        '    fcntl.ioctl(0, termios.TIOCSTI, b"x")\n'
+        "except OSError:\n"
+        '    print("REFUSED")\n'
+        "else:\n"
+        '    print("ACCEPTED")\'',
+        tty_reply="",
+    )
+
+    assert "REFUSED" in result.stdout, result.stdout
