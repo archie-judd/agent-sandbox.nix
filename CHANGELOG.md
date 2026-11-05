@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.7.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.7.0...v5.7.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **darwin:** deny process info instead of starting a new session ([#204](https://github.com/archie-judd/agent-sandbox.nix/issues/204)) ([d78cfcd](https://github.com/archie-judd/agent-sandbox.nix/commit/d78cfcd59a99f382bcad9dcf73b530a4751facd0))
+
 ## [5.7.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.6.5...v5.7.0) (2026-10-28)
 
 
