@@ -104,10 +104,8 @@ def _prepare_launch_linux(spec: SandboxBuildSpecLinux, session_dir: Path) -> Pat
     return session_dir
 
 
-def _prepare_launch_darwin(
-    spec: SandboxBuildSpecDarwin, session_dir: Path, stdio_is_tty: bool
-) -> Path:
-    host = read_host_state_darwin(spec, stdio_is_tty)
+def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> Path:
+    host = read_host_state_darwin(spec)
     _refuse_launch(session_dir, get_launch_refusals(spec, host))
 
     with ExitStack() as stack:
@@ -136,7 +134,7 @@ def _prepare_launch_darwin(
     return session_dir
 
 
-def prepare_launch(spec_path: Path, stdio_is_tty: bool, now: datetime) -> Path:
+def prepare_launch(spec_path: Path, now: datetime) -> Path:
     spec = load_build_spec(spec_path)
     # Created before anything can refuse the launch, so a refused run still
     # has somewhere to record why.
@@ -151,7 +149,7 @@ def prepare_launch(spec_path: Path, stdio_is_tty: bool, now: datetime) -> Path:
             case SandboxBuildSpecLinux():
                 return _prepare_launch_linux(spec, session_dir)
             case SandboxBuildSpecDarwin():
-                return _prepare_launch_darwin(spec, session_dir, stdio_is_tty)
+                return _prepare_launch_darwin(spec, session_dir)
             case _:
                 assert_never(spec)
     except (Exception, KeyboardInterrupt) as error:
@@ -160,7 +158,7 @@ def prepare_launch(spec_path: Path, stdio_is_tty: bool, now: datetime) -> Path:
 
 
 def main() -> None:
-    print(prepare_launch(Path(sys.argv[1]), sys.argv[2] == "1", datetime.now()))
+    print(prepare_launch(Path(sys.argv[1]), datetime.now()))
 
 
 if __name__ == "__main__":

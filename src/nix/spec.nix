@@ -21,7 +21,6 @@
   publishedPorts,
   closurePathsFile,
   preEntryScript,
-  jobControlScript,
   bashWrapper,
   allowedDomains,
   _proxyRedirects ? { },
@@ -98,9 +97,7 @@ let
         empty_file = "${emptyFile}";
       }
     else
-      {
-        job_control_script = "${jobControlScript}";
-      };
+      { };
 
   spec = {
     # Read here rather than passed in, like the cacert paths below: it is a

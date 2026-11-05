@@ -92,7 +92,7 @@ def test_process_snooping_sysctls_are_denied(
     assert result.stdout.split() == [str(errno.EPERM)] * 3
 
 
-def test_a_sandbox_launched_in_the_callers_session_cannot_read_or_join_it(
+def test_a_sandbox_in_the_callers_process_group_cannot_read_it(
     build_sandbox: BuildSandbox, launch: Launch, tmp_path: Path
 ) -> None:
     workspace = tmp_path / "workspace"
@@ -108,36 +108,5 @@ def test_a_sandbox_launched_in_the_callers_session_cannot_read_or_join_it(
 
     assert result.returncode == 0, result.stderr
     joined, *reads = result.stdout.split()
-    assert joined != "0"
-    assert reads == [str(errno.EPERM)] * 3
-
-
-def test_a_sandbox_on_a_terminal_cannot_join_the_launchers_group(
-    build_sandbox: BuildSandbox, launch: Launch, tmp_path: Path
-) -> None:
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    (workspace / "probe.lua").write_text(JOIN_PROBE)
-    (workspace / "ppid.lua").write_text(
-        """
-local ffi = require("ffi")
-ffi.cdef[[
-int proc_pidinfo(int pid, int flavor, uint64_t arg, void *buffer, int buffersize);
-]]
-local info = ffi.new("uint32_t[34]")
-assert(ffi.C.proc_pidinfo(tonumber(arg[1]), 3, 0, info, 136) == 136)
-print(info[4])
-"""
-    )
-
-    result = launch(
-        build_sandbox("sysctl-narrowed-sandbox"),
-        "luajit probe.lua $(luajit ppid.lua $PPID)",
-        cwd=workspace,
-        tty_reply="",
-    )
-
-    assert result.returncode == 0, result.stdout
-    joined, *reads = result.stdout.split()[-4:]
-    assert joined != "0"
+    assert joined == "0"
     assert reads == [str(errno.EPERM)] * 3

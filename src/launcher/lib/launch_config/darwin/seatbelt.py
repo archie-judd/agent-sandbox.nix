@@ -37,7 +37,7 @@ SYSCTLS = (
     # Disallow process-info for anything outside the sandbox, so the sandbox cannot read
     # details about host processes. This is needed together with the kern.procargs* deny
     # for some reason.
-    "(deny process-info* (target others))",
+    "(deny process-info*)",
     # Allow process-info for processes in the same sandbox, so the sandbox can read
     # details about its own processes.
     "(allow process-info* (target same-sandbox))",
@@ -129,7 +129,7 @@ def process_exec(workspace_dir: Path) -> list[str]:
     ]
 
 
-def device_nodes(has_tty: bool) -> list[str]:
+def device_nodes(tty: Path | None) -> list[str]:
     # /dev/tty (the controlling-terminal alias) is deliberately absent: it
     # bypasses piped stdin to prompt the human, and opens TIOCSTI injection
     # into the parent shell. Pty slave access is pinned to the one terminal
@@ -147,22 +147,22 @@ def device_nodes(has_tty: bool) -> list[str]:
         '  (literal "/private/var/select/sh"))',
         '(allow file-write* (literal "/dev/null"))',
     ]
-    if has_tty:
-        lines += [
-            "(allow file-read* file-write*",
-            '  (literal "/dev/ptmx")',
-            '  (regex #"^/dev/fd/")',
-            '  (literal (param "TTY")))',
-            "(allow file-ioctl",
-            '  (literal "/dev/ptmx")',
-            '  (literal (param "TTY")))',
-        ]
-    else:
+    if tty is None:
         lines += [
             "(allow file-read* file-write*",
             '  (literal "/dev/ptmx")',
             '  (regex #"^/dev/fd/"))',
             '(allow file-ioctl (literal "/dev/ptmx"))',
+        ]
+    else:
+        lines += [
+            "(allow file-read* file-write*",
+            '  (literal "/dev/ptmx")',
+            '  (regex #"^/dev/fd/")',
+            f'  (literal "{tty}"))',
+            "(allow file-ioctl",
+            '  (literal "/dev/ptmx")',
+            f'  (literal "{tty}"))',
         ]
     lines += [
         "(allow file-read-metadata",

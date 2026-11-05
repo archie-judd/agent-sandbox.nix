@@ -34,11 +34,6 @@ from launcher.lib.session_state import SessionStateDarwin
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_ENV = Path("/usr/bin/env")
-SETSID_EXEC = "import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])"
-SANDBOX_EXEC_WITH_TTY = (
-    "import os, sys; "
-    'os.execv(sys.argv[1], [sys.argv[1], "-D", "TTY=" + os.ttyname(0), *sys.argv[2:]])'
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -321,7 +316,7 @@ def _get_profile_lines(
     if host.nix_daemon_socket is not None:
         lines += seatbelt.nix_support(host.nix_daemon_socket)
 
-    lines += seatbelt.device_nodes(host.stdin_is_tty)
+    lines += seatbelt.device_nodes(host.tty)
     lines += seatbelt.SYSTEM_LIBRARIES
     if session.proxy is None:
         ca_bundle, ca_cert = None, None
@@ -372,50 +367,11 @@ def compute_launch_config(
     store_targets, target_warnings = get_store_symlink_targets(host.declared, exposed)
     warnings += target_warnings
 
-    if host.stdio_is_tty:
-        new_session = [
-            str(spec.dependencies.python),
-            "-P",
-            "-s",
-            "-S",
-            "-m",
-            "launcher.pty_relay",
-        ]
-    else:
-        new_session = [
-            str(spec.dependencies.python),
-            "-P",
-            "-s",
-            "-S",
-            "-c",
-            SETSID_EXEC,
-        ]
-
-    argv_before_env = (
-        new_session + [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)
-    )
-    if host.stdin_is_tty:
-        with_tty = [
-            str(spec.dependencies.python),
-            "-P",
-            "-s",
-            "-S",
-            "-c",
-            SANDBOX_EXEC_WITH_TTY,
-        ]
-    else:
-        with_tty = []
-
-    if host.stdio_is_tty:
-        job_control = [str(spec.job_control_script)]
-    else:
-        job_control = []
-
-    argv_after_env = with_tty + [
+    argv_before_env = [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)
+    argv_after_env = [
         str(SANDBOX_EXEC),
         "-f",
         str(session.session_dir / SEATBELT_PROFILE),
-        *job_control,
         str(spec.pre_entry_script),
         str(host.workspace_dir),
         str(spec.sandboxed_binary),
