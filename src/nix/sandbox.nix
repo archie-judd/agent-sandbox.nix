@@ -152,7 +152,6 @@ let
     # not in implicitPackages so it does not leak into PATH.
     ++ (if platform == "linux" then [ pkgs.coreutils ] else [ ])
     ++ [ scripts.preEntryScript ]
-    ++ (if platform == "darwin" then [ scripts.jobControlScript ] else [ ])
   );
 
   validatedAllowedHostPorts = validate.validateAllowedHostPorts allowedHostPorts;
@@ -194,7 +193,6 @@ let
         allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;
         closurePathsFile = closurePathsFile;
         preEntryScript = scripts.preEntryScript;
-        jobControlScript = scripts.jobControlScript;
         bashWrapper = bashWrapper;
         allowedDomains = allowedDomains;
         _proxyRedirects = validatedProxyRedirects;

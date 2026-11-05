@@ -50,12 +50,7 @@ export PWD
 # `env -i` clears it before bubblewrap.
 export PYTHONPATH=@launcher@
 
-STDIO_IS_TTY=0
-if [ -t 0 ] && [ -t 1 ]; then
-  STDIO_IS_TTY=1
-fi
-
-if ! SESSION_DIR=$("@python@" -P -s -S -m launcher.prepare "@spec@" "$STDIO_IS_TTY"); then
+if ! SESSION_DIR=$("@python@" -P -s -S -m launcher.prepare "@spec@"); then
   exit 1
 fi
 

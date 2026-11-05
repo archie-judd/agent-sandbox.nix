@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Sequence, TypedDict, assert_never
@@ -82,8 +83,7 @@ class HostStateLinux(HostState):
 
 @dataclass(frozen=True, kw_only=True)
 class HostStateDarwin(HostState):
-    stdin_is_tty: bool
-    stdio_is_tty: bool
+    tty: Path | None
 
 
 def _path_exists(path: Path) -> bool:
@@ -243,6 +243,13 @@ def _has_controlling_terminal() -> bool:
         return False
     os.close(handle)
     return True
+
+
+def _get_stdin_tty() -> Path | None:
+    try:
+        return Path(os.ttyname(sys.stdin.fileno()))
+    except (OSError, ValueError):
+        return None
 
 
 def _read_closure_paths(closure_paths_file: Path) -> tuple[Path, ...]:
@@ -497,9 +504,5 @@ def read_host_state_linux(spec: SandboxBuildSpecLinux) -> HostStateLinux:
     )
 
 
-def read_host_state_darwin(
-    spec: SandboxBuildSpecDarwin, stdio_is_tty: bool
-) -> HostStateDarwin:
-    return HostStateDarwin(
-        **_common_host_state(spec), stdin_is_tty=os.isatty(0), stdio_is_tty=stdio_is_tty
-    )
+def read_host_state_darwin(spec: SandboxBuildSpecDarwin) -> HostStateDarwin:
+    return HostStateDarwin(**_common_host_state(spec), tty=_get_stdin_tty())

@@ -91,7 +91,6 @@ def make_spec_darwin(
         pre_entry_script=Path("/nix/store/pre-entry"),
         sandboxed_binary=Path("/nix/store/agent/bin/agent"),
         proxy=None,
-        job_control_script=Path("/nix/store/job-control"),
         dependencies=DependenciesDarwin(
             git=Path("/nix/store/git/bin/git"),
             python=Path("/nix/store/python3/bin/python3"),
@@ -111,7 +110,6 @@ def make_host_darwin(
     nix_daemon_socket: Path | None = None,
     nix_sandbox_setting: Literal["true", "false", "relaxed"] | None = None,
     nix_user_is_trusted: bool | None = None,
-    stdio_is_tty: bool = False,
 ) -> HostStateDarwin:
     return HostStateDarwin(
         workspace_dir=workspace_dir,
@@ -128,8 +126,7 @@ def make_host_darwin(
         nix_daemon_socket=nix_daemon_socket,
         nix_sandbox_setting=nix_sandbox_setting,
         nix_user_is_trusted=nix_user_is_trusted,
-        stdin_is_tty=stdio_is_tty,
-        stdio_is_tty=stdio_is_tty,
+        tty=None,
     )
 
 

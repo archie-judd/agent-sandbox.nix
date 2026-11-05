@@ -53,7 +53,7 @@ def test_process_snooping_sysctls_are_denied_after_the_allow() -> None:
         "(deny sysctl-read",
         '  (sysctl-name-prefix "kern.procargs")',
         '  (sysctl-name-regex #"^kern\\.proc\\."))',
-        "(deny process-info* (target others))",
+        "(deny process-info*)",
         "(allow process-info* (target same-sandbox))",
     ]
 
