@@ -6,7 +6,7 @@ import sys
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
-from typing import assert_never
+from typing import Mapping, assert_never
 
 from launcher.lib.build_spec import (
     SandboxBuildSpec,
@@ -14,7 +14,8 @@ from launcher.lib.build_spec import (
     SandboxBuildSpecLinux,
     load_build_spec,
 )
-from launcher.lib.constants import ERROR_PREFIX, INFO_PREFIX, LAUNCH_LOG
+from launcher.lib.constants import ERROR_PREFIX, INFO_PREFIX, LAUNCH_LOG, SECRETS_FD
+from launcher.lib.credentials import read_secrets
 from launcher.lib.host_state import (
     HostState,
     read_host_state_darwin,
@@ -72,12 +73,14 @@ def _print_warnings(warnings: tuple[str, ...]) -> None:
         print(warning, file=sys.stderr)
 
 
-def _prepare_launch_linux(spec: SandboxBuildSpecLinux, session_dir: Path) -> Path:
+def _prepare_launch_linux(
+    spec: SandboxBuildSpecLinux, session_dir: Path, secrets: Mapping[str, str]
+) -> Path:
     host = read_host_state_linux(spec)
     _refuse_launch(session_dir, get_launch_refusals(spec, host))
 
     with ExitStack() as stack:
-        proxy = create_proxy_state(spec, session_dir)
+        proxy = create_proxy_state(spec, session_dir, secrets)
         stack.callback(kill_proxy, proxy)
 
         nss_db = create_nss_db(spec, session_dir)
@@ -104,7 +107,9 @@ def _prepare_launch_linux(spec: SandboxBuildSpecLinux, session_dir: Path) -> Pat
     return session_dir
 
 
-def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> Path:
+def _prepare_launch_darwin(
+    spec: SandboxBuildSpecDarwin, session_dir: Path, secrets: Mapping[str, str]
+) -> Path:
     host = read_host_state_darwin(spec)
     _refuse_launch(session_dir, get_launch_refusals(spec, host))
 
@@ -113,7 +118,7 @@ def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> P
         stack.callback(remove_sandbox_dir, sandbox_home)
         sandbox_tmpdir = create_darwin_sandbox_tmpdir(session_dir)
         stack.callback(remove_sandbox_dir, sandbox_tmpdir)
-        proxy = create_proxy_state(spec, session_dir)
+        proxy = create_proxy_state(spec, session_dir, secrets)
         stack.callback(kill_proxy, proxy)
 
         session = SessionStateDarwin(
@@ -136,6 +141,10 @@ def _prepare_launch_darwin(spec: SandboxBuildSpecDarwin, session_dir: Path) -> P
 
 def prepare_launch(spec_path: Path, now: datetime) -> Path:
     spec = load_build_spec(spec_path)
+    secrets: dict[str, str] = {}
+    if spec.injected_credentials:
+        with os.fdopen(SECRETS_FD, "rb") as stream:
+            secrets = read_secrets(stream)
     # Created before anything can refuse the launch, so a refused run still
     # has somewhere to record why.
     session_dir = create_session_dir(spec, now)
@@ -147,9 +156,9 @@ def prepare_launch(spec_path: Path, now: datetime) -> Path:
     try:
         match spec:
             case SandboxBuildSpecLinux():
-                return _prepare_launch_linux(spec, session_dir)
+                return _prepare_launch_linux(spec, session_dir, secrets)
             case SandboxBuildSpecDarwin():
-                return _prepare_launch_darwin(spec, session_dir)
+                return _prepare_launch_darwin(spec, session_dir, secrets)
             case _:
                 assert_never(spec)
     except (Exception, KeyboardInterrupt) as error:

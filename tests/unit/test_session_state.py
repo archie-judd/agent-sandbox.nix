@@ -1,3 +1,5 @@
+import dataclasses
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -5,9 +7,15 @@ from typing import Any
 
 import pytest
 
-from launcher.lib.build_spec import ProxySpec
-from launcher.lib.constants import LAUNCH_PID, SESSION_RETENTION
-from launcher.lib.session_state import _prune_sessions_root, _start_proxy
+from harness.builders import make_spec_linux
+from launcher.lib.build_spec import CredentialHostSpec, InjectedCredentialSpec, ProxySpec
+from launcher.lib.constants import CA_CERT, LAUNCH_PID, SESSION_RETENTION
+from launcher.lib.session_state import (
+    _prune_sessions_root,
+    _start_proxy,
+    create_proxy_state,
+    kill_proxy,
+)
 
 SESSION_COUNT = SESSION_RETENTION + 5
 
@@ -74,3 +82,24 @@ def test_the_proxy_gets_only_the_redirect_variable(
     _start_proxy(proxy, tmp_path)
 
     assert envs == [{"SANDBOX_PROXY_REDIRECT": "httpbin.test=127.0.0.1:1"}]
+
+
+def test_the_proxy_receives_the_credentials_on_stdin(tmp_path: Path) -> None:
+    binary = tmp_path / "sandbox-proxy"
+    binary.write_text('#!/bin/sh\nIFS= read -r line\nprintf %s "$line" > "$2.stdin"\necho 1234\n')
+    binary.chmod(0o755)
+    proxy = ProxySpec(binary=binary, allowlist_file=tmp_path / "allowlist.json", redirects={})
+    injected = {
+        "GH_TOKEN": InjectedCredentialSpec(
+            placeholder="dummy",
+            hosts={"api.github.com": CredentialHostSpec(scheme="bearer", username=None, header=None)},
+        ),
+    }
+    spec = dataclasses.replace(make_spec_linux(), proxy=proxy, injected_credentials=injected)
+
+    state = create_proxy_state(spec, tmp_path, {"GH_TOKEN": "real"})
+    kill_proxy(state)
+
+    assert state is not None and state.port == 1234
+    received = json.loads((tmp_path / f"{CA_CERT}.stdin").read_text())
+    assert received == {"api.github.com": {"header": "Authorization", "value": "Bearer real"}}

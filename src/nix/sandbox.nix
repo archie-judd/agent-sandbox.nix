@@ -49,7 +49,11 @@ let
   # word; escapeShellArg carries the fragment through unexpanded until
   # declare_env evals it.
   mkEnvFragment =
-    { outName, env }:
+    {
+      outName,
+      env,
+      injectedCredentials,
+    }:
     pkgs.writeText "${outName}-env" (
       pkgs.lib.concatMapStrings (
         name:
@@ -57,6 +61,15 @@ let
           pkgs.lib.escapeShellArg (builtins.toJSON env.${name})
         }\n"
       ) (builtins.attrNames env)
+      + pkgs.lib.concatMapStrings (
+        name:
+        "declare_env ${pkgs.lib.escapeShellArg name} ${
+          pkgs.lib.escapeShellArg (pkgs.lib.escapeShellArg injectedCredentials.${name}.placeholder)
+        }\n"
+        + "declare_secret ${pkgs.lib.escapeShellArg name} ${
+          pkgs.lib.escapeShellArg (builtins.toJSON injectedCredentials.${name}.secret)
+        }\n"
+      ) (builtins.attrNames injectedCredentials)
     );
 
   mkLaunchScript =
@@ -84,6 +97,7 @@ let
       allowHeadlessBrowsers,
       workspaceDir,
       proxyRedirects,
+      injectedCredentials,
     }:
     builtins.seq (validate.assertNoLegacyArgs legacyArgs) (
       builtins.seq allowedHostPorts (
@@ -92,13 +106,15 @@ let
             builtins.seq allowHeadlessBrowsers (
               builtins.seq workspaceDir (
                 builtins.seq proxyRedirects (
-                  pkgs.runCommand outName { } ''
-                    mkdir -p $out/bin
-                    install -m755 ${launchScript} $out/bin/${outName}
-                  ''
-                  // {
-                    buildSpec = buildSpec;
-                  }
+                  builtins.seq injectedCredentials (
+                    pkgs.runCommand outName { } ''
+                      mkdir -p $out/bin
+                      install -m755 ${launchScript} $out/bin/${outName}
+                    ''
+                    // {
+                      buildSpec = buildSpec;
+                    }
+                  )
                 )
               )
             )
@@ -124,6 +140,7 @@ in
   allowedDomains ? null,
   allowedHostPorts ? [ ],
   publishedPorts ? [ ],
+  injectedCredentials ? { },
   # Internal, for the test harness: maps "host" to "addr:port" so the proxy
   # dials a local address instead of resolving the original.
   _proxyRedirects ? { },
@@ -170,6 +187,12 @@ let
 
   validatedProxyRedirects = validate.validateProxyRedirects _proxyRedirects;
 
+  validatedInjectedCredentials = validate.validateInjectedCredentials {
+    injectedCredentials = injectedCredentials;
+    env = env;
+    allowedDomains = allowedDomains;
+  };
+
   sandboxBuildSpec =
     import ./spec.nix
       { pkgs = pkgs; }
@@ -196,11 +219,13 @@ let
         bashWrapper = bashWrapper;
         allowedDomains = allowedDomains;
         _proxyRedirects = validatedProxyRedirects;
+        injectedCredentials = validatedInjectedCredentials;
       };
 
   envFragment = mkEnvFragment {
     outName = outName;
     env = env;
+    injectedCredentials = validatedInjectedCredentials;
   };
 
   launchScript = mkLaunchScript {
@@ -226,4 +251,5 @@ mkWrapper {
   allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;
   workspaceDir = validatedWorkspaceDir;
   proxyRedirects = validatedProxyRedirects;
+  injectedCredentials = validatedInjectedCredentials;
 }

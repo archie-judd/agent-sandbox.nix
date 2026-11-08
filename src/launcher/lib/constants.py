@@ -10,6 +10,7 @@ SECCOMP_FILTER = "seccomp.bpf"
 # Where apply_network_rules leaves the filter open, and the number compute.py
 # writes after --seccomp; the two sides never meet in one process.
 SECCOMP_FD = 9
+SECRETS_FD = 3
 PASSWD = "passwd"
 CA_BUNDLE = "ca-bundle.pem"
 CA_CERT = "ca-cert.pem"

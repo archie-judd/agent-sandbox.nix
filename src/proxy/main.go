@@ -45,6 +45,13 @@ type Config map[string]DomainPolicy
 // hatch, set via SANDBOX_PROXY_REDIRECT as "host=addr:port[,...]".
 type Redirects map[string]string
 
+type Credential struct {
+	Header string `json:"header"`
+	Value  string `json:"value"`
+}
+
+type Credentials map[string]Credential
+
 // lowerASCII folds only ASCII, where strings.ToLower folds Unicode: under a
 // Unicode fold U+212A KELVIN SIGN lowercases to "k" and U+0130 to "i", so a
 // name the resolver and the origin both read as its own would match an
@@ -358,6 +365,22 @@ func isDomainAllowed(host string, cfg Config) bool {
 	}
 	_, ok := cfg["*"]
 	return ok
+}
+
+func readCredentials(r io.Reader) (Credentials, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	var raw Credentials
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	credentials := make(Credentials, len(raw))
+	for host, credential := range raw {
+		credentials[normaliseHost(host)] = credential
+	}
+	return credentials, nil
 }
 
 // lookupRedirect matches like lookupPolicy, so a subdomain that passes the
@@ -725,6 +748,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	credentials, err := readCredentials(os.Stdin)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "read credentials:", err)
+		os.Exit(1)
+	}
+	if len(credentials) > 0 {
+		hosts := make([]string, 0, len(credentials))
+		for host := range credentials {
+			hosts = append(hosts, host)
+		}
+		sort.Strings(hosts)
+		fmt.Fprintf(os.Stderr, "injecting credentials for: %s\n", strings.Join(hosts, ", "))
+	}
+
 	ca, err := newCertAuthority()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "generate CA:", err)
@@ -747,10 +784,10 @@ func main() {
 	fmt.Println(ln.Addr().(*net.TCPAddr).Port)
 	os.Stdout.Sync()
 
-	serve(ln, cfg, ca, redirects)
+	serve(ln, cfg, ca, redirects, credentials)
 }
 
-func serve(ln net.Listener, cfg Config, ca *certAuthority, redirects Redirects) {
+func serve(ln net.Listener, cfg Config, ca *certAuthority, redirects Redirects, credentials Credentials) {
 	conns := make(chan struct{}, maxConns)
 	var retryDelay time.Duration
 	for {
@@ -780,7 +817,7 @@ func serve(ln net.Listener, cfg Config, ca *certAuthority, redirects Redirects) 
 		case conns <- struct{}{}:
 			go func() {
 				defer func() { <-conns }()
-				handle(conn, cfg, ca, redirects)
+				handle(conn, cfg, ca, redirects, credentials)
 			}()
 		default:
 			// In a goroutine, so one client that never reads its refusal
@@ -790,7 +827,7 @@ func serve(ln net.Listener, cfg Config, ca *certAuthority, redirects Redirects) 
 	}
 }
 
-func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
+func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects, credentials Credentials) {
 	defer conn.Close()
 	hlr := &headerLimitReader{r: conn}
 	br := bufio.NewReader(hlr)
@@ -830,7 +867,7 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 			return
 		}
 		fmt.Fprintf(conn, "HTTP/1.1 200 Connection Established\r\n\r\n")
-		handleMITM(conn, host, req.Host, cfg, ca, redirects)
+		handleMITM(conn, host, req.Host, cfg, ca, redirects, credentials)
 	} else {
 		if p := portOf(req.Host); p != "" && p != "80" {
 			fmt.Fprintf(os.Stderr, "%s blocked non-80 plaintext: %s\n", time.Now().Format(time.RFC3339), req.Host)
@@ -900,7 +937,7 @@ func handle(conn net.Conn, cfg Config, ca *certAuthority, redirects Redirects) {
 	}
 }
 
-func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *certAuthority, redirects Redirects) {
+func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *certAuthority, redirects Redirects, credentials Credentials) {
 	leafCert, err := ca.mintCert(host)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s mint cert error for %s: %v\n", time.Now().Format(time.RFC3339), host, err)
@@ -983,6 +1020,9 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 			return
 		}
 		logAllowed(req, host)
+		if credential, ok := credentials[normaliseHost(host)]; ok {
+			req.Header.Set(credential.Header, credential.Value)
+		}
 
 		if err := dialUpstream(); err != nil {
 			fmt.Fprintf(os.Stderr, "%s upstream dial error for %s: %v\n", time.Now().Format(time.RFC3339), hostPort, err)

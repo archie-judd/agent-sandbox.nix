@@ -122,6 +122,93 @@ let
         builtins.throw "${errorPrefix} _proxyRedirects hosts must not contain \",\" or \"=\", and addresses must not contain \",\". Invalid: ${builtins.toJSON invalid}"
       else
         proxyRedirects;
+  validateInjectedCredentials =
+    {
+      injectedCredentials,
+      env,
+      allowedDomains,
+    }:
+    let
+      lower = pkgs.lib.toLower;
+      domainKeys =
+        if builtins.isList allowedDomains then
+          allowedDomains
+        else if builtins.isAttrs allowedDomains then
+          builtins.attrNames allowedDomains
+        else
+          [ ];
+      domainHosts = map (key: lower (builtins.head (builtins.split "/" key))) domainKeys;
+      hostAllowed =
+        host:
+        builtins.any (
+          domain: domain == "*" || domain == lower host || pkgs.lib.hasSuffix ".${domain}" (lower host)
+        ) domainHosts;
+      schemeFields = {
+        bearer = [ "scheme" ];
+        basic = [
+          "scheme"
+          "username"
+        ];
+        header = [
+          "scheme"
+          "header"
+        ];
+      };
+      validHostEntry =
+        entry:
+        builtins.isAttrs entry
+        && builtins.isString (entry.scheme or null)
+        && builtins.hasAttr entry.scheme schemeFields
+        && builtins.attrNames entry == builtins.sort builtins.lessThan schemeFields.${entry.scheme}
+        && builtins.all (field: builtins.isString entry.${field} && entry.${field} != "") (
+          builtins.attrNames entry
+        );
+      validEntry =
+        entry:
+        builtins.isAttrs entry
+        && builtins.attrNames entry == [
+          "hosts"
+          "placeholder"
+          "secret"
+        ]
+        && builtins.isString entry.secret
+        && entry.secret != ""
+        && builtins.isString entry.placeholder
+        && entry.placeholder != ""
+        && builtins.isAttrs entry.hosts
+        && entry.hosts != { }
+        && builtins.all validHostEntry (builtins.attrValues entry.hosts);
+      names = builtins.attrNames injectedCredentials;
+      invalidNames = builtins.filter (name: builtins.match "[A-Za-z_][A-Za-z0-9_]*" name == null) names;
+      invalidEntries = builtins.filter (name: !(validEntry injectedCredentials.${name})) names;
+      envClashes = builtins.filter (name: builtins.hasAttr name env) names;
+      hosts = builtins.concatMap (
+        name: map lower (builtins.attrNames injectedCredentials.${name}.hosts)
+      ) names;
+      duplicateHosts = pkgs.lib.unique (
+        builtins.filter (host: builtins.length (builtins.filter (other: other == host) hosts) > 1) hosts
+      );
+      unallowedHosts = builtins.filter (host: !(hostAllowed host)) hosts;
+    in
+    if !(builtins.isAttrs injectedCredentials) then
+      builtins.throw "${errorPrefix} injectedCredentials must be an attrset mapping an env var name to { secret, placeholder, hosts }"
+    else if injectedCredentials == { } then
+      injectedCredentials
+    else if allowedDomains == null then
+      builtins.throw "${errorPrefix} injectedCredentials requires allowedDomains: credentials are injected by the proxy, which runs only when allowedDomains is set"
+    else if invalidNames != [ ] then
+      builtins.throw "${errorPrefix} injectedCredentials names must be env var names. Invalid: ${builtins.toJSON invalidNames}"
+    else if invalidEntries != [ ] then
+      builtins.throw "${errorPrefix} injectedCredentials entries must be { secret = <string>; placeholder = <string>; hosts = { \"<host>\" = { scheme = \"bearer\"; } | { scheme = \"basic\"; username = <string>; } | { scheme = \"header\"; header = <string>; }; }; }. Invalid: ${builtins.toJSON invalidEntries}"
+    else if envClashes != [ ] then
+      builtins.throw "${errorPrefix} injectedCredentials names must not also be set in env. Both: ${builtins.toJSON envClashes}"
+    else if duplicateHosts != [ ] then
+      builtins.throw "${errorPrefix} injectedCredentials must not name a host in more than one credential. Repeated: ${builtins.toJSON duplicateHosts}"
+    else if unallowedHosts != [ ] then
+      builtins.throw "${errorPrefix} injectedCredentials hosts must be allowed by allowedDomains. Not allowed: ${builtins.toJSON unallowedHosts}"
+    else
+      injectedCredentials;
+
   assertNoLegacyArgs =
     {
       restrictNetwork,
@@ -179,4 +266,5 @@ in
   validateAllowHeadlessBrowsers = validateAllowHeadlessBrowsers;
   validateWorkspaceDir = validateWorkspaceDir;
   validateProxyRedirects = validateProxyRedirects;
+  validateInjectedCredentials = validateInjectedCredentials;
 }
