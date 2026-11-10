@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.8.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.7.1...v5.8.0) (2026-11-10)
+
+
+### Features
+
+* injectedCredentials ([#207](https://github.com/archie-judd/agent-sandbox.nix/issues/207)) ([dcab096](https://github.com/archie-judd/agent-sandbox.nix/commit/dcab0968a0946a063981e7f6c98b41a102238352))
+
 ## [5.7.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.7.0...v5.7.1) (2026-11-05)
 
 
