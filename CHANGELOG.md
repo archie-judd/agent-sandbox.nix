@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.9.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.8.0...v5.9.0) (2026-11-10)
+
+
+### Features
+
+* antigravity-cli template ([#209](https://github.com/archie-judd/agent-sandbox.nix/issues/209)) ([20e534a](https://github.com/archie-judd/agent-sandbox.nix/commit/20e534ab2640b1f8fd96fe8a679339b0bd4e19bc))
+
 ## [5.8.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.7.1...v5.8.0) (2026-11-10)
 
 
