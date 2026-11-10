@@ -514,7 +514,7 @@ func TestWebSocketTunnel(t *testing.T) {
 		if err != nil {
 			return
 		}
-		handle(conn, wildcardPolicy, ca, redirects)
+		handle(conn, wildcardPolicy, ca, redirects, Credentials{})
 	}()
 
 	conn, err := net.Dial("tcp", proxyLn.Addr().String())
@@ -727,7 +727,7 @@ func TestHandleRejectsOversizedHeader(t *testing.T) {
 	}
 	client, server := net.Pipe()
 	defer client.Close()
-	go handle(server, wildcardPolicy, ca, Redirects{})
+	go handle(server, wildcardPolicy, ca, Redirects{}, Credentials{})
 
 	client.SetDeadline(time.Now().Add(10 * time.Second))
 	go func() {
@@ -769,7 +769,7 @@ func TestHandleRefusesNonASCIIHost(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				handle(server, Config{"k.example": {HasBase: true, AllowAll: true}}, ca, Redirects{})
+				handle(server, Config{"k.example": {HasBase: true, AllowAll: true}}, ca, Redirects{}, Credentials{})
 			}()
 
 			client.SetDeadline(time.Now().Add(10 * time.Second))
@@ -805,7 +805,7 @@ func TestHandleMITMDeadlinesClientHandshake(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		handle(server, wildcardPolicy, ca, Redirects{})
+		handle(server, wildcardPolicy, ca, Redirects{}, Credentials{})
 	}()
 
 	client.SetDeadline(time.Now().Add(10 * time.Second))
@@ -874,7 +874,7 @@ func TestServeLogsAcceptBackoffOnce(t *testing.T) {
 		<-stop
 		return nil, errors.New("listener stopped")
 	}}
-	go serve(ln, wildcardPolicy, nil, Redirects{})
+	go serve(ln, wildcardPolicy, nil, Redirects{}, Credentials{})
 
 	select {
 	case <-reached:
@@ -942,7 +942,7 @@ func TestServeRefusesBeyondMaxConns(t *testing.T) {
 			return nil, errors.New("listener stopped")
 		}
 	}}
-	go serve(ln, wildcardPolicy, ca, Redirects{})
+	go serve(ln, wildcardPolicy, ca, Redirects{}, Credentials{})
 
 	refusedClient.SetDeadline(time.Now().Add(10 * time.Second))
 	status, err := bufio.NewReader(refusedClient).ReadString('\n')
@@ -1290,6 +1290,111 @@ func TestLogBlocked(t *testing.T) {
 			logBlocked(req, c.host, reason)
 			if log := stderr(); !strings.Contains(log, c.want) {
 				t.Errorf("stderr = %q, want it to contain %q", log, c.want)
+			}
+		})
+	}
+}
+
+func TestReadCredentials(t *testing.T) {
+	got, err := readCredentials(strings.NewReader(`{"API.Example.com.": {"header": "Authorization", "value": "Bearer real"}}`))
+	if err != nil {
+		t.Fatalf("readCredentials: %v", err)
+	}
+	want := Credential{Header: "Authorization", Value: "Bearer real"}
+	if len(got) != 1 || got["api.example.com"] != want {
+		t.Errorf("readCredentials = %v, want api.example.com mapped to %v", got, want)
+	}
+
+	for _, input := range []string{"", "not json", `["api.example.com"]`} {
+		if _, err := readCredentials(strings.NewReader(input)); err == nil {
+			t.Errorf("readCredentials(%q) succeeded, want an error", input)
+		}
+	}
+}
+
+func TestHandleMITMInjectsCredentials(t *testing.T) {
+	cases := []struct {
+		name string
+		host string
+		want string
+	}{
+		{name: "named host gets the credential", host: "example.com", want: "Bearer real"},
+		{name: "subdomain keeps the client's header", host: "sub.example.com", want: "Bearer placeholder"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			upstream, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("listen upstream: %v", err)
+			}
+			defer upstream.Close()
+			seen := make(chan string, 1)
+			go func() {
+				conn, err := upstream.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				req, err := http.ReadRequest(bufio.NewReader(conn))
+				if err != nil {
+					return
+				}
+				seen <- req.Header.Get("Authorization")
+				fmt.Fprintf(conn, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+			}()
+
+			ca, err := newCertAuthority()
+			if err != nil {
+				t.Fatalf("new cert authority: %v", err)
+			}
+			proxyLn, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("listen proxy: %v", err)
+			}
+			defer proxyLn.Close()
+			redirects := Redirects{"example.com": upstream.Addr().String()}
+			credentials := Credentials{"example.com": {Header: "Authorization", Value: "Bearer real"}}
+			stderr := captureStderr(t)
+			go func() {
+				conn, err := proxyLn.Accept()
+				if err != nil {
+					return
+				}
+				handle(conn, wildcardPolicy, ca, redirects, credentials)
+			}()
+
+			conn, err := net.Dial("tcp", proxyLn.Addr().String())
+			if err != nil {
+				t.Fatalf("dial proxy: %v", err)
+			}
+			defer conn.Close()
+			conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+			fmt.Fprintf(conn, "CONNECT %s:443 HTTP/1.1\r\nHost: %s:443\r\n\r\n", c.host, c.host)
+			br := bufio.NewReader(conn)
+			status, err := br.ReadString('\n')
+			if err != nil || !strings.HasPrefix(status, "HTTP/1.1 200") {
+				t.Fatalf("CONNECT response = %q, err = %v", status, err)
+			}
+			if _, err := br.ReadString('\n'); err != nil {
+				t.Fatalf("read CONNECT header terminator: %v", err)
+			}
+			tlsConn := tls.Client(conn, &tls.Config{ServerName: c.host, InsecureSkipVerify: true})
+			if err := tlsConn.Handshake(); err != nil {
+				t.Fatalf("TLS handshake: %v", err)
+			}
+			fmt.Fprintf(tlsConn, "GET / HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer placeholder\r\n\r\n", c.host)
+
+			select {
+			case got := <-seen:
+				if got != c.want {
+					t.Errorf("upstream Authorization = %q, want %q", got, c.want)
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("upstream received no request")
+			}
+			if log := stderr(); strings.Contains(log, "real") {
+				t.Errorf("stderr = %q, want no credential value", log)
 			}
 		})
 	}

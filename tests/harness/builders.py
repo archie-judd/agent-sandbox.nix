@@ -46,6 +46,7 @@ def make_spec_linux(
         pre_entry_script=Path("/nix/store/pre-entry"),
         sandboxed_binary=Path("/nix/store/agent/bin/agent"),
         proxy=None,
+        injected_credentials={},
         hosts_file=Path("/nix/store/hosts"),
         empty_file=Path("/nix/store/empty"),
         dependencies=DependenciesLinux(
@@ -91,6 +92,7 @@ def make_spec_darwin(
         pre_entry_script=Path("/nix/store/pre-entry"),
         sandboxed_binary=Path("/nix/store/agent/bin/agent"),
         proxy=None,
+        injected_credentials={},
         dependencies=DependenciesDarwin(
             git=Path("/nix/store/git/bin/git"),
             python=Path("/nix/store/python3/bin/python3"),

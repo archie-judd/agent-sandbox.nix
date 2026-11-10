@@ -24,6 +24,7 @@
   bashWrapper,
   allowedDomains,
   _proxyRedirects ? { },
+  injectedCredentials ? { },
 }:
 let
   sandboxProxy = import ./proxy.nix { pkgs = pkgs; };
@@ -133,6 +134,14 @@ let
     pre_entry_script = "${preEntryScript}";
     sandboxed_binary = "${pkg}/bin/${binName}";
     proxy = proxy;
+    injected_credentials = builtins.mapAttrs (name: credential: {
+      placeholder = credential.placeholder;
+      hosts = builtins.mapAttrs (host: entry: {
+        scheme = entry.scheme;
+        username = entry.username or null;
+        header = entry.header or null;
+      }) credential.hosts;
+    }) injectedCredentials;
     dependencies = dependencies;
   }
   // platformFields;

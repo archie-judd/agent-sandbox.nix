@@ -12,7 +12,7 @@ def test_every_unresolvable_value_is_reported_by_attribute(
     result = launch(binary, "true", env={"SANDBOX_TEST_RESOLVED": "resolved-value"})
 
     assert result.returncode == 1
-    assert "[ERROR][agent-sandbox.nix] could not resolve these env values:" in result.stderr
+    assert "[ERROR][agent-sandbox.nix] could not resolve these env and injectedCredentials values:" in result.stderr
     assert 'ENV_MISSING_ONE = "$SANDBOX_TEST_MISSING_ONE"' in result.stderr
     assert 'ENV_MISSING_TWO = "$SANDBOX_TEST_MISSING_TWO"' in result.stderr
     assert "unbound variable" not in result.stderr

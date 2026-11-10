@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Mapping
 
 from launcher.lib.build_spec import ProxySpec, SandboxBuildSpec, SandboxBuildSpecLinux
 from launcher.lib.constants import (
@@ -23,6 +24,7 @@ from launcher.lib.constants import (
     SESSION_RETENTION,
     LAUNCH_PID,
 )
+from launcher.lib.credentials import build_proxy_credentials
 
 # Deliberately undocumented; used by the test suite. XDG_STATE_HOME is the
 # supported knob.
@@ -164,7 +166,12 @@ def _start_proxy(proxy: ProxySpec, session_dir: Path) -> subprocess.Popen[str]:
         PROXY_LISTEN_HOST,
     ]
     return subprocess.Popen(
-        argv, stdout=subprocess.PIPE, stderr=log, text=True, env=environ
+        argv,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=log,
+        text=True,
+        env=environ,
     )
 
 
@@ -220,12 +227,22 @@ def kill_proxy(proxy: ProxyState | None) -> None:
         pass
 
 
-def create_proxy_state(spec: SandboxBuildSpec, session_dir: Path) -> ProxyState | None:
+def create_proxy_state(
+    spec: SandboxBuildSpec, session_dir: Path, secrets: Mapping[str, str]
+) -> ProxyState | None:
     if spec.proxy is None:
         return None
 
+    credentials = build_proxy_credentials(spec.injected_credentials, secrets)
     process = _start_proxy(spec.proxy, session_dir)
     try:
+        if process.stdin is None:
+            raise SystemExit(f"{ERROR_PREFIX} sandbox proxy stdin was not captured")
+        try:
+            process.stdin.write(json.dumps(credentials))
+            process.stdin.close()
+        except BrokenPipeError:
+            pass
         port = _read_proxy_port(process, session_dir)
     except BaseException:
         if process.poll() is None:

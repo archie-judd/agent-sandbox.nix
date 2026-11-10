@@ -36,7 +36,8 @@ Everything else is denied. Only changes to the project directory and declared rw
     * [Published ports](#published-ports)
 * [UNIX-domain sockets](#unix-domain-sockets)
 * [Authentication](#authentication)
-    * [Environment variable tokens (recommended)](#environment-variable-tokens-recommended)
+    * [Declaring credentials](#declaring-credentials)
+    * [Injected credentials (recommended)](#injected-credentials-recommended)
     * [Credential files via `rwDirs`](#credential-files-via-rwdirs)
 * [Git](#git)
     * [Setting your git identity](#setting-your-git-identity)
@@ -139,6 +140,7 @@ Set `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `~/.claude.jso
 | `roDirs` | no | Directories the agent can read but not write (for example signed binaries, reference source trees, secret stores) |
 | `roFiles` | no | Individual files the agent can read but not write (for example `~/.config/git/config` for the git identity, see [Setting your git identity](#setting-your-git-identity) |
 | `env` | no | Additional environment variables, as an attrset |
+| `injectedCredentials` | no | Tokens the proxy adds to requests, so the agent never sees them. Requires `allowedDomains`. See [Injected credentials](#injected-credentials-recommended). |
 | `allowedDomains` | no | Limits the domains the sandbox can reach. Leave it unset for open internet. Accepts a list of domains (all methods allowed), or an attrset that maps each domain to `"*"` or to a list of HTTP methods. `[ ]` blocks all internet access. |
 | `allowUnixSockets` | no | If `true`, the agent can create and connect to UNIX-domain (AF_UNIX) sockets. It can connect in directories it can read, and bind in directories it can write. Defaults to `false`. See [UNIX-domain sockets](#unix-domain-sockets). |
 | `allowedHostPorts` | no | Host-local TCP ports the sandbox can reach. Defaults to `[ ]`. Set it to `null` to allow all host-local TCP ports. Otherwise, entries must be integers from `1` to `65535`. |
@@ -210,7 +212,7 @@ in
 
 On NixOS and Nix Darwin, use `environment.systemPackages` in place of `home.packages`. See [Arguments](#arguments) for the full argument list.
 
-Values in `env` are shell expressions that expand when the wrapper launches, so `$CLAUDE_CODE_OAUTH_TOKEN` has to be set in the shell you run `claude-sandboxed` from. There is no dev shell to set it here, so export it from your shell profile, or read the secret at runtime as described in [Authentication](#environment-variable-tokens-recommended).
+Values in `env` are shell expressions that expand when the wrapper launches, so `$CLAUDE_CODE_OAUTH_TOKEN` has to be set in the shell you run `claude-sandboxed` from. There is no dev shell to set it here, so export it from your shell profile, or read the secret at runtime as described in [Declaring credentials](#declaring-credentials).
 
 ## Network restrictions
 
@@ -295,37 +297,79 @@ Socket access then follows the filesystem grants on both platforms. In paths the
 
 ## Authentication
 
-The sandbox masks `$HOME`, so agents cannot reach your system keychain, browser sessions, or SSH keys. A launch from your home directory is the exception, and exposes all of it. The recommended method is to authenticate with an environment variable. Interactive login flows (for example `claude /login` and `gh auth login`) may not work inside the sandbox.
+The sandbox masks `$HOME`, so agents cannot reach your system keychain, browser sessions, or SSH keys. A launch from your home directory is the exception, and exposes all of it. Interactive login flows (for example `claude /login` and `gh auth login`) may not work inside the sandbox.
 
-### Environment variable tokens (recommended)
+### Declaring credentials
 
-Export your token in the host terminal before you launch the sandbox. The sandbox reads tokens at runtime, so they do not leak into the Nix store:
+There are two ways to give the agent a token:
+
+- `env` sets the token as an environment variable in the sandbox. It is the simplest option and works with every client. The agent can read the token.
+- `injectedCredentials` gives the token to the proxy, which adds it to requests to the hosts you list. The sandbox sees only a placeholder. The agent can use the token through the proxy, but cannot read it. See [Injected credentials](#injected-credentials-recommended).
+
+Either way, write a shell expression, not the token itself. The wrapper evaluates it at launch, before the sandbox starts, so the token never enters the Nix store. The expression can read an environment variable you export in the shell you launch from, e.g.:
+
+In your shell or shell config file:
 
 ```
-# Claude Code
 export CLAUDE_CODE_OAUTH_TOKEN="<your_token_here>"
-
-# GitHub Copilot CLI
 export GITHUB_TOKEN="<your_token_here>"
 ```
 
-Pass the variable reference, not the value, into `env`:
+And then in your agent-sandbox.nix config:
 
 ```nix
 env = {
   CLAUDE_CODE_OAUTH_TOKEN = "$CLAUDE_CODE_OAUTH_TOKEN";
-  ...
+  GITHUB_TOKEN = "$GITHUB_TOKEN";
 };
 ```
 
-If you store your secret in a file instead (for example with sops), you can set a command that reads the secret at runtime:
+Or it can run a command that reads the token from a file, for example one that sops decrypts:
 
 ```nix
-env = {
-  CLAUDE_CODE_OAUTH_TOKEN = "$(${pkgs.coreutils}/bin/cat /run/secrets/claude-code-oauth-token)";
-  ...
+env.GITHUB_TOKEN = "$(${pkgs.coreutils}/bin/cat /run/secrets/github-token)";
+```
+
+The command runs on the host before the sandbox starts, so the sandbox does not need access to the file. Leave it out of `roFiles` and `roDirs`, or the agent can read the token there.
+
+`injectedCredentials` takes the same expression in `secret`.
+
+### Injected credentials (recommended)
+
+```nix
+injectedCredentials = {
+  CLAUDE_CODE_OAUTH_TOKEN = {
+    secret = "$CLAUDE_CODE_OAUTH_TOKEN";
+    placeholder = "sk-ant-oat01-dummy";
+    hosts = {
+      "api.anthropic.com" = { scheme = "bearer"; };
+    };
+  };
+  GH_TOKEN = {
+    secret = "$(${pkgs.coreutils}/bin/cat /run/secrets/github-token)";
+    placeholder = "dummy";
+    hosts = {
+      "api.github.com" = { scheme = "bearer"; };
+      "github.com" = { scheme = "basic"; username = "x-access-token"; };
+    };
+  };
+  GITLAB_TOKEN = {
+    secret = "$GITLAB_TOKEN";
+    placeholder = "dummy";
+    hosts = {
+      "gitlab.example.com" = { scheme = "header"; header = "PRIVATE-TOKEN"; };
+    };
+  };
 };
 ```
+
+- The key is the env var the sandbox sees. It holds `placeholder`. Clients like `gh` refuse to send requests without a token, so the placeholder must be one they accept. Claude Code's needs the `sk-ant-oat01-` prefix.
+- `secret` is a shell expression evaluated at launch. See [Declaring credentials](#declaring-credentials).
+- `scheme` sets the header: `bearer` sends `Authorization: Bearer <token>`, `basic` sends `Authorization: Basic` with `username`, and `header` sends the raw token in the header you name.
+- Hosts match exactly, not by subdomain. Each host must be allowed by `allowedDomains`, and only one credential can name it.
+- The proxy overwrites the header on every request to a listed host, whatever the client sent.
+
+The agent can still use the token through the proxy for as long as the session runs. Injection stops the token itself from leaving the sandbox. It works only with static tokens, such as a `claude setup-token` token or a personal access token. A token the client refreshes itself sends the real credential in the request body, which the proxy does not touch.
 
 ### Credential files via `rwDirs`
 

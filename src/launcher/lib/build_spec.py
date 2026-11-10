@@ -30,6 +30,35 @@ class ProxySpec:
 
 
 @dataclass(frozen=True, kw_only=True)
+class CredentialHostSpec:
+    scheme: Literal["bearer", "basic", "header"]
+    username: str | None
+    header: str | None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        return cls(
+            scheme=data["scheme"],
+            username=data["username"],
+            header=data["header"],
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class InjectedCredentialSpec:
+    placeholder: str
+    hosts: Mapping[str, CredentialHostSpec]
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        hosts = {
+            host: CredentialHostSpec.from_dict(entry)
+            for host, entry in data["hosts"].items()
+        }
+        return cls(placeholder=data["placeholder"], hosts=hosts)
+
+
+@dataclass(frozen=True, kw_only=True)
 class PublishedPort:
     port: int
     bind_addr: str
@@ -127,6 +156,7 @@ class SandboxBuildSpec:
     pre_entry_script: Path
     sandboxed_binary: Path
     proxy: ProxySpec | None
+    injected_credentials: Mapping[str, InjectedCredentialSpec]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -168,6 +198,7 @@ class _CommonBuildSpec(TypedDict):
     pre_entry_script: Path
     sandboxed_binary: Path
     proxy: ProxySpec | None
+    injected_credentials: Mapping[str, InjectedCredentialSpec]
 
 
 def _common_build_spec(data: Mapping[str, Any]) -> _CommonBuildSpec:
@@ -210,6 +241,10 @@ def _common_build_spec(data: Mapping[str, Any]) -> _CommonBuildSpec:
         pre_entry_script=Path(data["pre_entry_script"]),
         sandboxed_binary=Path(data["sandboxed_binary"]),
         proxy=proxy,
+        injected_credentials={
+            name: InjectedCredentialSpec.from_dict(entry)
+            for name, entry in data["injected_credentials"].items()
+        },
     )
 
 

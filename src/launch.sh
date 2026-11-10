@@ -8,11 +8,13 @@
 set -uo pipefail
 
 DECLARED_ENV=()
+DECLARED_SECRETS=()
 UNRESOLVED=()
 
-# The declared env values are runtime shell expressions; they expand here and
-# never enter Python or touch disk. The expansion runs inside a command
-# substitution so that `set -u` on an unset variable kills only the subshell,
+# The declared env values and secrets are runtime shell expressions; they
+# expand here and never touch disk. The env values never enter Python; the
+# secrets pass through it, on a separate descriptor, to reach the proxy. The
+# expansion runs inside a command substitution so that `set -u` on an unset variable kills only the subshell,
 # letting every failure be collected and reported against its env attribute.
 declare_env() {
   local name=$1 expression=$2 value
@@ -23,12 +25,21 @@ declare_env() {
   fi
 }
 
+declare_secret() {
+  local name=$1 expression=$2 value
+  if value=$(eval "printf '%s' $expression" 2>/dev/null); then
+    DECLARED_SECRETS+=("$name=$value")
+  else
+    UNRESOLVED+=("injectedCredentials.$name.secret = $expression")
+  fi
+}
+
 # shellcheck source=/dev/null
 source "@envFragment@"
 
 if ((${#UNRESOLVED[@]})); then
   {
-    echo "@errorPrefix@ could not resolve these env values:"
+    echo "@errorPrefix@ could not resolve these env and injectedCredentials values:"
     echo
     for entry in "${UNRESOLVED[@]}"; do
       echo "  $entry"
@@ -50,7 +61,13 @@ export PWD
 # `env -i` clears it before bubblewrap.
 export PYTHONPATH=@launcher@
 
-if ! SESSION_DIR=$("@python@" -P -s -S -m launcher.prepare "@spec@"); then
+if ! SESSION_DIR=$(
+  "@python@" -P -s -S -m launcher.prepare "@spec@" 3< <(
+    if ((${#DECLARED_SECRETS[@]})); then
+      printf '%s\0' "${DECLARED_SECRETS[@]}"
+    fi
+  )
+); then
   exit 1
 fi
 
