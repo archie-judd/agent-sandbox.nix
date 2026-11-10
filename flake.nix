@@ -16,10 +16,7 @@
       ];
     in
     {
-      lib = forAllSystems (
-        system:
-        import ./. { pkgs = nixpkgs.legacyPackages.${system}; }
-      );
+      lib = forAllSystems (system: import ./. { pkgs = nixpkgs.legacyPackages.${system}; });
       templates = {
         claude = {
           path = ./templates/claude;
@@ -44,6 +41,10 @@
         gemini = {
           path = ./templates/gemini;
           description = "Dev shell with a sandboxed Gemini binary";
+        };
+        antigravity = {
+          path = ./templates/antigravity;
+          description = "Dev shell with a sandboxed Antigravity CLI binary";
         };
       };
       checks = forAllSystems (
