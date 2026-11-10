@@ -74,6 +74,7 @@ The following flake templates are provided for quick setup:
 
 | Template | Agent | Wrapped binary |
 | --- | --- | --- |
+| `antigravity` | Antigravity CLI | `agy-sandboxed` |
 | `claude` | Claude Code | `claude-sandboxed` |
 | `codex` | Codex | `codex-sandboxed` |
 | `copilot` | GitHub Copilot CLI | `copilot-sandboxed` |
