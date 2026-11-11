@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.10.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.9.0...v5.10.0) (2026-11-11)
+
+
+### Features
+
+* log injected credentials ([#211](https://github.com/archie-judd/agent-sandbox.nix/issues/211)) ([277aeef](https://github.com/archie-judd/agent-sandbox.nix/commit/277aeefb7b566d02cc6c31b5a735d6e610e556ec))
+
 ## [5.9.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.8.0...v5.9.0) (2026-11-10)
 
 
