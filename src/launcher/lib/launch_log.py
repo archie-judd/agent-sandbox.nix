@@ -6,7 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
-from launcher.lib.build_spec import SandboxBuildSpecDarwin, SandboxBuildSpecLinux
+from launcher.lib.build_spec import (
+    CredentialHostSpec,
+    SandboxBuildSpecDarwin,
+    SandboxBuildSpecLinux,
+)
 from launcher.lib.host_state import DeclaredDir, DeclaredPath, HostState
 from launcher.lib.session_state import SessionState, SessionStateDarwin
 
@@ -45,6 +49,12 @@ def _get_declared_label(declared: DeclaredPath) -> str:
     return f"{declared.mode}File"
 
 
+def _get_credential_host_label(host: str, entry: CredentialHostSpec) -> str:
+    if entry.scheme == "header":
+        return f"{host} (header {entry.header})"
+    return f"{host} ({entry.scheme})"
+
+
 def write_launch_request(
     log_file: Path,
     session_dir: Path,
@@ -73,6 +83,15 @@ def write_launch_request(
     else:
         network = f"restricted (allowlist {spec.proxy.allowlist_file})"
 
+    credentials = [
+        f"  {name} -> "
+        + ", ".join(
+            _get_credential_host_label(host, entry)
+            for host, entry in credential.hosts.items()
+        )
+        for name, credential in spec.injected_credentials.items()
+    ]
+
     _append(
         log_file,
         [
@@ -95,6 +114,8 @@ def write_launch_request(
             _list_field("rwFiles", spec.rw_files),
             _list_field("roDirs", spec.ro_dirs),
             _list_field("roFiles", spec.ro_files),
+            _field("injectedCredentials", "" if credentials else _NONE),
+            *credentials,
             "",
         ],
     )
