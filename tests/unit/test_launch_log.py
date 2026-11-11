@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from harness.builders import make_host_darwin, make_session_darwin, make_spec_darwin
+from launcher.lib.build_spec import CredentialHostSpec, InjectedCredentialSpec
 from launcher.lib.host_state import _get_declared_paths
 from launcher.lib.launch_config.shared import get_sessions_root_warnings
 from launcher.lib.launch_log import (
@@ -35,6 +36,37 @@ def test_the_request_records_env_keys(tmp_path: Path) -> None:
     write_launch_request(log, tmp_path, Path("/spec.json"), spec, tmp_path, NOW)
 
     assert "env keys:          TEST_VAR" in log.read_text()
+
+
+def test_the_request_records_injected_credentials_without_their_placeholders(
+    tmp_path: Path,
+) -> None:
+    log = tmp_path / "launch.log"
+    spec = make_spec_darwin(
+        injected_credentials={
+            "TEST_TOKEN": InjectedCredentialSpec(
+                placeholder="test-placeholder",
+                hosts={
+                    "a.test": CredentialHostSpec(scheme="bearer", username=None, header=None),
+                    "b.test": CredentialHostSpec(scheme="header", username=None, header="X-Test"),
+                },
+            )
+        }
+    )
+
+    write_launch_request(log, tmp_path, Path("/spec.json"), spec, tmp_path, NOW)
+
+    text = log.read_text()
+    assert "injectedCredentials:\n  TEST_TOKEN -> a.test (bearer), b.test (header X-Test)\n" in text
+    assert "test-placeholder" not in text
+
+
+def test_the_request_records_no_injected_credentials(tmp_path: Path) -> None:
+    log = tmp_path / "launch.log"
+
+    write_launch_request(log, tmp_path, Path("/spec.json"), make_spec_darwin(), tmp_path, NOW)
+
+    assert "injectedCredentials: (none)" in log.read_text()
 
 
 def test_refusals_are_recorded(tmp_path: Path) -> None:
