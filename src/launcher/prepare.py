@@ -40,6 +40,7 @@ from launcher.lib.session_state import (
     create_darwin_sandbox_home,
     create_darwin_sandbox_tmpdir,
     create_firefox_policies,
+    create_java_truststore,
     create_nss_db,
     create_proxy_state,
     create_session_dir,
@@ -87,6 +88,8 @@ def _prepare_launch_linux(
         if nss_db is not None:
             stack.callback(remove_sandbox_dir, nss_db)
 
+        java_cacerts = create_java_truststore(spec, session_dir, session_dir)
+
         firefox_policies = create_firefox_policies(spec, session_dir)
 
         session = SessionState(
@@ -94,6 +97,7 @@ def _prepare_launch_linux(
             proxy=proxy,
             nss_db=nss_db,
             firefox_policies=firefox_policies,
+            java_cacerts=java_cacerts,
         )
         config = linux_compute.compute_launch_config(spec, host, session)
         write_launch_config_linux(config, session)
@@ -121,11 +125,14 @@ def _prepare_launch_darwin(
         proxy = create_proxy_state(spec, session_dir, secrets)
         stack.callback(kill_proxy, proxy)
 
+        java_cacerts = create_java_truststore(spec, session_dir, sandbox_tmpdir)
+
         session = SessionStateDarwin(
             session_dir=session_dir,
             proxy=proxy,
             nss_db=None,
             firefox_policies=None,
+            java_cacerts=java_cacerts,
             sandbox_home=sandbox_home,
             sandbox_tmpdir=sandbox_tmpdir,
         )

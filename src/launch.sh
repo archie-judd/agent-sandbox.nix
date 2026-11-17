@@ -9,6 +9,7 @@ set -uo pipefail
 
 DECLARED_ENV=()
 DECLARED_SECRETS=()
+APPEND_ENV=()
 UNRESOLVED=()
 
 # The declared env values and secrets are runtime shell expressions; they
@@ -32,6 +33,24 @@ declare_secret() {
   else
     UNRESOLVED+=("injectedCredentials.$name.secret = $expression")
   fi
+}
+
+# Keep a value the sandbox already declared, such as MAVEN_OPTS, and add the
+# options the launcher needs after it.
+append_env() {
+  local entry name value index existing
+  for entry in "${APPEND_ENV[@]}"; do
+    name=${entry%%=*}
+    value=${entry#*=}
+    for index in "${!DECLARED_ENV[@]}"; do
+      if [[ ${DECLARED_ENV[$index]} == "$name="* ]]; then
+        existing=${DECLARED_ENV[$index]#*=}
+        DECLARED_ENV[$index]="$name=$existing${existing:+ }$value"
+        continue 2
+      fi
+    done
+    DECLARED_ENV+=("$entry")
+  done
 }
 
 # shellcheck source=/dev/null
@@ -83,6 +102,8 @@ trap 'STATUS=$?; "@python@" -P -s -S -m launcher.cleanup "$SESSION_DIR" "$STATUS
 
 mapfile -d '' ARGV_BEFORE_ENV <"$SESSION_DIR/argv-before-env"
 mapfile -d '' ARGV_AFTER_ENV <"$SESSION_DIR/argv-after-env"
+mapfile -d '' APPEND_ENV <"$SESSION_DIR/append-env"
+append_env
 
 # Launch a subshell so we don't need to cd in the main process, which tmux uses to determine its current working directory. It would show "/" instead of the launch dir, which is confusing.
 (cd / && exec "${ARGV_BEFORE_ENV[@]}" "${DECLARED_ENV[@]}" "${ARGV_AFTER_ENV[@]}" "$@")

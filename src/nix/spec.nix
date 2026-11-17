@@ -60,6 +60,16 @@ let
 
   certutilBinary = if builtins.elem "chromium" allowHeadlessBrowsers then "${pkgs.nssTools}/bin/certutil" else null;
 
+  # The launcher builds a per-session PKCS#12 Java trust store from the host
+  # roots. Null without the proxy, which is the only thing that needs it.
+  opensslBinary =
+    if allowedDomains == null then
+      null
+    else if pkgs.lib.versionAtLeast pkgs.openssl.version "3.4" then
+      "${pkgs.openssl.bin}/bin/openssl"
+    else
+      throw "[ERROR][agent-sandbox.nix] OpenSSL 3.4 or newer is required to build the Java trust store";
+
   dependencies =
     if platform == "linux" then
       {
@@ -71,12 +81,14 @@ let
         python = "${pkgs.python3}/bin/python3";
         nix = nixBinary;
         certutil = certutilBinary;
+        openssl = opensslBinary;
       }
     else
       {
         git = "${pkgs.git}/bin/git";
         python = "${pkgs.python3}/bin/python3";
         nix = nixBinary;
+        openssl = opensslBinary;
       };
 
   # Omitted when allowedDomains is unset, so an unrestricted wrapper does
@@ -130,6 +142,7 @@ let
     closure_paths_file = "${closurePathsFile}";
     cacert_dir = "${pkgs.cacert}/etc/ssl/certs";
     cacert_bundle = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+    cacert_no_trust_rules_bundle = "${pkgs.cacert}/etc/ssl/certs/ca-no-trust-rules-bundle.crt";
     shell = "${bashWrapper}/bin/bash";
     pre_entry_script = "${preEntryScript}";
     sandboxed_binary = "${pkg}/bin/${binName}";

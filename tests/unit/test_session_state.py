@@ -2,17 +2,30 @@ import dataclasses
 import json
 import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from harness.builders import make_spec_linux
-from launcher.lib.build_spec import CredentialHostSpec, InjectedCredentialSpec, ProxySpec
-from launcher.lib.constants import CA_CERT, LAUNCH_PID, SESSION_RETENTION
+from harness.builders import make_spec_darwin, make_spec_linux
+from launcher.lib.build_spec import (
+    CredentialHostSpec,
+    InjectedCredentialSpec,
+    ProxySpec,
+    SandboxBuildSpecDarwin,
+    SandboxBuildSpecLinux,
+)
+from launcher.lib.constants import (
+    CA_CERT,
+    JAVA_CACERTS,
+    LAUNCH_PID,
+    SESSION_RETENTION,
+)
 from launcher.lib.session_state import (
     _prune_sessions_root,
     _start_proxy,
+    create_java_truststore,
     create_proxy_state,
     kill_proxy,
 )
@@ -103,3 +116,78 @@ def test_the_proxy_receives_the_credentials_on_stdin(tmp_path: Path) -> None:
     assert state is not None and state.port == 1234
     received = json.loads((tmp_path / f"{CA_CERT}.stdin").read_text())
     assert received == {"api.github.com": {"header": "Authorization", "value": "Bearer real"}}
+
+
+def test_no_java_truststore_without_a_proxy(tmp_path: Path) -> None:
+    assert create_java_truststore(make_spec_linux(), tmp_path, tmp_path) is None
+
+
+def test_a_proxy_without_openssl_is_refused(tmp_path: Path) -> None:
+    spec = dataclasses.replace(
+        make_spec_linux(openssl=None),
+        proxy=ProxySpec(
+            binary=Path("/nix/store/proxy/bin/sandbox-proxy"),
+            allowlist_file=Path("/nix/store/allowlist.json"),
+            redirects={},
+        ),
+    )
+
+    with pytest.raises(SystemExit, match="OpenSSL"):
+        create_java_truststore(spec, tmp_path, tmp_path)
+
+
+@pytest.mark.parametrize("make_spec", [make_spec_linux, make_spec_darwin])
+def test_the_java_truststore_gets_the_host_cas_and_the_proxy_ca(
+    make_spec: Callable[..., SandboxBuildSpecLinux | SandboxBuildSpecDarwin],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake_openssl = tmp_path / "openssl"
+    fake_openssl.write_text(
+        "#!/bin/sh\n"
+        'printf \'%s\\n\' "$@" > "$ARGV_FILE"\n'
+        "out=\n"
+        'while [ "$#" -gt 0 ]; do\n'
+        '  if [ "$1" = "-out" ]; then out=$2; shift 2; else shift; fi\n'
+        "done\n"
+        'printf fake > "$out"\n'
+    )
+    fake_openssl.chmod(0o755)
+    argv_file = tmp_path / "argv"
+    monkeypatch.setenv("ARGV_FILE", str(argv_file))
+
+    bundle = tmp_path / "ca-no-trust-rules-bundle.crt"
+    bundle.write_text("-----BEGIN CERTIFICATE-----\nhost\n-----END CERTIFICATE-----\n")
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    (session_dir / CA_CERT).write_text(
+        "-----BEGIN CERTIFICATE-----\nproxy\n-----END CERTIFICATE-----\n"
+    )
+
+    destination = session_dir / "tmp"
+    destination.mkdir()
+
+    spec = dataclasses.replace(
+        make_spec(openssl=fake_openssl),
+        proxy=ProxySpec(
+            binary=Path("/nix/store/proxy/bin/sandbox-proxy"),
+            allowlist_file=Path("/nix/store/allowlist.json"),
+            redirects={},
+        ),
+        cacert_no_trust_rules_bundle=bundle,
+    )
+
+    output = create_java_truststore(spec, session_dir, destination)
+
+    assert output is not None
+    assert output == destination / JAVA_CACERTS
+    assert output.read_bytes() == b"fake"
+
+    args = argv_file.read_text().splitlines()
+    assert args[:4] == ["pkcs12", "-in", str(bundle), "-certfile"]
+    assert "-export" in args
+    assert "-nokeys" in args
+    assert args[args.index("-certfile") + 1] == str(session_dir / CA_CERT)
+    assert args[-2:] == ["-out", str(destination / JAVA_CACERTS)]
+    assert args[args.index("-passout") + 1] == "pass:changeit"
+    assert args[args.index("-jdktrust") + 1] == "anyExtendedKeyUsage"

@@ -3,6 +3,7 @@
 
 ARGV_BEFORE_ENV = "argv-before-env"
 ARGV_AFTER_ENV = "argv-after-env"
+APPEND_ENV = "append-env"
 BWRAP_ARGS = "bwrap.args"
 NETWORK = "network.json"
 SEATBELT_PROFILE = "seatbelt.sb"
@@ -15,10 +16,12 @@ PASSWD = "passwd"
 CA_BUNDLE = "ca-bundle.pem"
 CA_CERT = "ca-cert.pem"
 NSS_DB = "nssdb"
+JAVA_CACERTS = "java-cacerts.p12"
 FIREFOX_POLICIES = "firefox-policies.json"
 # Fixed rather than the session directory's own, so nothing inside the sandbox
 # learns where that is.
 SANDBOX_CA_CERT = "/tmp/sandbox-ca-cert.pem"
+SANDBOX_JAVA_CACERTS = "/tmp/sandbox-java-cacerts"
 PROXY_PID = "proxy.pid"
 PROXY_LOG = "proxy.log"
 LAUNCH_LOG = "launch.log"

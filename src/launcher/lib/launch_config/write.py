@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Sequence
 
 from launcher.lib.constants import (
+    APPEND_ENV,
     ARGV_AFTER_ENV,
     ARGV_BEFORE_ENV,
     BWRAP_ARGS,
@@ -102,6 +103,7 @@ def _write_common(config: SandboxLaunchConfig, session: SessionState) -> None:
     session_dir = session.session_dir
     _write_nul_separated(session_dir / ARGV_BEFORE_ENV, config.argv_before_env)
     _write_nul_separated(session_dir / ARGV_AFTER_ENV, config.argv_after_env)
+    _write_nul_separated(session_dir / APPEND_ENV, config.append_env)
     _write_newline_separated(session_dir / PASSWD, [config.passwd.rstrip("\n")])
     _write_nul_separated(session_dir / CLEANUP, [str(path) for path in config.cleanup])
     _write_nul_separated(

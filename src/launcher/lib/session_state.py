@@ -11,11 +11,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Mapping
 
-from launcher.lib.build_spec import ProxySpec, SandboxBuildSpec, SandboxBuildSpecLinux
+from launcher.lib.build_spec import (
+    ProxySpec,
+    SandboxBuildSpec,
+    SandboxBuildSpecDarwin,
+    SandboxBuildSpecLinux,
+)
 from launcher.lib.constants import (
     CA_CERT,
     ERROR_PREFIX,
     FIREFOX_POLICIES,
+    JAVA_CACERTS,
     NSS_DB,
     PROXY_LISTEN_HOST,
     PROXY_LOG,
@@ -54,6 +60,7 @@ class SessionState:
     proxy: ProxyState | None
     nss_db: Path | None
     firefox_policies: Path | None
+    java_cacerts: Path | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -278,6 +285,58 @@ def create_nss_db(spec: SandboxBuildSpecLinux, session_dir: Path) -> Path | None
                 f"{result.stderr.strip()}"
             )
     return nss_db
+
+
+def create_java_truststore(
+    spec: SandboxBuildSpecLinux | SandboxBuildSpecDarwin,
+    session_dir: Path,
+    destination_dir: Path,
+) -> Path | None:
+    if spec.proxy is None:
+        return None
+    openssl = spec.dependencies.openssl
+    if openssl is None:
+        raise SystemExit(
+            f"{ERROR_PREFIX} this wrapper was built without the OpenSSL "
+            "dependency needed to trust the proxy CA in Java"
+        )
+
+    # ca-bundle.crt carries OpenSSL-only TRUSTED CERTIFICATE blocks. pkcs12
+    # -export would treat those as extra certificates and mark email- and
+    # code-signing-only roots as server-auth anchors, so use the plain
+    # server-auth bundle instead.
+    # -jdktrust marks every certificate in the store as a Java trust anchor;
+    # without it the PKCS#12 parses but contains no trusted entries. That is
+    # broad, which is why the main input is already narrowed to the
+    # server-auth roots.
+    output = destination_dir / JAVA_CACERTS
+    result = subprocess.run(
+        [
+            str(openssl),
+            "pkcs12",
+            "-in",
+            str(spec.cacert_no_trust_rules_bundle),
+            "-certfile",
+            str(session_dir / CA_CERT),
+            "-export",
+            "-nokeys",
+            "-passout",
+            "pass:changeit",
+            "-jdktrust",
+            "anyExtendedKeyUsage",
+            "-out",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            f"{ERROR_PREFIX} could not build the Java trust store in {output}: "
+            f"openssl pkcs12 exited with status {result.returncode}: "
+            f"{result.stderr.strip()}"
+        )
+    return output
 
 
 def create_firefox_policies(
