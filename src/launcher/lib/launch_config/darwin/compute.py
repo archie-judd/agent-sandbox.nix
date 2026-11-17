@@ -12,6 +12,7 @@ from launcher.lib.constants import (
     CA_CERT,
     NO_PROXY_HOSTS,
     PASSWD,
+    PROXY_LISTEN_HOST,
     SEATBELT_PROFILE,
 )
 from launcher.lib.git_state import (
@@ -27,6 +28,7 @@ from launcher.lib.launch_config.darwin import seatbelt
 from launcher.lib.launch_config.shared import (
     NIX_STORE,
     SandboxLaunchConfig,
+    get_appended_proxy_env,
     get_sessions_root_warnings,
     get_store_symlink_targets,
 )
@@ -243,7 +245,7 @@ def _get_computed_env(
 
     bundle = session.session_dir / CA_BUNDLE
     cert = session.session_dir / CA_CERT
-    proxy_url = f"http://127.0.0.1:{session.proxy.port}"
+    proxy_url = f"http://{PROXY_LISTEN_HOST}:{session.proxy.port}"
     pairs += [
         f"SSL_CERT_FILE={bundle}",
         f"NIX_SSL_CERT_FILE={bundle}",
@@ -382,10 +384,19 @@ def compute_launch_config(
         if session.proxy is None
         else (spec.cacert_bundle, session.session_dir / CA_CERT)
     )
+    append_env: tuple[str, ...] = ()
+    if session.proxy is not None:
+        assert session.java_cacerts is not None
+        append_env = get_appended_proxy_env(
+            PROXY_LISTEN_HOST,
+            session.proxy.port,
+            str(session.java_cacerts),
+        )
 
     return SandboxLaunchConfigDarwin(
         argv_before_env=tuple(argv_before_env),
         argv_after_env=tuple(argv_after_env),
+        append_env=append_env,
         passwd=_get_passwd(host),
         ca_bundle=ca_bundle,
         cleanup=(session.sandbox_home, session.sandbox_tmpdir),

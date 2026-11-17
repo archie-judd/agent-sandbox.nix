@@ -3,6 +3,7 @@ from typing import Sequence
 
 from harness.builders import make_host_linux, make_session, make_spec_linux
 from launcher.lib.build_spec import PublishedPort
+from launcher.lib.constants import SANDBOX_JAVA_CACERTS
 from launcher.lib.launch_config.linux.compute import compute_launch_config
 
 
@@ -74,11 +75,42 @@ def _env(config_argv: Sequence[str]) -> dict[str, str]:
     return dict(arg.split("=", 1) for arg in config_argv if "=" in arg and not arg.startswith("-"))
 
 
+def _appended_env(config_argv: Sequence[str]) -> dict[str, str]:
+    return dict(arg.split("=", 1) for arg in config_argv)
+
+
 def test_the_proxy_is_reached_through_the_pasta_gateway() -> None:
     config = compute_launch_config(make_spec_linux(), make_host_linux(), make_session(proxy_port=12345))
 
     env = _env(config.argv_before_env)
     assert env["HTTP_PROXY"] == env["HTTPS_PROXY"] == "http://10.0.2.2:12345"
+
+
+def test_java_trusts_the_proxy_ca_through_a_pkcs12_store() -> None:
+    java_cacerts = Path("/sessions/20260101-000000-1-sandboxed-agent/java-cacerts.p12")
+
+    config = compute_launch_config(
+        make_spec_linux(),
+        make_host_linux(),
+        make_session(proxy_port=12345, java_cacerts=java_cacerts),
+    )
+
+    env = _env(config.argv_before_env)
+    appended = _appended_env(config.append_env)
+    assert "JAVA_TOOL_OPTIONS" not in env
+    assert "MAVEN_OPTS" not in env
+    assert appended["JAVA_TOOL_OPTIONS"] == (
+        f"-Djavax.net.ssl.trustStore=\"{SANDBOX_JAVA_CACERTS}\" "
+        "-Djavax.net.ssl.trustStoreType=PKCS12 "
+        "-Djavax.net.ssl.trustStorePassword=changeit "
+        "-Dhttps.proxyHost=10.0.2.2 -Dhttps.proxyPort=12345 "
+        "-Dhttp.proxyHost=10.0.2.2 -Dhttp.proxyPort=12345"
+    )
+    assert "MAVEN_OPTS" not in appended
+    assert _contains_run(
+        config.bwrap_args,
+        ["--ro-bind", str(java_cacerts), SANDBOX_JAVA_CACERTS],
+    )
 
 
 def test_no_proxy_is_set_only_when_a_host_port_is_open() -> None:

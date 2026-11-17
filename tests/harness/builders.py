@@ -9,6 +9,7 @@ from launcher.lib.build_spec import (
     SandboxBuildSpecDarwin,
     SandboxBuildSpecLinux,
 )
+from launcher.lib.constants import JAVA_CACERTS
 from launcher.lib.git_state import GitState
 from launcher.lib.host_state import DeclaredPath, HostStateDarwin, HostStateLinux
 from launcher.lib.session_state import ProxyState, SessionState, SessionStateDarwin
@@ -22,6 +23,7 @@ def make_spec_linux(
     allow_nix: bool = False,
     allowed_host_ports: tuple[int, ...] | None = (),
     published_ports: tuple[PublishedPort, ...] = (),
+    openssl: Path | None = Path("/nix/store/openssl/bin/openssl"),
 ) -> SandboxBuildSpecLinux:
     return SandboxBuildSpecLinux(
         version="0.0.0",
@@ -43,6 +45,9 @@ def make_spec_linux(
         closure_paths_file=Path("/nix/store/closure"),
         cacert_dir=Path("/nix/store/cacert/etc/ssl/certs"),
         cacert_bundle=Path("/nix/store/cacert/etc/ssl/certs/ca-bundle.crt"),
+        cacert_no_trust_rules_bundle=Path(
+            "/nix/store/cacert/etc/ssl/certs/ca-no-trust-rules-bundle.crt"
+        ),
         shell=Path("/nix/store/bash/bin/bash"),
         pre_entry_script=Path("/nix/store/pre-entry"),
         sandboxed_binary=Path("/nix/store/agent/bin/agent"),
@@ -59,6 +64,7 @@ def make_spec_linux(
             python=Path("/nix/store/python3/bin/python3"),
             nix=Path("/nix/store/nix/bin/nix") if allow_nix else None,
             certutil=None,
+            openssl=openssl,
         ),
     )
 
@@ -69,6 +75,7 @@ def make_spec_darwin(
     allow_unix_sockets: bool = False,
     env_keys: tuple[str, ...] = (),
     injected_credentials: Mapping[str, InjectedCredentialSpec] | None = None,
+    openssl: Path | None = Path("/nix/store/openssl/bin/openssl"),
 ) -> SandboxBuildSpecDarwin:
     return SandboxBuildSpecDarwin(
         version="0.0.0",
@@ -90,6 +97,9 @@ def make_spec_darwin(
         closure_paths_file=Path("/nix/store/closure"),
         cacert_dir=Path("/nix/store/cacert/etc/ssl/certs"),
         cacert_bundle=Path("/nix/store/cacert/etc/ssl/certs/ca-bundle.crt"),
+        cacert_no_trust_rules_bundle=Path(
+            "/nix/store/cacert/etc/ssl/certs/ca-no-trust-rules-bundle.crt"
+        ),
         shell=Path("/nix/store/bash/bin/bash"),
         pre_entry_script=Path("/nix/store/pre-entry"),
         sandboxed_binary=Path("/nix/store/agent/bin/agent"),
@@ -99,6 +109,7 @@ def make_spec_darwin(
             git=Path("/nix/store/git/bin/git"),
             python=Path("/nix/store/python3/bin/python3"),
             nix=Path("/nix/store/nix/bin/nix") if allow_nix else None,
+            openssl=openssl,
         ),
     )
 
@@ -164,17 +175,37 @@ def make_host_linux(
     )
 
 
-def make_session(*, proxy_port: int | None = None) -> SessionState:
+def make_session(
+    *,
+    proxy_port: int | None = None,
+    java_cacerts: Path | None = None,
+) -> SessionState:
     proxy = None if proxy_port is None else ProxyState(port=proxy_port, pid=1)
-    return SessionState(session_dir=_SESSION_DIR, proxy=proxy, nss_db=None, firefox_policies=None)
-
-
-def make_session_darwin() -> SessionStateDarwin:
-    return SessionStateDarwin(
+    if proxy is not None and java_cacerts is None:
+        java_cacerts = _SESSION_DIR / JAVA_CACERTS
+    return SessionState(
         session_dir=_SESSION_DIR,
-        proxy=None,
+        proxy=proxy,
         nss_db=None,
         firefox_policies=None,
+        java_cacerts=java_cacerts,
+    )
+
+
+def make_session_darwin(
+    *,
+    proxy_port: int | None = None,
+    java_cacerts: Path | None = None,
+) -> SessionStateDarwin:
+    proxy = None if proxy_port is None else ProxyState(port=proxy_port, pid=1)
+    if proxy is not None and java_cacerts is None:
+        java_cacerts = _SESSION_DIR / "tmp" / JAVA_CACERTS
+    return SessionStateDarwin(
+        session_dir=_SESSION_DIR,
+        proxy=proxy,
+        nss_db=None,
+        firefox_policies=None,
+        java_cacerts=java_cacerts,
         sandbox_home=_SESSION_DIR / "home",
         sandbox_tmpdir=_SESSION_DIR / "tmp",
     )

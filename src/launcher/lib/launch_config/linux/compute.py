@@ -14,6 +14,7 @@ from launcher.lib.constants import (
     NO_PROXY_HOSTS,
     PASSWD,
     SANDBOX_CA_CERT,
+    SANDBOX_JAVA_CACERTS,
     SECCOMP_FD,
     SECCOMP_FILTER,
 )
@@ -36,6 +37,7 @@ from launcher.lib.launch_config.linux.seccomp import get_unix_deny_filter
 from launcher.lib.launch_config.shared import (
     NIX_STORE,
     SandboxLaunchConfig,
+    get_appended_proxy_env,
     get_sessions_root_warnings,
     is_already_bound,
 )
@@ -253,6 +255,12 @@ def _get_bwrap_args(
         cert = session.session_dir / CA_CERT
         args += ["--ro-bind", str(bundle), str(SANDBOX_CA_BUNDLE)]
         args += ["--ro-bind", str(cert), str(SANDBOX_CA_CERT)]
+        assert session.java_cacerts is not None
+        args += [
+            "--ro-bind",
+            str(session.java_cacerts),
+            str(SANDBOX_JAVA_CACERTS),
+        ]
         if session.firefox_policies is not None:
             args += [
                 "--ro-bind",
@@ -340,10 +348,19 @@ def compute_launch_config(
         if session.proxy is None
         else (spec.cacert_bundle, session.session_dir / CA_CERT)
     )
+    append_env: tuple[str, ...] = ()
+    if session.proxy is not None:
+        assert session.java_cacerts is not None
+        append_env = get_appended_proxy_env(
+            PASTA_GATEWAY_IP,
+            session.proxy.port,
+            SANDBOX_JAVA_CACERTS,
+        )
 
     return SandboxLaunchConfigLinux(
         argv_before_env=tuple(argv_before_env),
         argv_after_env=tuple(argv_after_env),
+        append_env=append_env,
         passwd=f"user:x:{host.uid}:{host.gid}:sandbox user:{host.real_home}:/bin/sh\n",
         ca_bundle=ca_bundle,
         cleanup=() if session.nss_db is None else (session.nss_db,),

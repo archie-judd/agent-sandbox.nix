@@ -14,6 +14,9 @@ class SandboxLaunchConfig:
     # by launch.sh; those values never enter Python.
     argv_before_env: tuple[str, ...]
     argv_after_env: tuple[str, ...]
+    # Appended to the matching declared variable, if the sandbox set one, so
+    # options the caller set survive.
+    append_env: tuple[str, ...]
     passwd: str
     ca_bundle: tuple[Path, ...]
     cleanup: tuple[Path, ...]
@@ -25,6 +28,24 @@ class SandboxLaunchConfig:
 
 def is_already_bound(path: Path, prefixes: Sequence[Path]) -> bool:
     return any(path == prefix or prefix in path.parents for prefix in prefixes)
+
+
+def get_appended_proxy_env(
+    proxy_host: str, proxy_port: int, java_truststore: str
+) -> tuple[str, ...]:
+    return (
+        # Without these Maven's resolver ignores the JVM proxy properties.
+        "MAVEN_ARGS=-Daether.connector.http.useSystemProperties=true "
+        "-Daether.transport.apache.useSystemProperties=true",
+        # The quotes are for the JVM's JAVA_TOOL_OPTIONS parser, not the shell:
+        # the Darwin trust store lives under the session directory, whose path
+        # may contain spaces.
+        f'JAVA_TOOL_OPTIONS=-Djavax.net.ssl.trustStore="{java_truststore}" '
+        "-Djavax.net.ssl.trustStoreType=PKCS12 "
+        "-Djavax.net.ssl.trustStorePassword=changeit "
+        f"-Dhttps.proxyHost={proxy_host} -Dhttps.proxyPort={proxy_port} "
+        f"-Dhttp.proxyHost={proxy_host} -Dhttp.proxyPort={proxy_port}",
+    )
 
 
 def get_store_symlink_targets(

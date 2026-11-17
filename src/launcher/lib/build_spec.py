@@ -87,6 +87,7 @@ class DependenciesLinux:
     python: Path
     nix: Path | None
     certutil: Path | None
+    openssl: Path | None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
@@ -98,6 +99,7 @@ class DependenciesLinux:
         python = Path(data["python"])
         nix = _get_nix(data)
         certutil = None if data["certutil"] is None else Path(data["certutil"])
+        openssl = None if data["openssl"] is None else Path(data["openssl"])
         return cls(
             git=git,
             bwrap=bwrap,
@@ -107,6 +109,7 @@ class DependenciesLinux:
             python=python,
             nix=nix,
             certutil=certutil,
+            openssl=openssl,
         )
 
 
@@ -115,13 +118,15 @@ class DependenciesDarwin:
     git: Path
     python: Path
     nix: Path | None
+    openssl: Path | None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
         git = Path(data["git"])
         python = Path(data["python"])
         nix = _get_nix(data)
-        return cls(git=git, python=python, nix=nix)
+        openssl = None if data["openssl"] is None else Path(data["openssl"])
+        return cls(git=git, python=python, nix=nix, openssl=openssl)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -152,6 +157,9 @@ class SandboxBuildSpec:
     closure_paths_file: Path
     cacert_dir: Path
     cacert_bundle: Path
+    # The same roots as cacert_bundle, without the OpenSSL trust rules that
+    # pkcs12 -export would turn into extra certificates.
+    cacert_no_trust_rules_bundle: Path
     shell: Path
     pre_entry_script: Path
     sandboxed_binary: Path
@@ -194,6 +202,7 @@ class _CommonBuildSpec(TypedDict):
     closure_paths_file: Path
     cacert_dir: Path
     cacert_bundle: Path
+    cacert_no_trust_rules_bundle: Path
     shell: Path
     pre_entry_script: Path
     sandboxed_binary: Path
@@ -237,6 +246,7 @@ def _common_build_spec(data: Mapping[str, Any]) -> _CommonBuildSpec:
         closure_paths_file=Path(data["closure_paths_file"]),
         cacert_dir=Path(data["cacert_dir"]),
         cacert_bundle=Path(data["cacert_bundle"]),
+        cacert_no_trust_rules_bundle=Path(data["cacert_no_trust_rules_bundle"]),
         shell=Path(data["shell"]),
         pre_entry_script=Path(data["pre_entry_script"]),
         sandboxed_binary=Path(data["sandboxed_binary"]),

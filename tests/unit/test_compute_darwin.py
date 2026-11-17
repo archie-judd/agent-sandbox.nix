@@ -1,13 +1,22 @@
 from pathlib import Path
 
 from harness.builders import make_host_darwin, make_session_darwin, make_spec_darwin
+from launcher.lib.constants import JAVA_CACERTS
 from launcher.lib.launch_config.darwin.compute import compute_launch_config
+from launcher.lib.session_state import SessionStateDarwin
 
 
-def _env() -> dict[str, str]:
-    session = make_session_darwin()
+def _env(session: SessionStateDarwin | None = None) -> dict[str, str]:
+    if session is None:
+        session = make_session_darwin()
     config = compute_launch_config(make_spec_darwin(), make_host_darwin(), session)
     pairs = [arg.split("=", 1) for arg in config.argv_before_env if "=" in arg]
+    return {name: value for name, value in pairs}
+
+
+def _appended_env(session: SessionStateDarwin) -> dict[str, str]:
+    config = compute_launch_config(make_spec_darwin(), make_host_darwin(), session)
+    pairs = [arg.split("=", 1) for arg in config.append_env]
     return {name: value for name, value in pairs}
 
 
@@ -24,6 +33,38 @@ def test_claude_code_tmpdir_follows_tmpdir() -> None:
     env = _env()
 
     assert env["CLAUDE_CODE_TMPDIR"] == env["TMPDIR"]
+
+
+def test_java_trusts_the_proxy_ca_through_a_pkcs12_store() -> None:
+    java_cacerts = Path("/sessions/20260101-000000-1-sandboxed-agent/tmp/java-cacerts.p12")
+    session = make_session_darwin(proxy_port=12345, java_cacerts=java_cacerts)
+
+    appended = _appended_env(session)
+    env = _env(session)
+
+    assert "JAVA_TOOL_OPTIONS" not in env
+    assert "MAVEN_OPTS" not in env
+    assert appended["JAVA_TOOL_OPTIONS"] == (
+        f"-Djavax.net.ssl.trustStore=\"{java_cacerts}\" "
+        "-Djavax.net.ssl.trustStoreType=PKCS12 "
+        "-Djavax.net.ssl.trustStorePassword=changeit "
+        "-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=12345 "
+        "-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=12345"
+    )
+    assert "MAVEN_OPTS" not in appended
+
+
+def test_the_java_truststore_lives_under_the_granted_tmpdir() -> None:
+    java_cacerts = Path("/sessions/20260101-000000-1-sandboxed-agent/tmp") / JAVA_CACERTS
+    session = make_session_darwin(proxy_port=12345, java_cacerts=java_cacerts)
+
+    config = compute_launch_config(make_spec_darwin(), make_host_darwin(), session)
+
+    assert java_cacerts.is_relative_to(session.sandbox_tmpdir)
+    assert (
+        f'(allow file-read* file-write* (subpath "{session.sandbox_tmpdir}"))'
+        in config.seatbelt_profile_lines
+    )
 
 
 def _profile(workspace_dir: Path = Path("/home/someone/project")) -> list[str]:
