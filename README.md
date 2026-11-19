@@ -267,7 +267,7 @@ Host-local services (databases, dev servers, the SSH agent, the Docker socket, a
 allowedHostPorts = [ 3000 5432 ];
 ```
 
-Set `allowedHostPorts = null;` to allow all host-local TCP ports.
+Set `allowedHostPorts = null;` to allow all host-local TCP ports. This will forward all connections to `127.0.0.1` to the host. `127.0.0.2` (or any of `127.0.0.0/8`) remain as true loopback addresses.
 
 For a worked example, see [`shells/opencode-ollama.shell.nix`](shells/opencode-ollama.shell.nix), where the agent has no internet access at all and reaches only Ollama running on the host.
 
