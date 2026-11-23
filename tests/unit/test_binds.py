@@ -168,6 +168,20 @@ def test_store_siblings_are_both_bound(home: Path) -> None:
     assert str(STORE_DIR) in binds.parent_dirs
 
 
+def test_a_child_store_target_is_dropped_when_seen_before_its_parent(
+    home: Path,
+) -> None:
+    _plain_files(home)
+    # Sorted inner symlink order puts the child before the parent. The parent
+    # bind covers the child, so only the parent should be emitted.
+    (home / ".test-state-dir" / "a-child").symlink_to(STORE_FILE)
+    (home / ".test-state-dir" / "z-parent").symlink_to(STORE_DIR)
+
+    binds = _binds(home)
+
+    assert list(binds.symlink_targets) == ["--ro-bind", str(STORE_DIR), str(STORE_DIR)]
+
+
 def test_a_store_symlink_dir_inside_a_bound_parent_is_not_mounted_over(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -46,6 +46,8 @@ def get_store_symlink_targets(
     chains: list[Sequence[Path]] = [entry.hops for entry in [*files, *dirs]]
     chains += [inner.hops for entry in dirs for inner in entry.inner_symlinks]
 
+    bound = list(prefixes)
+
     targets: list[Path] = []
     warnings: list[str] = []
     resolved: set[Path] = set()
@@ -55,7 +57,7 @@ def get_store_symlink_targets(
             if landing in resolved:
                 continue
             resolved.add(landing)
-            if is_already_bound(landing, prefixes):
+            if is_already_bound(landing, bound):
                 continue
             if NIX_STORE not in landing.parents:
                 warnings.append(
@@ -65,7 +67,13 @@ def get_store_symlink_targets(
                 )
                 continue
             targets.append(landing)
+            bound.append(landing)
 
+    targets = [
+        target
+        for target in targets
+        if not any(other in target.parents for other in targets)
+    ]
     return tuple(targets), warnings
 
 

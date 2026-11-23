@@ -113,10 +113,49 @@ def test_an_rw_dir_symlink_grants_only_its_store_target(
     assert outcomes == {checks[0]: "ok", checks[1]: READ_ONLY_MODE, checks[2]: HIDDEN}
 
 
+def test_a_store_symlink_in_a_nested_dir_grants_only_its_target(
+    symlinks: Path, launch: Launch, store: dict[str, Path], fake_home: Path
+) -> None:
+    nested = fake_home / ".test-state-dir" / "agents"
+    nested.mkdir()
+    link = nested / "link"
+    link.symlink_to(store["NONCLOSURE_STORE_FILE"])
+    checks: list[tuple[PathOp, Path]] = [
+        ("read", link),
+        ("read", store["NONCLOSURE_STORE_FILE"]),
+        ("write", store["NONCLOSURE_STORE_FILE"]),
+        ("read", store["NONCLOSURE_STORE_FILE2"]),
+    ]
+
+    outcomes = probe_paths(launch, symlinks, checks)
+
+    assert outcomes == {
+        checks[0]: "ok",
+        checks[1]: "ok",
+        checks[2]: READ_ONLY_MODE,
+        checks[3]: HIDDEN,
+    }
+
+
 def test_an_out_of_bounds_symlink_is_ignored_with_a_warning(
     symlinks: Path, launch: Launch, fake_home: Path, out_of_bounds: Path
 ) -> None:
     (fake_home / ".test-state-dir" / "link").symlink_to(out_of_bounds)
+
+    started = launch(symlinks, "true")
+    outcomes = probe_paths(launch, symlinks, [("read", out_of_bounds)])
+
+    assert started.returncode == 0, started.stderr
+    assert f"ignoring symlink to '{out_of_bounds}'" in started.stderr
+    assert outcomes == {("read", out_of_bounds): HIDDEN}
+
+
+def test_a_nested_out_of_bounds_symlink_is_ignored_with_a_warning(
+    symlinks: Path, launch: Launch, fake_home: Path, out_of_bounds: Path
+) -> None:
+    nested = fake_home / ".test-state-dir" / "agents"
+    nested.mkdir()
+    (nested / "link").symlink_to(out_of_bounds)
 
     started = launch(symlinks, "true")
     outcomes = probe_paths(launch, symlinks, [("read", out_of_bounds)])
