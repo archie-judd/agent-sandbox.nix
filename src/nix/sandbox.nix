@@ -107,7 +107,7 @@ let
               builtins.seq workspaceDir (
                 builtins.seq proxyRedirects (
                   builtins.seq injectedCredentials (
-                    pkgs.runCommand outName { } ''
+                    pkgs.runCommand outName { meta.mainProgram = outName; } ''
                       mkdir -p $out/bin
                       install -m755 ${launchScript} $out/bin/${outName}
                     ''
@@ -193,34 +193,31 @@ let
     allowedDomains = allowedDomains;
   };
 
-  sandboxBuildSpec =
-    import ./spec.nix
-      { pkgs = pkgs; }
-      {
-        platform = platform;
-        outName = outName;
-        pkg = pkg;
-        binName = binName;
-        sandboxPath = pathStr;
-        pkgConfigPath = pkgConfigPathStr;
-        allowNix = allowNix;
-        rwDirs = rwDirs;
-        rwFiles = rwFiles;
-        roDirs = roDirs;
-        roFiles = roFiles;
-        env = env;
-        workspaceDir = validatedWorkspaceDir;
-        allowedHostPorts = validatedAllowedHostPorts;
-        publishedPorts = validatedPublishedPorts;
-        allowUnixSockets = validatedAllowUnixSockets;
-        allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;
-        closurePathsFile = closurePathsFile;
-        preEntryScript = scripts.preEntryScript;
-        bashWrapper = bashWrapper;
-        allowedDomains = allowedDomains;
-        _proxyRedirects = validatedProxyRedirects;
-        injectedCredentials = validatedInjectedCredentials;
-      };
+  sandboxBuildSpec = import ./spec.nix { pkgs = pkgs; } {
+    platform = platform;
+    outName = outName;
+    pkg = pkg;
+    binName = binName;
+    sandboxPath = pathStr;
+    pkgConfigPath = pkgConfigPathStr;
+    allowNix = allowNix;
+    rwDirs = rwDirs;
+    rwFiles = rwFiles;
+    roDirs = roDirs;
+    roFiles = roFiles;
+    env = env;
+    workspaceDir = validatedWorkspaceDir;
+    allowedHostPorts = validatedAllowedHostPorts;
+    publishedPorts = validatedPublishedPorts;
+    allowUnixSockets = validatedAllowUnixSockets;
+    allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;
+    closurePathsFile = closurePathsFile;
+    preEntryScript = scripts.preEntryScript;
+    bashWrapper = bashWrapper;
+    allowedDomains = allowedDomains;
+    _proxyRedirects = validatedProxyRedirects;
+    injectedCredentials = validatedInjectedCredentials;
+  };
 
   envFragment = mkEnvFragment {
     outName = outName;
