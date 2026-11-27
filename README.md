@@ -385,6 +385,7 @@ injectedCredentials.AWS_SECRET_ACCESS_KEY = {
 ```
 
 - The access key ID isn't secret, so it goes in through `env`.
+- The AWS CLI ignores the sandbox's CA bundle variables, so it rejects the proxy's certificate unless you run `export AWS_CA_BUNDLE=$SSL_CERT_FILE` inside the sandbox first.
 - List every endpoint the agent calls. Use `*` for the region to cover them all, as in `"s3.*.amazonaws.com"` and `"sts.*.amazonaws.com"`. Bucket-style hosts like `my-bucket.s3.eu-west-2.amazonaws.com` need their own entry, such as `"my-bucket.s3.*.amazonaws.com"`.
 - An STS session token (`AWS_SESSION_TOKEN`) goes in through `env`. It is signed, not secret, and is useless without the secret access key.
 - Presigned URLs pass through unchanged, so a URL signed with the placeholder fails. Signed-chunk uploads (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`) are refused with a 400; configure the client for unsigned payload chunks, or single-part uploads. Requests whose body has no `x-amz-content-sha256` are hashed by the proxy, up to 64 MiB.
