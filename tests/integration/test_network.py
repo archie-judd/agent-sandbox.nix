@@ -105,6 +105,22 @@ def test_an_empty_allowlist_refuses_everything(
     assert "blocked: GET httpbin.test/get (domain not allowed)" in _proxy_log(sessions_root)
 
 
+@pytest.mark.linux
+def test_direct_tcp_egress_grants_only_the_requested_destination_port(
+    build_sandbox: BuildSandbox, launch: Launch, host_address: str
+) -> None:
+    sandbox = build_sandbox(
+        "network-blocked", {"allowedTcpEgress": [{"cidr": "0.0.0.0/0", "port": HOST_ADDRESS_PORT}]}
+    )
+    allowed: tuple[NetworkOp, str, int] = ("connect", host_address, HOST_ADDRESS_PORT)
+    wrong_port: tuple[NetworkOp, str, int] = ("connect", host_address, HOST_SERVICE_PORT)
+    gateway: tuple[NetworkOp, str, int] = ("connect", GATEWAY, HOST_ADDRESS_PORT)
+    with tcp_listener(HOST_SERVICE_PORT, host_address), tcp_listener(HOST_ADDRESS_PORT):
+        outcomes = probe_network(launch, sandbox, [allowed, wrong_port, gateway])
+
+    assert outcomes == {allowed: "ok", wrong_port: DROPPED, gateway: DROPPED}
+
+
 def test_subdomains_match_but_shared_suffixes_do_not(
     build_sandbox: BuildSandbox, launch: Launch, httpbin: None
 ) -> None:

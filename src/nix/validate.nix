@@ -1,6 +1,5 @@
 { pkgs, errorPrefix }:
 let
-  # Shared by the host-port and published-port validators.
   validPort = port: builtins.isInt port && port >= 1 && port <= 65535;
   validateAllowedHostPorts =
     allowedHostPorts:
@@ -16,6 +15,27 @@ let
         builtins.throw "${errorPrefix} allowedHostPorts must only contain integers from 1 to 65535 (null allows all). Invalid: ${builtins.toJSON invalidPorts}"
       else
         pkgs.lib.unique allowedHostPorts;
+  validateAllowedTcpEgress =
+    entries:
+    let
+      octet = "(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])";
+      valid =
+        entry:
+        builtins.isAttrs entry
+        && builtins.attrNames entry == [
+          "cidr"
+          "port"
+        ]
+        && builtins.isString entry.cidr
+        && builtins.match "(${octet}\\.){3}${octet}(/([0-9]|[12][0-9]|3[0-2]))?" entry.cidr != null
+        && validPort entry.port;
+    in
+    if !(builtins.isList entries) || !(builtins.all valid entries) then
+      builtins.throw "${errorPrefix} allowedTcpEgress must be a list of { cidr = \"<IPv4 address or CIDR>\"; port = <1-65535>; } entries"
+    else if entries != [ ] && !pkgs.stdenv.hostPlatform.isLinux then
+      builtins.throw "${errorPrefix} allowedTcpEgress is only supported on Linux"
+    else
+      entries;
   validateWorkspaceDir =
     workspaceDir:
     if !(builtins.isString workspaceDir) then
@@ -261,6 +281,7 @@ in
 {
   assertNoLegacyArgs = assertNoLegacyArgs;
   validateAllowedHostPorts = validateAllowedHostPorts;
+  validateAllowedTcpEgress = validateAllowedTcpEgress;
   validatePublishedPorts = validatePublishedPorts;
   validateAllowUnixSockets = validateAllowUnixSockets;
   validateAllowHeadlessBrowsers = validateAllowHeadlessBrowsers;

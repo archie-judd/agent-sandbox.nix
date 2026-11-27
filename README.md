@@ -145,6 +145,7 @@ Set `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `~/.claude.jso
 | `allowedDomains` | no | Limits the domains the sandbox can reach. Leave it unset for open internet. Accepts a list of domains (all methods allowed), or an attrset that maps each domain to `"*"` or to a list of HTTP methods. `[ ]` blocks all internet access. |
 | `allowUnixSockets` | no | If `true`, the agent can create and connect to UNIX-domain (AF_UNIX) sockets. It can connect in directories it can read, and bind in directories it can write. Defaults to `false`. See [UNIX-domain sockets](#unix-domain-sockets). |
 | `allowedHostPorts` | no | Host-local TCP ports the sandbox can reach. Defaults to `[ ]`. Set it to `null` to allow all host-local TCP ports. Otherwise, entries must be integers from `1` to `65535`. |
+| `allowedTcpEgress` | no | Linux-only direct outbound TCP grants by destination IPv4 address or CIDR and port. Defaults to `[ ]`. |
 | `publishedPorts` | no | Host TCP ports forwarded INTO the sandbox, so services the agent runs are reachable from outside. Defaults to `[ ]`. Entries are an integer port (bound to `127.0.0.1`) or `{ port = <int>; bindAddr = "<ipv4>"; }`. There is no `null` form. See [Published ports](#published-ports). |
 | `allowNix` | no | If `true`, the sandbox exposes the host's `nix-daemon` socket and the full Nix store. The agent can then run `nix build`, `nix run`, `nix develop`, and similar commands. The sandbox adds `pkgs.nix` to PATH. Requires `allowUnixSockets = true` and a running `nix-daemon`. The launch is refused if you are one of the daemon's `trusted-users`, and asks for confirmation if the daemon does not sandbox its builds. Defaults to `false`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox). |
 | `allowHeadlessBrowsers` | no | Headless browser engines for the sandbox to accommodate: `"chromium"` (Google Chrome and Chromium) and `"firefox"`. Defaults to `[ ]`. On Linux, requires `allowUnixSockets = true`. See [Using headless browsers inside the sandbox](#using-headless-browsers-inside-the-sandbox). |
@@ -217,7 +218,7 @@ Values in `env` are shell expressions that expand when the wrapper launches, so 
 
 ## Network restrictions
 
-The sandbox controls network access with three independent settings. `allowedDomains` controls outbound internet access. `allowedHostPorts` controls access to host-local TCP services, such as databases and dev servers. `publishedPorts` controls which sandbox-hosted TCP services are reachable from outside.
+`allowedDomains` controls proxied internet access. `allowedTcpEgress` adds direct outbound TCP grants. `allowedHostPorts` controls access to host loopback services, and `publishedPorts` controls which sandbox-hosted TCP services are reachable from outside.
 
 By default, internet access is open, all host-local services are blocked, and nothing inside the sandbox is reachable from outside.
 
@@ -272,6 +273,19 @@ Set `allowedHostPorts = null;` to allow all host-local TCP ports.
 For a worked example, see [`shells/opencode-ollama.shell.nix`](shells/opencode-ollama.shell.nix), where the agent has no internet access at all and reaches only Ollama running on the host.
 
 On macOS, a service started inside the sandbox also needs its port listed here, because `sandbox-exec` shares localhost with the host and cannot tell the two apart. See [Linux vs macOS](#linux-vs-macos).
+
+### Direct TCP egress (Linux)
+
+When `allowedDomains` is set, use `allowedTcpEgress` to reach services such as PostgreSQL directly, without the HTTP proxy:
+
+```nix
+allowedDomains = [ ]; # No proxied internet access.
+allowedTcpEgress = [
+  { cidr = "172.27.0.0/24"; port = 5432; }
+];
+```
+
+Use a bare IPv4 address for a single destination. The grant covers any TCP protocol on that port, including HTTP outside the proxy's domain and method rules. Clients must connect directly. With `allowedDomains` unset, other outbound connections remain open as before. Access through the host loopback gateway still requires `allowedHostPorts`.
 
 ### Published ports
 

@@ -18,6 +18,7 @@
   env,
   workspaceDir,
   allowedHostPorts,
+  allowedTcpEgress,
   publishedPorts,
   closurePathsFile,
   preEntryScript,
@@ -96,6 +97,7 @@ let
       {
         hosts_file = "${hostsFile}";
         empty_file = "${emptyFile}";
+        allowed_tcp_egress = allowedTcpEgress;
       }
     else
       { };

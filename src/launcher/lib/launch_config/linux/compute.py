@@ -359,6 +359,7 @@ def compute_launch_config(
                     proxy_port,
                     spec.allowed_host_ports,
                     [forward.port for forward in spec.published_ports],
+                    allowed_tcp_egress=spec.allowed_tcp_egress,
                 )
             ),
             seccomp_filter=seccomp_filter,
