@@ -12,7 +12,7 @@ def _credential(**hosts: dict[str, str]) -> dict[str, Any]:
 
 def test_accepted_credentials_reach_the_spec_without_the_secret() -> None:
     result = nix_eval(
-        allowed_domains=["github.com", "gitlab.test/api"],
+        allowed_domains=["github.com", "gitlab.test/api", "amazonaws.com"],
         injected_credentials={
             "GH_TOKEN": {
                 "secret": "$SECRET",
@@ -26,6 +26,11 @@ def test_accepted_credentials_reach_the_spec_without_the_secret() -> None:
                 "secret": "$OTHER",
                 "placeholder": "dummy",
                 "hosts": {"gitlab.test": {"scheme": "header", "header": "PRIVATE-TOKEN"}},
+            },
+            "AWS_SECRET_ACCESS_KEY": {
+                "secret": "$AWS",
+                "placeholder": "dummy",
+                "hosts": {"s3.eu-west-2.amazonaws.com": {"scheme": "aws-sigv4"}},
             },
         },
     )
@@ -43,6 +48,12 @@ def test_accepted_credentials_reach_the_spec_without_the_secret() -> None:
             "placeholder": "dummy",
             "hosts": {
                 "gitlab.test": {"scheme": "header", "username": None, "header": "PRIVATE-TOKEN"},
+            },
+        },
+        "AWS_SECRET_ACCESS_KEY": {
+            "placeholder": "dummy",
+            "hosts": {
+                "s3.eu-west-2.amazonaws.com": {"scheme": "aws-sigv4", "username": None, "header": None},
             },
         },
     }
@@ -86,6 +97,9 @@ def test_a_name_that_is_not_an_env_var_is_rejected() -> None:
         pytest.param(_credential(**{"example.test": {"scheme": "digest"}}), id="unknown scheme"),
         pytest.param(_credential(**{"example.test": {"scheme": "basic"}}), id="basic without username"),
         pytest.param(_credential(**{"example.test": {"scheme": "header"}}), id="header without header"),
+        pytest.param(
+            _credential(**{"example.test": {"scheme": "aws-sigv4", "header": "x"}}), id="aws-sigv4 with header"
+        ),
         pytest.param(
             _credential(**{"example.test": {"scheme": "bearer", "username": "x"}}), id="bearer with username"
         ),

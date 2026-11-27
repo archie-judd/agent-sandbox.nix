@@ -153,6 +153,7 @@ let
           "scheme"
           "header"
         ];
+        "aws-sigv4" = [ "scheme" ];
       };
       validHostEntry =
         entry:
@@ -199,7 +200,7 @@ let
     else if invalidNames != [ ] then
       builtins.throw "${errorPrefix} injectedCredentials names must be env var names. Invalid: ${builtins.toJSON invalidNames}"
     else if invalidEntries != [ ] then
-      builtins.throw "${errorPrefix} injectedCredentials entries must be { secret = <string>; placeholder = <string>; hosts = { \"<host>\" = { scheme = \"bearer\"; } | { scheme = \"basic\"; username = <string>; } | { scheme = \"header\"; header = <string>; }; }; }. Invalid: ${builtins.toJSON invalidEntries}"
+      builtins.throw "${errorPrefix} injectedCredentials entries must be { secret = <string>; placeholder = <string>; hosts = { \"<host>\" = { scheme = \"bearer\"; } | { scheme = \"basic\"; username = <string>; } | { scheme = \"header\"; header = <string>; } | { scheme = \"aws-sigv4\"; }; }; }. Invalid: ${builtins.toJSON invalidEntries}"
     else if envClashes != [ ] then
       builtins.throw "${errorPrefix} injectedCredentials names must not also be set in env. Both: ${builtins.toJSON envClashes}"
     else if duplicateHosts != [ ] then

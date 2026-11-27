@@ -45,7 +45,10 @@ type Config map[string]DomainPolicy
 // hatch, set via SANDBOX_PROXY_REDIRECT as "host=addr:port[,...]".
 type Redirects map[string]string
 
+// Scheme "aws-sigv4" re-signs the request with Value as the secret access
+// key; any other scheme sets Header to Value.
 type Credential struct {
+	Scheme string `json:"scheme,omitempty"`
 	Header string `json:"header"`
 	Value  string `json:"value"`
 }
@@ -1021,7 +1024,15 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 		}
 		logAllowed(req, host)
 		if credential, ok := credentials[normaliseHost(host)]; ok {
-			req.Header.Set(credential.Header, credential.Value)
+			if credential.Scheme == "aws-sigv4" {
+				if err := resignSigV4(req, credential.Value); err != nil {
+					fmt.Fprintf(os.Stderr, "%s cannot re-sign request to %s: %v\n", time.Now().Format(time.RFC3339), host, err)
+					writeStatus(clientTLS, http.StatusBadRequest)
+					return
+				}
+			} else {
+				req.Header.Set(credential.Header, credential.Value)
+			}
 		}
 
 		if err := dialUpstream(); err != nil {

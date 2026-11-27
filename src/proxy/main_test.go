@@ -1314,12 +1314,20 @@ func TestReadCredentials(t *testing.T) {
 
 func TestHandleMITMInjectsCredentials(t *testing.T) {
 	cases := []struct {
-		name string
-		host string
-		want string
+		name    string
+		host    string
+		headers string
+		want    string
 	}{
-		{name: "named host gets the credential", host: "example.com", want: "Bearer real"},
-		{name: "subdomain keeps the client's header", host: "sub.example.com", want: "Bearer placeholder"},
+		{name: "named host gets the credential", host: "example.com", headers: "Authorization: Bearer placeholder\r\n", want: "Bearer real"},
+		{name: "subdomain keeps the client's header", host: "sub.example.com", headers: "Authorization: Bearer placeholder\r\n", want: "Bearer placeholder"},
+		{
+			name: "aws-sigv4 host is re-signed with the real secret",
+			host: "example.amazonaws.com",
+			headers: "X-Amz-Date: 20150830T123600Z\r\n" +
+				"Authorization: AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=00\r\n",
+			want: "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1352,15 +1360,19 @@ func TestHandleMITMInjectsCredentials(t *testing.T) {
 				t.Fatalf("listen proxy: %v", err)
 			}
 			defer proxyLn.Close()
-			redirects := Redirects{"example.com": upstream.Addr().String()}
-			credentials := Credentials{"example.com": {Header: "Authorization", Value: "Bearer real"}}
+			policy := Config{"example.com": wildcardPolicy["example.com"], "example.amazonaws.com": wildcardPolicy["example.com"]}
+			redirects := Redirects{"example.com": upstream.Addr().String(), "example.amazonaws.com": upstream.Addr().String()}
+			credentials := Credentials{
+				"example.com":           {Header: "Authorization", Value: "Bearer real"},
+				"example.amazonaws.com": {Scheme: "aws-sigv4", Value: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"},
+			}
 			stderr := captureStderr(t)
 			go func() {
 				conn, err := proxyLn.Accept()
 				if err != nil {
 					return
 				}
-				handle(conn, wildcardPolicy, ca, redirects, credentials)
+				handle(conn, policy, ca, redirects, credentials)
 			}()
 
 			conn, err := net.Dial("tcp", proxyLn.Addr().String())
@@ -1383,7 +1395,7 @@ func TestHandleMITMInjectsCredentials(t *testing.T) {
 			if err := tlsConn.Handshake(); err != nil {
 				t.Fatalf("TLS handshake: %v", err)
 			}
-			fmt.Fprintf(tlsConn, "GET / HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer placeholder\r\n\r\n", c.host)
+			fmt.Fprintf(tlsConn, "GET / HTTP/1.1\r\nHost: %s\r\n%s\r\n", c.host, c.headers)
 
 			select {
 			case got := <-seen:

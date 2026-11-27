@@ -38,6 +38,7 @@ Everything else is denied. Only changes to the project directory and declared rw
 * [Authentication](#authentication)
     * [Declaring credentials](#declaring-credentials)
     * [Injected credentials (recommended)](#injected-credentials-recommended)
+        * [AWS (`aws-sigv4`)](#aws-aws-sigv4)
     * [Credential files via `rwDirs`](#credential-files-via-rwdirs)
 * [Git](#git)
     * [Setting your git identity](#setting-your-git-identity)
@@ -366,9 +367,28 @@ injectedCredentials = {
 
 - The key is the env var the sandbox sees. It holds `placeholder`. Clients like `gh` refuse to send requests without a token, so the placeholder must be one they accept. Claude Code's needs the `sk-ant-oat01-` prefix.
 - `secret` is a shell expression evaluated at launch. See [Declaring credentials](#declaring-credentials).
-- `scheme` sets the header: `bearer` sends `Authorization: Bearer <token>`, `basic` sends `Authorization: Basic` with `username`, and `header` sends the raw token in the header you name.
+- `scheme` sets the header: `bearer` sends `Authorization: Bearer <token>`, `basic` sends `Authorization: Basic` with `username`, and `header` sends the raw token in the header you name. `aws-sigv4` re-signs AWS requests instead, see [AWS](#aws-aws-sigv4).
 - Hosts match exactly, not by subdomain. Each host must be allowed by `allowedDomains`, and only one credential can name it.
 - The proxy overwrites the header on every request to a listed host, whatever the client sent.
+
+#### AWS (`aws-sigv4`)
+
+AWS signs every request with the secret access key, so the proxy can't just set a header. With `scheme = "aws-sigv4"` the sandbox signs with the placeholder, and the proxy keeps the client's access key ID, scope, date and signed headers and replaces only the signature, computed with the real secret.
+
+```nix
+env.AWS_ACCESS_KEY_ID = "$AWS_ACCESS_KEY_ID";
+injectedCredentials.AWS_SECRET_ACCESS_KEY = {
+  secret = "$AWS_SECRET_ACCESS_KEY";
+  placeholder = "dummy";
+  hosts."s3.eu-west-2.amazonaws.com" = { scheme = "aws-sigv4"; };
+};
+```
+
+- The access key ID isn't secret, so it goes in through `env`.
+- Hosts match exactly: list every endpoint the agent calls, such as `sts.amazonaws.com` or `s3.eu-west-2.amazonaws.com`, and bucket-style hosts like `my-bucket.s3.eu-west-2.amazonaws.com` too.
+- An STS session token (`AWS_SESSION_TOKEN`) goes in through `env`. It is signed, not secret, and is useless without the secret access key.
+- Presigned URLs pass through unchanged, so a URL signed with the placeholder fails. Signed-chunk uploads (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`) are refused with a 400; configure the client for unsigned payload chunks, or single-part uploads. Requests whose body has no `x-amz-content-sha256` are hashed by the proxy, up to 64 MiB.
+- SigV4a (`AWS4-ECDSA-P256-SHA256`, used by multi-region access points) is not supported. Such requests get a 400.
 
 The agent can still use the token through the proxy for as long as the session runs. Injection stops the token itself from leaving the sandbox. It works only with static tokens, such as a `claude setup-token` token or a personal access token. A token the client refreshes itself sends the real credential in the request body, which the proxy does not touch.
 

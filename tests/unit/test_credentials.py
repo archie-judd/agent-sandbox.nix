@@ -35,14 +35,25 @@ def test_each_scheme_builds_its_header() -> None:
                 ),
             },
         ),
+        "AWS_SECRET_ACCESS_KEY": InjectedCredentialSpec(
+            placeholder="dummy",
+            hosts={
+                "s3.eu-west-2.amazonaws.com": CredentialHostSpec(
+                    scheme="aws-sigv4", username=None, header=None
+                ),
+            },
+        ),
     }
 
-    credentials = build_proxy_credentials(injected, {"GH_TOKEN": "real", "GITLAB_TOKEN": "glpat"})
+    credentials = build_proxy_credentials(
+        injected, {"GH_TOKEN": "real", "GITLAB_TOKEN": "glpat", "AWS_SECRET_ACCESS_KEY": "aws"}
+    )
 
     assert credentials == {
         "api.github.com": {"header": "Authorization", "value": "Bearer real"},
         "github.com": {"header": "Authorization", "value": "Basic eC1hY2Nlc3MtdG9rZW46cmVhbA=="},
         "gitlab.test": {"header": "PRIVATE-TOKEN", "value": "glpat"},
+        "s3.eu-west-2.amazonaws.com": {"scheme": "aws-sigv4", "header": "", "value": "aws"},
     }
 
 
