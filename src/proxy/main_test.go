@@ -1312,6 +1312,32 @@ func TestReadCredentials(t *testing.T) {
 	}
 }
 
+func TestLookupCredentialMatchesWildcardLabels(t *testing.T) {
+	credentials := Credentials{
+		"api.example.com":    {Value: "exact"},
+		"s3.*.amazonaws.com": {Value: "wildcard"},
+	}
+	cases := []struct {
+		host string
+		want string
+	}{
+		{host: "api.example.com", want: "exact"},
+		{host: "API.Example.com.", want: "exact"},
+		{host: "s3.eu-west-2.amazonaws.com", want: "wildcard"},
+		{host: "s3.us-east-1.amazonaws.com", want: "wildcard"},
+		{host: "s3.amazonaws.com", want: ""},
+		{host: "bucket.s3.eu-west-2.amazonaws.com", want: ""},
+		{host: "s3..amazonaws.com", want: ""},
+		{host: "sts.eu-west-2.amazonaws.com", want: ""},
+	}
+	for _, c := range cases {
+		got, _ := lookupCredential(credentials, c.host)
+		if got.Value != c.want {
+			t.Errorf("lookupCredential(%q) = %q, want %q", c.host, got.Value, c.want)
+		}
+	}
+}
+
 func TestHandleMITMInjectsCredentials(t *testing.T) {
 	cases := []struct {
 		name    string

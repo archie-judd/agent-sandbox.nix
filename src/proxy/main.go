@@ -386,6 +386,36 @@ func readCredentials(r io.Reader) (Credentials, error) {
 	return credentials, nil
 }
 
+// lookupCredential matches the host exactly, or against a pattern whose "*"
+// labels each stand for one label. Validation rejects patterns that overlap.
+func lookupCredential(credentials Credentials, host string) (Credential, bool) {
+	host = normaliseHost(host)
+	if credential, ok := credentials[host]; ok {
+		return credential, true
+	}
+	labels := strings.Split(host, ".")
+	for pattern, credential := range credentials {
+		if !strings.Contains(pattern, "*") {
+			continue
+		}
+		patternLabels := strings.Split(pattern, ".")
+		if len(patternLabels) != len(labels) {
+			continue
+		}
+		matched := true
+		for i, label := range patternLabels {
+			if label != labels[i] && (label != "*" || labels[i] == "") {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return credential, true
+		}
+	}
+	return Credential{}, false
+}
+
 // lookupRedirect matches like lookupPolicy, so a subdomain that passes the
 // allowlist by suffix match also gets redirected.
 func lookupRedirect(host string, redirects Redirects) (string, bool) {
@@ -1023,7 +1053,7 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 			return
 		}
 		logAllowed(req, host)
-		if credential, ok := credentials[normaliseHost(host)]; ok {
+		if credential, ok := lookupCredential(credentials, host); ok {
 			if credential.Scheme == "aws-sigv4" {
 				if err := resignSigV4(req, credential.Value); err != nil {
 					fmt.Fprintf(os.Stderr, "%s cannot re-sign request to %s: %v\n", time.Now().Format(time.RFC3339), host, err)

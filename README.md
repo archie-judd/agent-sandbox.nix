@@ -368,7 +368,7 @@ injectedCredentials = {
 - The key is the env var the sandbox sees. It holds `placeholder`. Clients like `gh` refuse to send requests without a token, so the placeholder must be one they accept. Claude Code's needs the `sk-ant-oat01-` prefix.
 - `secret` is a shell expression evaluated at launch. See [Declaring credentials](#declaring-credentials).
 - `scheme` sets the header: `bearer` sends `Authorization: Bearer <token>`, `basic` sends `Authorization: Basic` with `username`, and `header` sends the raw token in the header you name. `aws-sigv4` re-signs AWS requests instead, see [AWS](#aws-aws-sigv4).
-- Hosts match exactly, not by subdomain. Each host must be allowed by `allowedDomains`, and only one credential can name it.
+- Hosts match exactly, not by subdomain. A `*` label matches any one label, so `"s3.*.amazonaws.com"` covers every region but not `my-bucket.s3.eu-west-2.amazonaws.com`. A `*` sends the credential to every host it matches, so keep it to labels you trust, such as an AWS region. Each host must be allowed by `allowedDomains`, and no two hosts may match the same host, across all credentials.
 - The proxy overwrites the header on every request to a listed host, whatever the client sent.
 
 #### AWS (`aws-sigv4`)
@@ -385,7 +385,7 @@ injectedCredentials.AWS_SECRET_ACCESS_KEY = {
 ```
 
 - The access key ID isn't secret, so it goes in through `env`.
-- Hosts match exactly: list every endpoint the agent calls, such as `sts.amazonaws.com` or `s3.eu-west-2.amazonaws.com`, and bucket-style hosts like `my-bucket.s3.eu-west-2.amazonaws.com` too.
+- List every endpoint the agent calls. Use `*` for the region to cover them all, as in `"s3.*.amazonaws.com"` and `"sts.*.amazonaws.com"`. Bucket-style hosts like `my-bucket.s3.eu-west-2.amazonaws.com` need their own entry, such as `"my-bucket.s3.*.amazonaws.com"`.
 - An STS session token (`AWS_SESSION_TOKEN`) goes in through `env`. It is signed, not secret, and is useless without the secret access key.
 - Presigned URLs pass through unchanged, so a URL signed with the placeholder fails. Signed-chunk uploads (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`) are refused with a 400; configure the client for unsigned payload chunks, or single-part uploads. Requests whose body has no `x-amz-content-sha256` are hashed by the proxy, up to 64 MiB.
 - SigV4a (`AWS4-ECDSA-P256-SHA256`, used by multi-region access points) is not supported. Such requests get a 400.

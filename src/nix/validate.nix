@@ -186,9 +186,27 @@ let
       hosts = builtins.concatMap (
         name: map lower (builtins.attrNames injectedCredentials.${name}.hosts)
       ) names;
+      # "*" stands for exactly one label, so two hosts overlap when they have as
+      # many labels and each pair is equal or a "*".
+      labelsOf = pkgs.lib.splitString ".";
+      overlaps =
+        a: b:
+        builtins.length (labelsOf a) == builtins.length (labelsOf b)
+        && builtins.all (x: x) (
+          pkgs.lib.zipListsWith (x: y: x == y || x == "*" || y == "*") (labelsOf a) (labelsOf b)
+        );
+      indexedHosts = pkgs.lib.imap0 (index: host: { inherit index host; }) hosts;
       duplicateHosts = pkgs.lib.unique (
-        builtins.filter (host: builtins.length (builtins.filter (other: other == host) hosts) > 1) hosts
+        map (entry: entry.host) (
+          builtins.filter (
+            entry:
+            builtins.any (other: other.index != entry.index && overlaps entry.host other.host) indexedHosts
+          ) indexedHosts
+        )
       );
+      invalidWildcards = builtins.filter (
+        host: builtins.any (label: label != "*" && pkgs.lib.hasInfix "*" label) (labelsOf host)
+      ) hosts;
       unallowedHosts = builtins.filter (host: !(hostAllowed host)) hosts;
     in
     if !(builtins.isAttrs injectedCredentials) then
@@ -203,8 +221,10 @@ let
       builtins.throw "${errorPrefix} injectedCredentials entries must be { secret = <string>; placeholder = <string>; hosts = { \"<host>\" = { scheme = \"bearer\"; } | { scheme = \"basic\"; username = <string>; } | { scheme = \"header\"; header = <string>; } | { scheme = \"aws-sigv4\"; }; }; }. Invalid: ${builtins.toJSON invalidEntries}"
     else if envClashes != [ ] then
       builtins.throw "${errorPrefix} injectedCredentials names must not also be set in env. Both: ${builtins.toJSON envClashes}"
+    else if invalidWildcards != [ ] then
+      builtins.throw "${errorPrefix} injectedCredentials hosts may use \"*\" only as a whole label, as in \"s3.*.amazonaws.com\". Invalid: ${builtins.toJSON invalidWildcards}"
     else if duplicateHosts != [ ] then
-      builtins.throw "${errorPrefix} injectedCredentials must not name a host in more than one credential. Repeated: ${builtins.toJSON duplicateHosts}"
+      builtins.throw "${errorPrefix} injectedCredentials must not name a host more than once, or name hosts whose \"*\" labels match the same host. Overlapping: ${builtins.toJSON duplicateHosts}"
     else if unallowedHosts != [ ] then
       builtins.throw "${errorPrefix} injectedCredentials hosts must be allowed by allowedDomains. Not allowed: ${builtins.toJSON unallowedHosts}"
     else
