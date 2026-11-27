@@ -364,7 +364,9 @@ def compute_launch_config(
         exposed = [NIX_STORE]
     else:
         exposed = list(host.closure_paths)
-    store_targets, target_warnings = get_store_symlink_targets(host.declared, exposed)
+    store_targets, target_warnings = get_store_symlink_targets(
+        host.declared, host.workspace_inner_symlinks, exposed
+    )
     warnings += target_warnings
 
     argv_before_env = [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)

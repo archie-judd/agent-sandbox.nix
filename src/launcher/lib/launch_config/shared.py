@@ -4,6 +4,7 @@ from typing import Sequence
 
 from launcher.lib.constants import WARN_PREFIX
 from launcher.lib.host_state import DeclaredDir, DeclaredPath, HostState
+from launcher.lib.symlinks import ResolvedPath
 
 NIX_STORE = Path("/nix/store")
 
@@ -28,7 +29,9 @@ def is_already_bound(path: Path, prefixes: Sequence[Path]) -> bool:
 
 
 def get_store_symlink_targets(
-    declared: Sequence[DeclaredPath], prefixes: Sequence[Path]
+    declared: Sequence[DeclaredPath],
+    workspace_inner_symlinks: Sequence[ResolvedPath],
+    prefixes: Sequence[Path],
 ) -> tuple[tuple[Path, ...], list[str]]:
     """The symlink targets a platform should expose read-only, and the
     warnings for the ones it should not.
@@ -45,6 +48,7 @@ def get_store_symlink_targets(
 
     chains: list[Sequence[Path]] = [entry.hops for entry in [*files, *dirs]]
     chains += [inner.hops for entry in dirs for inner in entry.inner_symlinks]
+    chains += [inner.hops for inner in workspace_inner_symlinks]
 
     targets: list[Path] = []
     warnings: list[str] = []
