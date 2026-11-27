@@ -92,6 +92,7 @@ let
       buildSpec,
       legacyArgs,
       allowedHostPorts,
+      allowedTcpEgress,
       publishedPorts,
       allowUnixSockets,
       allowHeadlessBrowsers,
@@ -100,7 +101,7 @@ let
       injectedCredentials,
     }:
     builtins.seq (validate.assertNoLegacyArgs legacyArgs) (
-      builtins.seq allowedHostPorts (
+      builtins.deepSeq [ allowedHostPorts allowedTcpEgress ] (
         builtins.seq publishedPorts (
           builtins.seq allowUnixSockets (
             builtins.seq allowHeadlessBrowsers (
@@ -139,6 +140,7 @@ in
   workspaceDir ? "$PWD",
   allowedDomains ? null,
   allowedHostPorts ? [ ],
+  allowedTcpEgress ? [ ],
   publishedPorts ? [ ],
   injectedCredentials ? { },
   # Internal, for the test harness: maps "host" to "addr:port" so the proxy
@@ -172,6 +174,8 @@ let
   );
 
   validatedAllowedHostPorts = validate.validateAllowedHostPorts allowedHostPorts;
+
+  validatedAllowedTcpEgress = validate.validateAllowedTcpEgress allowedTcpEgress;
 
   validatedPublishedPorts = validate.validatePublishedPorts publishedPorts;
 
@@ -211,6 +215,7 @@ let
         env = env;
         workspaceDir = validatedWorkspaceDir;
         allowedHostPorts = validatedAllowedHostPorts;
+        allowedTcpEgress = validatedAllowedTcpEgress;
         publishedPorts = validatedPublishedPorts;
         allowUnixSockets = validatedAllowUnixSockets;
         allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;
@@ -246,6 +251,7 @@ mkWrapper {
     allowedLocalPorts = allowedLocalPorts;
   };
   allowedHostPorts = validatedAllowedHostPorts;
+  allowedTcpEgress = validatedAllowedTcpEgress;
   publishedPorts = validatedPublishedPorts;
   allowUnixSockets = validatedAllowUnixSockets;
   allowHeadlessBrowsers = validatedAllowHeadlessBrowsers;

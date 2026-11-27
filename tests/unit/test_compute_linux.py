@@ -1,8 +1,9 @@
+from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
 
 from harness.builders import make_host_linux, make_session, make_spec_linux
-from launcher.lib.build_spec import PublishedPort
+from launcher.lib.build_spec import PublishedPort, TcpEgress
 from launcher.lib.launch_config.linux.compute import compute_launch_config
 
 
@@ -114,6 +115,21 @@ def test_restricted_mode_leaves_dns_to_the_proxy() -> None:
         restricted.bwrap_args, ["--ro-bind", str(spec.empty_file), "/etc/resolv.conf"]
     )
     assert _contains_run(open_mode.bwrap_args, ["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"])
+
+
+def test_direct_tcp_egress_adds_a_destination_and_port_grant_only_in_restricted_mode() -> None:
+    spec = replace(
+        make_spec_linux(), allowed_tcp_egress=(TcpEgress(cidr="172.27.0.0/24", port=5432),)
+    )
+    restricted = compute_launch_config(spec, make_host_linux(), make_session(proxy_port=1))
+    open_mode = compute_launch_config(spec, make_host_linux(), make_session())
+
+    rule = (
+        "add rule ip sandbox_filter output ip daddr != 10.0.2.2 "
+        "ip daddr 172.27.0.0/24 tcp dport 5432 accept"
+    )
+    assert rule in restricted.network.rules
+    assert rule not in open_mode.network.rules
 
 
 def test_the_unix_socket_filter_is_loaded_only_when_sockets_are_off() -> None:

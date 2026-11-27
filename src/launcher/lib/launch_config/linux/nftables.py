@@ -2,18 +2,21 @@
 
 from typing import Sequence
 
+from launcher.lib.build_spec import TcpEgress
+
 
 def get_nft_rules(
     gateway_ip: str,
     proxy_port: int | None,
     allowed_host_ports: Sequence[int] | None,
     published_ports: Sequence[int] = (),
+    *,
+    allowed_tcp_egress: Sequence[TcpEgress] = (),
 ) -> list[str]:
     """Restricted mode drops everything by default and permits only
-    in-namespace loopback and TCP to the proxy. Open mode drops only traffic
-    addressed to the pasta gateway, which blocks host loopback services
-    without touching internet traffic. published_ports are the pasta -t
-    forwards' in-namespace ports."""
+    in-namespace loopback, the proxy and explicit TCP grants. Open mode drops
+    only ungranted traffic to the pasta gateway, leaving internet access open.
+    published_ports are the pasta -t forwards' in-namespace ports."""
     if allowed_host_ports is None:
         # TCP-only; null means every host-local TCP port.
         matches = ["meta l4proto tcp"]
@@ -76,4 +79,11 @@ def get_nft_rules(
     ]
     if proxy_port is None:
         rules.append(f"add rule ip sandbox_filter output ip daddr {gateway_ip} drop")
+    else:
+        # The pasta gateway maps to host loopback, governed by allowedHostPorts.
+        rules += [
+            f"add rule ip sandbox_filter output ip daddr != {gateway_ip} "
+            f"ip daddr {entry.cidr} tcp dport {entry.port} accept"
+            for entry in allowed_tcp_egress
+        ]
     return rules

@@ -68,6 +68,12 @@ class PublishedPort:
         return cls(port=int(data["port"]), bind_addr=str(data["bind_addr"]))
 
 
+@dataclass(frozen=True, kw_only=True)
+class TcpEgress:
+    cidr: str
+    port: int
+
+
 def _get_nix(data: Mapping[str, Any]) -> Path | None:
     # Null unless the wrapper was built with allowNix: it is only ever used to
     # read the host's nix config, and there is no daemon to read it for.
@@ -165,6 +171,7 @@ class SandboxBuildSpecLinux(SandboxBuildSpec):
     hosts_file: Path
     empty_file: Path
     dependencies: DependenciesLinux
+    allowed_tcp_egress: tuple[TcpEgress, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -269,6 +276,9 @@ def load_build_spec(path: Path) -> SandboxBuildSpecLinux | SandboxBuildSpecDarwi
                 hosts_file=Path(data["hosts_file"]),
                 empty_file=Path(data["empty_file"]),
                 dependencies=DependenciesLinux.from_dict(dependencies_data),
+                allowed_tcp_egress=tuple(
+                    TcpEgress(**entry) for entry in data["allowed_tcp_egress"]
+                ),
             )
         case "darwin":
             return SandboxBuildSpecDarwin(
