@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.11.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.10.0...v5.11.0) (2026-11-28)
+
+
+### Features
+
+* bind store targets of workspace symlinks ([#218](https://github.com/archie-judd/agent-sandbox.nix/issues/218)) ([d117fee](https://github.com/archie-judd/agent-sandbox.nix/commit/d117fee318e3426665b7a2da031216f163f6bb60))
+
 ## [5.10.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.9.0...v5.10.0) (2026-11-11)
 
 
