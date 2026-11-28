@@ -37,6 +37,10 @@ def build_proxy_credentials(
                     assert entry.header is not None
                     header = entry.header
                     value = secret
+                case "aws-sigv4":
+                    # The proxy re-signs the request with the secret instead of setting a header.
+                    credentials[host] = {"scheme": "aws-sigv4", "header": "", "value": secret}
+                    continue
                 case _:
                     assert_never(entry.scheme)
             credentials[host] = {"header": header, "value": value}

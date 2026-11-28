@@ -12,7 +12,7 @@ def _credential(**hosts: dict[str, str]) -> dict[str, Any]:
 
 def test_accepted_credentials_reach_the_spec_without_the_secret() -> None:
     result = nix_eval(
-        allowed_domains=["github.com", "gitlab.test/api"],
+        allowed_domains=["github.com", "gitlab.test/api", "amazonaws.com"],
         injected_credentials={
             "GH_TOKEN": {
                 "secret": "$SECRET",
@@ -26,6 +26,11 @@ def test_accepted_credentials_reach_the_spec_without_the_secret() -> None:
                 "secret": "$OTHER",
                 "placeholder": "dummy",
                 "hosts": {"gitlab.test": {"scheme": "header", "header": "PRIVATE-TOKEN"}},
+            },
+            "AWS_SECRET_ACCESS_KEY": {
+                "secret": "$AWS",
+                "placeholder": "dummy",
+                "hosts": {"s3.eu-west-2.amazonaws.com": {"scheme": "aws-sigv4"}},
             },
         },
     )
@@ -43,6 +48,12 @@ def test_accepted_credentials_reach_the_spec_without_the_secret() -> None:
             "placeholder": "dummy",
             "hosts": {
                 "gitlab.test": {"scheme": "header", "username": None, "header": "PRIVATE-TOKEN"},
+            },
+        },
+        "AWS_SECRET_ACCESS_KEY": {
+            "placeholder": "dummy",
+            "hosts": {
+                "s3.eu-west-2.amazonaws.com": {"scheme": "aws-sigv4", "username": None, "header": None},
             },
         },
     }
@@ -87,6 +98,9 @@ def test_a_name_that_is_not_an_env_var_is_rejected() -> None:
         pytest.param(_credential(**{"example.test": {"scheme": "basic"}}), id="basic without username"),
         pytest.param(_credential(**{"example.test": {"scheme": "header"}}), id="header without header"),
         pytest.param(
+            _credential(**{"example.test": {"scheme": "aws-sigv4", "header": "x"}}), id="aws-sigv4 with header"
+        ),
+        pytest.param(
             _credential(**{"example.test": {"scheme": "bearer", "username": "x"}}), id="bearer with username"
         ),
         pytest.param(_credential(**{"example.test": {"scheme": "basic", "username": ""}}), id="empty username"),
@@ -112,6 +126,46 @@ def test_a_name_also_set_in_env_is_rejected() -> None:
     assert 'injectedCredentials names must not also be set in env. Both: ["TOKEN"]' in result.stderr
 
 
+def test_a_wildcard_label_is_accepted() -> None:
+    result = nix_eval(
+        allowed_domains=["amazonaws.com"],
+        injected_credentials={"TOKEN": _credential(**{"s3.*.amazonaws.com": {"scheme": "aws-sigv4"}})},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert list(json.loads(result.stdout)["injected_credentials"]["TOKEN"]["hosts"]) == ["s3.*.amazonaws.com"]
+
+
+def test_a_partial_wildcard_label_is_rejected() -> None:
+    result = nix_eval(
+        allowed_domains=["amazonaws.com"],
+        injected_credentials={"TOKEN": _credential(**{"s3.eu-*.amazonaws.com": {"scheme": "aws-sigv4"}})},
+    )
+
+    assert result.returncode != 0
+    assert 'only as a whole label, as in "s3.*.amazonaws.com". Invalid: ["s3.eu-*.amazonaws.com"]' in result.stderr
+
+
+@pytest.mark.parametrize(
+    "hosts",
+    [
+        pytest.param(["s3.*.amazonaws.com", "s3.eu-west-2.amazonaws.com"], id="wildcard and exact"),
+        pytest.param(["s3.*.amazonaws.com", "*.eu-west-2.amazonaws.com"], id="two wildcards"),
+    ],
+)
+def test_overlapping_hosts_are_rejected(hosts: list[str]) -> None:
+    result = nix_eval(
+        allowed_domains=["amazonaws.com"],
+        injected_credentials={
+            "ONE": _credential(**{hosts[0]: {"scheme": "aws-sigv4"}}),
+            "TWO": _credential(**{hosts[1]: {"scheme": "aws-sigv4"}}),
+        },
+    )
+
+    assert result.returncode != 0
+    assert "Overlapping" in result.stderr
+
+
 def test_a_host_in_two_credentials_is_rejected() -> None:
     result = nix_eval(
         allowed_domains=["example.test"],
@@ -123,8 +177,7 @@ def test_a_host_in_two_credentials_is_rejected() -> None:
 
     assert result.returncode != 0
     assert (
-        'injectedCredentials must not name a host in more than one credential. Repeated: ["example.test"]'
-        in result.stderr
+        'match the same host. Overlapping: ["example.test"]' in result.stderr
     )
 
 

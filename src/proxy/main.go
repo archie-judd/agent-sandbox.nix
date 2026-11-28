@@ -45,7 +45,10 @@ type Config map[string]DomainPolicy
 // hatch, set via SANDBOX_PROXY_REDIRECT as "host=addr:port[,...]".
 type Redirects map[string]string
 
+// Scheme "aws-sigv4" re-signs the request with Value as the secret access
+// key; any other scheme sets Header to Value.
 type Credential struct {
+	Scheme string `json:"scheme,omitempty"`
 	Header string `json:"header"`
 	Value  string `json:"value"`
 }
@@ -381,6 +384,36 @@ func readCredentials(r io.Reader) (Credentials, error) {
 		credentials[normaliseHost(host)] = credential
 	}
 	return credentials, nil
+}
+
+// lookupCredential matches the host exactly, or against a pattern whose "*"
+// labels each stand for one label. Validation rejects patterns that overlap.
+func lookupCredential(credentials Credentials, host string) (Credential, bool) {
+	host = normaliseHost(host)
+	if credential, ok := credentials[host]; ok {
+		return credential, true
+	}
+	labels := strings.Split(host, ".")
+	for pattern, credential := range credentials {
+		if !strings.Contains(pattern, "*") {
+			continue
+		}
+		patternLabels := strings.Split(pattern, ".")
+		if len(patternLabels) != len(labels) {
+			continue
+		}
+		matched := true
+		for i, label := range patternLabels {
+			if label != labels[i] && (label != "*" || labels[i] == "") {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return credential, true
+		}
+	}
+	return Credential{}, false
 }
 
 // lookupRedirect matches like lookupPolicy, so a subdomain that passes the
@@ -1020,8 +1053,16 @@ func handleMITM(clientConn net.Conn, host, hostPort string, cfg Config, ca *cert
 			return
 		}
 		logAllowed(req, host)
-		if credential, ok := credentials[normaliseHost(host)]; ok {
-			req.Header.Set(credential.Header, credential.Value)
+		if credential, ok := lookupCredential(credentials, host); ok {
+			if credential.Scheme == "aws-sigv4" {
+				if err := resignSigV4(req, credential.Value); err != nil {
+					fmt.Fprintf(os.Stderr, "%s cannot re-sign request to %s: %v\n", time.Now().Format(time.RFC3339), host, err)
+					writeStatus(clientTLS, http.StatusBadRequest)
+					return
+				}
+			} else {
+				req.Header.Set(credential.Header, credential.Value)
+			}
 		}
 
 		if err := dialUpstream(); err != nil {

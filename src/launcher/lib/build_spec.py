@@ -31,7 +31,7 @@ class ProxySpec:
 
 @dataclass(frozen=True, kw_only=True)
 class CredentialHostSpec:
-    scheme: Literal["bearer", "basic", "header"]
+    scheme: Literal["bearer", "basic", "header", "aws-sigv4"]
     username: str | None
     header: str | None
 
