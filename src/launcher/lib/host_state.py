@@ -161,24 +161,35 @@ def _expand_path(unexpanded: str, environ: dict[str, str]) -> Path:
 
 
 def _get_inner_symlinks(directory: Path) -> tuple[ResolvedPath, ...]:
-    try:
-        entries = list(directory.iterdir())
-    except OSError:
-        # An unreadable or missing declared directory is reported by
-        # get_launch_refusals.
-        return ()
-
-    entries.sort()
+    stack = [directory]
+    seen = set()
     inner_symlinks: list[ResolvedPath] = []
 
-    for entry in entries:
-        if entry.is_symlink():
-            resolved, unfollowed_symlink = resolve_path(entry)
-            # Dropped rather than refused: one unfollowable link says nothing
-            # about the declared directory, and a partial walk records no
-            # landing to expose.
-            if unfollowed_symlink is None:
-                inner_symlinks.append(resolved)
+    while stack:
+        current = stack.pop()
+        try:
+            entries = sorted(os.scandir(current), key=lambda entry: entry.name)
+        except OSError:
+            continue
+
+        for entry in entries:
+            if entry.is_symlink():
+                resolved, unfollowed_symlink = resolve_path(Path(entry.path))
+                # Dropped rather than refused: one unfollowable link says nothing
+                # about the declared directory, and a partial walk records no
+                # landing to expose.
+                if unfollowed_symlink is None:
+                    inner_symlinks.append(resolved)
+            elif entry.is_dir(follow_symlinks=False):
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+
+                key = (info.st_dev, info.st_ino)
+                if key not in seen:
+                    seen.add(key)
+                    stack.append(Path(entry.path))
 
     return tuple(inner_symlinks)
 
