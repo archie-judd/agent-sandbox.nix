@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Sequence
 
 from launcher.lib.constants import WARN_PREFIX
-from launcher.lib.host_state import DeclaredDir, DeclaredPath, HostState
+from launcher.lib.host_state import DeclaredDir, DeclaredPath, HostState, MaskedPath
 from launcher.lib.symlinks import ResolvedPath
 
 NIX_STORE = Path("/nix/store")
@@ -32,6 +32,7 @@ def get_store_symlink_targets(
     declared: Sequence[DeclaredPath],
     workspace_inner_symlinks: Sequence[ResolvedPath],
     prefixes: Sequence[Path],
+    masked: Sequence[MaskedPath],
 ) -> tuple[tuple[Path, ...], list[str]]:
     """The symlink targets a platform should expose read-only, and the
     warnings for the ones it should not.
@@ -46,9 +47,15 @@ def get_store_symlink_targets(
     files = [entry for entry in declared if not isinstance(entry, DeclaredDir)]
     dirs = [entry for entry in declared if isinstance(entry, DeclaredDir)]
 
-    chains: list[Sequence[Path]] = [entry.hops for entry in [*files, *dirs]]
-    chains += [inner.hops for entry in dirs for inner in entry.inner_symlinks]
-    chains += [inner.hops for inner in workspace_inner_symlinks]
+    chains: list[tuple[Path, Sequence[Path]]] = [
+        (entry.expanded_path, entry.hops) for entry in [*files, *dirs]
+    ]
+    chains += [
+        (inner.physical_path, inner.hops)
+        for entry in dirs
+        for inner in entry.inner_symlinks
+    ]
+    chains += [(inner.physical_path, inner.hops) for inner in workspace_inner_symlinks]
 
     bound = list(prefixes)
 
@@ -56,7 +63,13 @@ def get_store_symlink_targets(
     warnings: list[str] = []
     resolved: set[Path] = set()
 
-    for hops in chains:
+    for link, hops in chains:
+        if any(
+            link == mask.expanded_path
+            or (mask.kind == "dir" and link.is_relative_to(mask.expanded_path))
+            for mask in masked
+        ):
+            continue
         for landing in hops:
             if landing in resolved:
                 continue

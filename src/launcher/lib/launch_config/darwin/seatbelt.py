@@ -331,6 +331,32 @@ def git_protection(
     return lines
 
 
+
+def masked_paths(
+    masked_dirs: Sequence[Path],
+    masked_files: Sequence[Path],
+    ancestors: Sequence[Path],
+) -> list[str]:
+    if not masked_dirs and not masked_files:
+        return []
+    lines = ["", ";; Masked paths — deny every access"]
+    for path in masked_dirs:
+        lines += [
+            f'(deny file-read* file-write* process-exec (subpath "{path}"))',
+            f'(deny network-bind (local unix-socket (subpath "{path}")))',
+            f'(deny network-outbound (remote unix-socket (subpath "{path}")))',
+        ]
+    for path in masked_files:
+        lines += [
+            f'(deny file-read* file-write* process-exec (literal "{path}"))',
+            f'(deny network-bind (local unix-socket (path-literal "{path}")))',
+            f'(deny network-outbound (remote unix-socket (path-literal "{path}")))',
+        ]
+    if ancestors:
+        lines.append(";; ...and their ancestors cannot be renamed out from under them")
+    lines += [f'(deny file-write* (literal "{path}"))' for path in ancestors]
+    return lines
+
 def closure(store_paths: Sequence[Path]) -> list[str]:
     lines = ["", ";; Nix store — only the closure of the allowed packages"]
     for store_path in store_paths:

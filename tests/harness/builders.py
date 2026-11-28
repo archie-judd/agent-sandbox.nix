@@ -10,7 +10,7 @@ from launcher.lib.build_spec import (
     SandboxBuildSpecLinux,
 )
 from launcher.lib.git_state import GitState
-from launcher.lib.host_state import DeclaredPath, HostStateDarwin, HostStateLinux
+from launcher.lib.host_state import DeclaredPath, HostStateDarwin, HostStateLinux, MaskedPath
 from launcher.lib.session_state import ProxyState, SessionState, SessionStateDarwin
 from launcher.lib.symlinks import ResolvedPath
 
@@ -37,6 +37,8 @@ def make_spec_linux(
         rw_files=(),
         ro_dirs=(),
         ro_files=(),
+        masked_dirs=(),
+        masked_files=(),
         workspace_dir="$PWD",
         env_keys=(),
         allowed_host_ports=allowed_host_ports,
@@ -84,6 +86,8 @@ def make_spec_darwin(
         rw_files=(),
         ro_dirs=(),
         ro_files=(),
+        masked_dirs=(),
+        masked_files=(),
         workspace_dir="$PWD",
         env_keys=env_keys,
         allowed_host_ports=(),
@@ -110,6 +114,7 @@ def make_host_darwin(
     real_home: Path = _HOME,
     has_controlling_terminal: bool = False,
     declared: tuple[DeclaredPath, ...] = (),
+    masked: tuple[MaskedPath, ...] = (),
     workspace_inner_symlinks: tuple[ResolvedPath, ...] = (),
     git: GitState | None = None,
     closure_paths: tuple[Path, ...] = (),
@@ -128,6 +133,7 @@ def make_host_darwin(
         term="xterm",
         has_controlling_terminal=has_controlling_terminal,
         declared=declared,
+        masked=masked,
         git=git,
         closure_paths=closure_paths,
         nix_daemon_socket=nix_daemon_socket,
@@ -140,6 +146,7 @@ def make_host_darwin(
 def make_host_linux(
     *,
     declared: tuple[DeclaredPath, ...] = (),
+    masked: tuple[MaskedPath, ...] = (),
     workspace_inner_symlinks: tuple[ResolvedPath, ...] = (),
     closure_paths: tuple[Path, ...] = (),
     nix_daemon_socket: Path | None = None,
@@ -157,6 +164,7 @@ def make_host_linux(
         term="xterm",
         has_controlling_terminal=False,
         declared=declared,
+        masked=masked,
         git=None,
         closure_paths=closure_paths,
         nix_daemon_socket=nix_daemon_socket,

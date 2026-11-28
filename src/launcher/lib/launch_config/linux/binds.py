@@ -146,7 +146,7 @@ def get_declared_binds(host: HostStateLinux, prefixes: Sequence[Path]) -> Declar
     dirs = [d for d in host.declared if isinstance(d, DeclaredDir)]
 
     targets, warnings = get_store_symlink_targets(
-        host.declared, host.workspace_inner_symlinks, prefixes
+        host.declared, host.workspace_inner_symlinks, prefixes, host.masked
     )
     for target in targets:
         symlink_targets += ["--ro-bind", str(target), str(target)]
@@ -217,3 +217,16 @@ def get_git_binds(
             args.extend(["--ro-bind", str(spec.empty_file), str(protected)])
             masked.append(protected)
     return args, masked
+
+
+def get_mask_binds(spec: SandboxBuildSpecLinux, host: HostStateLinux) -> list[str]:
+    args: list[str] = []
+    for mask in host.masked:
+        if not mask.exists or mask.hops:
+            continue
+        path = str(mask.expanded_path)
+        if mask.kind == "dir":
+            args += ["--tmpfs", path, "--remount-ro", path]
+        else:
+            args += ["--ro-bind", str(spec.empty_file), path]
+    return args

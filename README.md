@@ -45,6 +45,7 @@ Everything else is denied. Only changes to the project directory and declared rw
     * [What the sandbox exposes](#what-the-sandbox-exposes)
     * [Remote access (push / pull / fetch)](#remote-access-push--pull--fetch)
     * [Read-only paths in the git directory](#read-only-paths-in-the-git-directory)
+* [Masked paths](#masked-paths)
 * [Using Nix inside the sandbox](#using-nix-inside-the-sandbox)
 * [Using headless browsers inside the sandbox](#using-headless-browsers-inside-the-sandbox)
     * [Sandbox configuration](#sandbox-configuration)
@@ -141,6 +142,8 @@ Set `CLAUDE_CONFIG_DIR` to `$HOME/.claude`, so that Claude writes `~/.claude.jso
 | `rwFiles` | no | Individual files the agent can read and write |
 | `roDirs` | no | Directories the agent can read but not write (for example signed binaries, reference source trees, secret stores) |
 | `roFiles` | no | Individual files the agent can read but not write (for example `~/.config/git/config` for the git identity, see [Setting your git identity](#setting-your-git-identity) |
+| `maskedDirs` | no | Directories inside an exposed path that the agent cannot read or write (for example `"$PWD/secrets"`). See [Masked paths](#masked-paths). |
+| `maskedFiles` | no | Files inside an exposed path that the agent cannot read or write (for example `"$PWD/.env"`). See [Masked paths](#masked-paths). |
 | `env` | no | Additional environment variables, as an attrset |
 | `injectedCredentials` | no | Tokens the proxy adds to requests, so the agent never sees them. Requires `allowedDomains`. See [Injected credentials](#injected-credentials-recommended). |
 | `allowedDomains` | no | Limits the domains the sandbox can reach. Leave it unset for open internet. Accepts a list of domains (all methods allowed), or an attrset that maps each domain to `"*"` or to a list of HTTP methods. `[ ]` blocks all internet access. |
@@ -498,6 +501,20 @@ All other paths stay writable, so commits, fetches, branch switches and history 
 - `git config` cannot write to the repo config. Set repo-level config on the host instead.
 - `git worktree remove` and `git worktree prune` fail, because the protected pointer file makes the worktree directory impossible to remove. Run these commands on the host.
 
+## Masked paths
+
+`maskedDirs` and `maskedFiles` hide paths inside the workspace or another exposed path. Use them for untracked secrets such as `.env`:
+
+```nix
+maskedFiles = [ "$PWD/.env" ];
+maskedDirs = [ "$PWD/secrets" ];
+```
+
+On Linux masked files and directories appear empty and read-only. On macOS every access fails with `Operation not permitted`.
+
+- A mask does not hide a file git tracks: the agent can read it from git history. The launcher warns about this.
+- To stop the agent editing a file it should still read, such as `flake.nix`, use `roFiles` instead.
+
 ## Using Nix inside the sandbox
 
 Set `allowNix = true` to let the agent run nix commands inside the sandbox. The sandbox gives the agent access to the host's nix daemon and the full nix store. `pkgs.nix` is added to the agent's PATH, so you do not put it in `allowedPackages`. The agent reaches the daemon over a UNIX-domain socket, so `allowNix = true` requires `allowUnixSockets = true`. See [UNIX-domain sockets](#unix-domain-sockets).
@@ -663,30 +680,29 @@ This section describes what the sandbox protects against, and what it does not p
 
 The agent can do something it should not do. It can run a bad prompt, process a malicious file, use a compromised dependency, or invent a destructive command. In each case, the sandbox keeps the damage inside the project directory. In detail:
 
-- The agent cannot read your SSH keys, browser sessions, password manager, the source code of other projects, or anything else in your home directory outside the paths you expose explicitly.
-- The agent cannot delete or modify files outside the project directory and your declared `rwDirs` and `rwFiles`.
-- The agent cannot reach internet domains outside the ones you allow, when you set `allowedDomains`.
-- The agent cannot talk to local services on your laptop (databases, dev servers, the SSH agent, other terminal windows, and similar), unless you allow host-local TCP ports explicitly with `allowedHostPorts`.
-- The agent cannot leave code behind that runs on your host at your next git command. A writable git directory would permit that: a file in `hooks/`, a `core.hooksPath` or `alias.*` entry in a config file, or a pointer file aimed at a git directory the agent controls.
-- The agent cannot leave your repository storing part of its history somewhere else. `objects/info/alternates` tells git to look for objects in another directory as well as your own and is not writable.
-- The agent can run only the tools you list in `allowedPackages`, unless you set `allowNix = true`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox).
-- The agent cannot read or list the Nix store beyond the closure of `allowedPackages`, unless you set `allowNix = true`.
-- The agent cannot see your other running programs, read the environment variables they have set, or interfere with your other open terminals.
-- The agent cannot widen its own sandbox by planting a symlink in a path you declared. See [Arguments](#arguments).
+- The agent cannot read your home directory outside the paths you expose. This covers SSH keys, browser sessions, password managers and other projects.
+- The agent cannot change or delete files outside the project directory, `rwDirs` and `rwFiles`.
+- With `allowedDomains` set, the agent can reach only the domains you allow.
+- The agent cannot reach local services such as databases, dev servers or the SSH agent, except on ports in `allowedHostPorts`.
+- The agent cannot plant code that runs at your next git command, through `hooks/`, a `core.hooksPath` or `alias.*` entry, or a pointer to a git directory it controls.
+- The agent cannot make your repository read objects from elsewhere, because `objects/info/alternates` is read-only.
+- The agent can run only `allowedPackages`, and read only their closure in the Nix store, unless you set `allowNix = true`. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox).
+- The agent cannot see or interfere with your other processes, their environment variables, or your terminals.
+- The agent cannot widen its sandbox by planting a symlink in a declared path. See [Arguments](#arguments).
 
 ### What it doesn't protect against
 
 The sandbox is an isolation boundary. It is not an anonymity boundary, and it is not a defense against an attacker who has already taken over your machine in some other way.
 
-- The agent can fingerprint your machine. It can see your hostname, hardware model, CPU, RAM, OS version, and rough network details. If the agent must not know which machine it runs on, this is not the tool. Use a VM or a separate device.
-- Your username and home directory path are visible to the agent. This is unavoidable, because the agent needs to know where `$HOME/.claude` resolves to. If your username is itself sensitive, this is not the right tool.
-- With `allowNix = true`, all of `/nix/store` is readable and executable, not only your allowed packages, so the agent can list every package you have built. The Nix store is normally world-readable on any system, so this matches existing behavior.See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox).
-- A launch from a subdirectory does not limit reads to that subdirectory. The agent can read the whole working tree that contains it. See [What the sandbox exposes](#what-the-sandbox-exposes).
-- The agent can read all of the git directory. This includes every branch, stash and reflog entry, also content that is no longer in the working tree.
-- The agent has everything you hand it. If you expose your `~/.claude` directory (or any credential file) through `rwDirs`, or pass a token through `env`, the agent can read it. That is how it logs in. A compromised agent has the same access to those credentials as your shell. Treat this the way you would treat handing the token to any other CLI tool you did not write yourself.
-- The agent can edit its own sandbox config. `flake.nix` lives inside the project directory, and the sandbox permits writes to it. An agent could weaken its own restrictions for the next session. The changes take effect only when you enter the dev shell again, so it is worth reading `git diff` first.
-- The sandbox protects only the repo of the project directory from git hook injection. It does not protect other repos that sit under it. A nested repo is writable like anything else there, and this includes its hooks.
-- The sandbox is no defense against root access or kernel bugs. If something on your machine has already gained administrator-level access, or the operating system itself has a deeper bug, this sandbox cannot stop it.
+- The agent can fingerprint your machine: hostname, hardware, CPU, RAM, OS version and rough network details. Use a VM or a separate device if that matters.
+- The agent can see your username and home directory path. It needs them to resolve paths such as `$HOME/.claude`.
+- With `allowNix = true`, the agent can read and execute all of `/nix/store`. The store is world-readable on the host anyway. See [Using Nix inside the sandbox](#using-nix-inside-the-sandbox).
+- A launch from a subdirectory still exposes the whole working tree. See [What the sandbox exposes](#what-the-sandbox-exposes).
+- The agent can read the whole git directory, including every branch, stash and reflog entry.
+- The agent can use every credential you expose through `rwDirs`, `rwFiles` or `env`, such as `~/.claude`, as your shell can.
+- The agent can edit its own `flake.nix` to weaken the next session's sandbox. Add `"$PWD/flake.nix"` to `roFiles` or `maskedFiles` to prevent this.
+- Only the project directory's repo is protected from hook injection. Nested repos, hooks included, are writable.
+- The sandbox does not stop an attacker who already has root, or a kernel bug.
 
 ### Linux vs macOS
 

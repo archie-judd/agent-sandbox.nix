@@ -13,6 +13,7 @@ from launcher.lib.constants import (
     NO_PROXY_HOSTS,
     PASSWD,
     SEATBELT_PROFILE,
+    WARN_PREFIX,
 )
 from launcher.lib.git_state import (
     GitState,
@@ -193,6 +194,28 @@ def _get_nested_ro_paths(
     return tuple(nested_dirs), tuple(nested_files)
 
 
+
+def _get_mask_ancestors(host: HostStateDarwin) -> list[Path]:
+    writable = [host.workspace_dir]
+    for declared in host.declared:
+        if isinstance(declared, DeclaredDir) and declared.mode == "rw":
+            writable.append(declared.expanded_path)
+
+    ancestors: list[Path] = []
+    for mask in host.masked:
+        if not mask.exists or mask.hops:
+            continue
+        roots = [
+            root for root in writable if mask.expanded_path.is_relative_to(root)
+        ]
+        if not roots:
+            continue
+        outermost = min(roots, key=lambda root: len(root.parts))
+        for ancestor in _get_ancestors(mask.expanded_path, outermost):
+            if ancestor not in ancestors:
+                ancestors.append(ancestor)
+    return ancestors
+
 def _get_passwd(host: HostStateDarwin) -> str:
     # A single fabricated user: the host's real /etc/passwd would hand over
     # every account name and home path on the machine.
@@ -347,6 +370,13 @@ def _get_profile_lines(
         lines += seatbelt.git_protection(
             git.protected_dirs, tuple(git.protected_files.keys())
         )
+
+    applied = [mask for mask in host.masked if mask.exists and not mask.hops]
+    lines += seatbelt.masked_paths(
+        [mask.expanded_path for mask in applied if mask.kind == "dir"],
+        [mask.expanded_path for mask in applied if mask.kind == "file"],
+        _get_mask_ancestors(host),
+    )
     return lines
 
 
@@ -365,9 +395,15 @@ def compute_launch_config(
     else:
         exposed = list(host.closure_paths)
     store_targets, target_warnings = get_store_symlink_targets(
-        host.declared, host.workspace_inner_symlinks, exposed
+        host.declared, host.workspace_inner_symlinks, exposed, host.masked
     )
     warnings += target_warnings
+    warnings += [
+        f"{WARN_PREFIX} {mask.expanded_path} is masked but tracked by git, so "
+        f"its contents stay readable through git history."
+        for mask in host.masked
+        if mask.is_tracked
+    ]
 
     argv_before_env = [str(SYSTEM_ENV), "-i"] + _get_computed_env(spec, host, session)
     argv_after_env = [
