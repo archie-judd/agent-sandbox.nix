@@ -16,6 +16,7 @@ from launcher.lib.constants import (
     SANDBOX_CA_CERT,
     SECCOMP_FD,
     SECCOMP_FILTER,
+    WARN_PREFIX,
 )
 from launcher.lib.git_state import (
     GitState,
@@ -30,6 +31,7 @@ from launcher.lib.launch_config.linux.binds import (
     get_bound_prefixes,
     get_declared_binds,
     get_git_binds,
+    get_mask_binds,
 )
 from launcher.lib.launch_config.linux.nftables import get_nft_rules
 from launcher.lib.launch_config.linux.seccomp import get_unix_deny_filter
@@ -237,6 +239,7 @@ def _get_bwrap_args(
     # symlink it has already planted.
     args += list(binds.parent_symlinks)
     args += list(git_args)
+    args += get_mask_binds(spec, host)
 
     # The socket itself, not its directory, which for a socket resolving into
     # /run would hand over every other daemon's socket there. Emitted after
@@ -280,6 +283,12 @@ def compute_launch_config(
 ) -> SandboxLaunchConfigLinux:
     git, warnings = get_usable_git_state(host)
     warnings += get_sessions_root_warnings(host, session.session_dir)
+    warnings += [
+        f"{WARN_PREFIX} {mask.expanded_path} is masked but tracked by git, so "
+        f"its contents stay readable through git history."
+        for mask in host.masked
+        if mask.is_tracked
+    ]
     prefixes = get_bound_prefixes(spec, host, git)
     binds = get_declared_binds(host, prefixes)
     git_args, masked = get_git_binds(spec, git)

@@ -135,6 +135,8 @@ in
   rwFiles ? [ ],
   roDirs ? [ ],
   roFiles ? [ ],
+  maskedDirs ? [ ],
+  maskedFiles ? [ ],
   env ? { },
   workspaceDir ? "$PWD",
   allowedDomains ? null,
@@ -205,6 +207,8 @@ let
     rwFiles = rwFiles;
     roDirs = roDirs;
     roFiles = roFiles;
+    maskedDirs = maskedDirs;
+    maskedFiles = maskedFiles;
     env = env;
     workspaceDir = validatedWorkspaceDir;
     allowedHostPorts = validatedAllowedHostPorts;

@@ -15,6 +15,8 @@
   rwFiles,
   roDirs,
   roFiles,
+  maskedDirs,
+  maskedFiles,
   env,
   workspaceDir,
   allowedHostPorts,
@@ -118,6 +120,8 @@ let
     rw_files = rwFiles;
     ro_dirs = roDirs;
     ro_files = roFiles;
+    masked_dirs = maskedDirs;
+    masked_files = maskedFiles;
     # Keys only. The values are runtime shell expressions, emitted as a
     # fragment launch.sh sources; they never reach Python.
     env_keys = builtins.attrNames env;

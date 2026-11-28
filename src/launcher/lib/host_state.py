@@ -54,6 +54,18 @@ class DeclaredDir(DeclaredPath):
 
 
 @dataclass(frozen=True, kw_only=True)
+class MaskedPath:
+    unexpanded_path: str
+    expanded_path: Path
+    kind: Literal["dir", "file"]
+    exists: bool
+    is_dir: bool
+    hops: tuple[Path, ...]
+    unfollowed_symlink: str | None
+    is_tracked: bool
+
+
+@dataclass(frozen=True, kw_only=True)
 class HostState:
     workspace_dir: Path
     workspace_dir_exists: bool
@@ -65,6 +77,7 @@ class HostState:
     term: str | None
     has_controlling_terminal: bool
     declared: tuple[DeclaredPath, ...]
+    masked: tuple[MaskedPath, ...]
     git: GitState | None
     closure_paths: tuple[Path, ...]
     nix_daemon_socket: Path | None
@@ -246,6 +259,49 @@ def _get_declared_paths(
     return paths
 
 
+def _get_masked_paths(
+    masked: Sequence[str], kind: Literal["dir", "file"], git: Path
+) -> list[MaskedPath]:
+    environ = dict(os.environ)
+    paths: list[MaskedPath] = []
+    for unexpanded in masked:
+        expanded = _expand_path(unexpanded, environ)
+        hops: tuple[Path, ...] = ()
+        unfollowed_symlink: str | None = None
+        if expanded.is_absolute():
+            resolved, unfollowed_symlink = resolve_path(expanded)
+            if unfollowed_symlink is None:
+                expanded = resolved.physical_path
+                hops = resolved.hops
+        exists = expanded.is_absolute() and os.path.lexists(expanded)
+        is_dir = exists and not hops and os.path.isdir(expanded)
+        is_tracked = False
+        if exists:
+            try:
+                result = subprocess.run(
+                    [str(git), "ls-files", "-z", "--", expanded.name],
+                    cwd=expanded.parent,
+                    capture_output=True,
+                    check=False,
+                )
+                is_tracked = result.returncode == 0 and result.stdout != b""
+            except OSError:
+                pass
+        paths.append(
+            MaskedPath(
+                unexpanded_path=unexpanded,
+                expanded_path=expanded,
+                kind=kind,
+                exists=exists,
+                is_dir=is_dir,
+                hops=hops,
+                unfollowed_symlink=unfollowed_symlink,
+                is_tracked=is_tracked,
+            )
+        )
+    return paths
+
+
 def _has_controlling_terminal() -> bool:
     # /dev/tty rather than stdin, so a piped stdin does not look like an
     # absent terminal.
@@ -396,6 +452,7 @@ class _CommonHostState(TypedDict):
     term: str | None
     has_controlling_terminal: bool
     declared: tuple[DeclaredPath, ...]
+    masked: tuple[MaskedPath, ...]
     git: GitState | None
     closure_paths: tuple[Path, ...]
     nix_daemon_socket: Path | None
@@ -430,6 +487,11 @@ def _common_host_state(
     declared_paths += _get_declared_paths(spec.ro_dirs, "ro", "dir")
     declared_paths += _get_declared_paths(spec.ro_files, "ro", "file")
 
+    git = spec.dependencies.git
+    masked_paths: list[MaskedPath] = []
+    masked_paths += _get_masked_paths(spec.masked_dirs, "dir", git)
+    masked_paths += _get_masked_paths(spec.masked_files, "file", git)
+
     # A socket rather than mere existence: a single-user install has no daemon
     # to reach, and a leftover regular file at the path is not one either.
     nix_daemon_socket = None
@@ -462,7 +524,8 @@ def _common_host_state(
         term=os.environ.get("TERM"),
         has_controlling_terminal=_has_controlling_terminal(),
         declared=tuple(declared_paths),
-        git=read_git_state(spec.dependencies.git, workspace_dir),
+        masked=tuple(masked_paths),
+        git=read_git_state(git, workspace_dir),
         closure_paths=_read_closure_paths(spec.closure_paths_file),
         nix_daemon_socket=nix_daemon_socket,
         nix_sandbox_setting=nix_sandbox_setting,

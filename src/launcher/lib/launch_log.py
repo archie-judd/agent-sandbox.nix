@@ -114,6 +114,8 @@ def write_launch_request(
             _list_field("rwFiles", spec.rw_files),
             _list_field("roDirs", spec.ro_dirs),
             _list_field("roFiles", spec.ro_files),
+            _list_field("maskedDirs", spec.masked_dirs),
+            _list_field("maskedFiles", spec.masked_files),
             _field("injectedCredentials", "" if credentials else _NONE),
             *credentials,
             "",

@@ -195,7 +195,7 @@ let
         && builtins.all (x: x) (
           pkgs.lib.zipListsWith (x: y: x == y || x == "*" || y == "*") (labelsOf a) (labelsOf b)
         );
-      indexedHosts = pkgs.lib.imap0 (index: host: { inherit index host; }) hosts;
+      indexedHosts = pkgs.lib.imap0 (index: host: { index = index; host = host; }) hosts;
       duplicateHosts = pkgs.lib.unique (
         map (entry: entry.host) (
           builtins.filter (

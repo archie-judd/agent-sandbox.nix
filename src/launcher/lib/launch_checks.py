@@ -8,7 +8,10 @@ from launcher.lib.host_state import (
     DeclaredPath,
     HostStateDarwin,
     HostStateLinux,
+    MaskedPath,
+    get_grantable_repo_root,
     get_nix_daemon_socket_path,
+    get_usable_git_state,
 )
 from launcher.lib.launch_config.linux.seccomp import SUPPORTED_MACHINES
 
@@ -21,7 +24,7 @@ def _get_declared_label(declared: DeclaredPath) -> str:
     return f"{declared.mode}File"
 
 
-def _origin_suffix(declared: DeclaredPath) -> str:
+def _origin_suffix(declared: DeclaredPath | MaskedPath) -> str:
     if declared.unexpanded_path == str(declared.expanded_path):
         return ""
     return f' (declared as "{declared.unexpanded_path}")'
@@ -121,6 +124,84 @@ def _get_nested_bind_conflicts(
 
     return conflicts
 
+
+
+def _get_mask_refusals(
+    spec: SandboxBuildSpecLinux | SandboxBuildSpecDarwin,
+    host: HostStateLinux | HostStateDarwin,
+) -> list[str]:
+    git, _ = get_usable_git_state(host)
+    repo_root = get_grantable_repo_root(host, git)
+    roots = [host.workspace_dir]
+    roots += [d.expanded_path for d in host.declared if isinstance(d, DeclaredDir)]
+    if repo_root is not None:
+        roots.append(repo_root)
+    files = [d.expanded_path for d in host.declared if not isinstance(d, DeclaredDir)]
+    exposed = list(roots) + files
+    if spec.allow_nix:
+        exposed.append(Path("/nix/store"))
+    else:
+        exposed += list(host.closure_paths)
+
+    refusals: list[str] = []
+    for mask in host.masked:
+        path = mask.expanded_path
+        label = "maskedDir" if mask.kind == "dir" else "maskedFile"
+        prefix = f"{path}: declared as {label} but"
+        suffix = _origin_suffix(mask)
+        if not path.is_absolute():
+            refusals.append(
+                f"{prefix} is not an absolute path; write it out in full or "
+                f"use $HOME{suffix}"
+            )
+            continue
+        if mask.unfollowed_symlink is not None:
+            refusals.append(f"{prefix} {mask.unfollowed_symlink}{suffix}")
+            continue
+        if mask.exists and not mask.hops and mask.is_dir != (mask.kind == "dir"):
+            if mask.is_dir:
+                problem = "it is a directory; declare it in maskedDirs"
+            else:
+                problem = "it is not a directory; declare it in maskedFiles"
+            refusals.append(f"{prefix} {problem}{suffix}")
+            continue
+        if host.git is not None and path.is_relative_to(host.git.common_dir):
+            refusals.append(
+                f"{prefix} it is inside the git directory "
+                f"{host.git.common_dir}, which cannot be masked{suffix}"
+            )
+            continue
+        if path not in files and not any(path.is_relative_to(r) for r in roots):
+            refusals.append(
+                f"{prefix} the sandbox does not expose it, so there is nothing "
+                f"to mask{suffix}"
+            )
+            continue
+        if mask.kind == "dir":
+            inside = [host.workspace_dir] + [d.expanded_path for d in host.declared]
+            if host.git is not None:
+                inside.append(host.git.common_dir)
+            contained = [
+                other
+                for other in inside
+                if other != path and other.is_relative_to(path)
+            ]
+            if contained:
+                refusals.append(
+                    f"{prefix} it contains {contained[0]}, which the sandbox "
+                    f"binds separately. Overlapping masks are not supported"
+                    f"{suffix}"
+                )
+                continue
+        if mask.hops:
+            target = mask.hops[-1]
+            if any(target == e or target.is_relative_to(e) for e in exposed):
+                refusals.append(
+                    f"{prefix} it is a symlink to {target}, which the sandbox "
+                    f"still exposes, so masking the link would not hide it"
+                    f"{suffix}"
+                )
+    return refusals
 
 def _confirm_on_terminal() -> bool:
     # /dev/tty rather than stdin, so this neither consumes input meant for
@@ -284,6 +365,8 @@ def get_launch_refusals(
             f"always writable inside the sandbox."
         )
         return tuple(refusals)
+
+    refusals += _get_mask_refusals(spec, host)
 
     # Confirmed rather than refused: an unsandboxed daemon is the macOS
     # default, and the fix is a root-level change to the host's nix config.
