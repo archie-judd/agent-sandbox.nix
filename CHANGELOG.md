@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.11.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.11.0...v5.11.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **launcher:** check sub-directories for symlinks as well ([#216](https://github.com/archie-judd/agent-sandbox.nix/issues/216)) ([f9b0cf5](https://github.com/archie-judd/agent-sandbox.nix/commit/f9b0cf50dce7a042e04803b795d5236ee6330c8c))
+
 ## [5.11.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.10.0...v5.11.0) (2026-11-28)
 
 
