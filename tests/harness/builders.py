@@ -12,6 +12,7 @@ from launcher.lib.build_spec import (
 from launcher.lib.git_state import GitState
 from launcher.lib.host_state import DeclaredPath, HostStateDarwin, HostStateLinux
 from launcher.lib.session_state import ProxyState, SessionState, SessionStateDarwin
+from launcher.lib.symlinks import ResolvedPath
 
 _HOME = Path("/home/someone")
 _SESSION_DIR = Path("/sessions/20260101-000000-1-sandboxed-agent")
@@ -109,6 +110,7 @@ def make_host_darwin(
     real_home: Path = _HOME,
     has_controlling_terminal: bool = False,
     declared: tuple[DeclaredPath, ...] = (),
+    workspace_inner_symlinks: tuple[ResolvedPath, ...] = (),
     git: GitState | None = None,
     closure_paths: tuple[Path, ...] = (),
     nix_daemon_socket: Path | None = None,
@@ -118,6 +120,7 @@ def make_host_darwin(
     return HostStateDarwin(
         workspace_dir=workspace_dir,
         workspace_dir_exists=True,
+        workspace_inner_symlinks=workspace_inner_symlinks,
         launch_dir=workspace_dir,
         real_home=real_home,
         uid=501,
@@ -137,6 +140,7 @@ def make_host_darwin(
 def make_host_linux(
     *,
     declared: tuple[DeclaredPath, ...] = (),
+    workspace_inner_symlinks: tuple[ResolvedPath, ...] = (),
     closure_paths: tuple[Path, ...] = (),
     nix_daemon_socket: Path | None = None,
     machine: str = "x86_64",
@@ -145,6 +149,7 @@ def make_host_linux(
     return HostStateLinux(
         workspace_dir=_HOME / "project",
         workspace_dir_exists=True,
+        workspace_inner_symlinks=workspace_inner_symlinks,
         launch_dir=_HOME / "project",
         real_home=_HOME,
         uid=1000,

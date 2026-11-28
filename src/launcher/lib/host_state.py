@@ -57,6 +57,7 @@ class DeclaredDir(DeclaredPath):
 class HostState:
     workspace_dir: Path
     workspace_dir_exists: bool
+    workspace_inner_symlinks: tuple[ResolvedPath, ...]
     launch_dir: Path
     real_home: Path
     uid: int
@@ -387,6 +388,7 @@ class _CommonHostState(TypedDict):
 
     workspace_dir: Path
     workspace_dir_exists: bool
+    workspace_inner_symlinks: tuple[ResolvedPath, ...]
     launch_dir: Path
     real_home: Path
     uid: int
@@ -447,6 +449,9 @@ def _common_host_state(
     return _CommonHostState(
         workspace_dir=workspace_dir,
         workspace_dir_exists=_path_exists(workspace_dir),
+        workspace_inner_symlinks=(
+            _get_inner_symlinks(workspace_dir) if workspace_dir.is_absolute() else ()
+        ),
         launch_dir=launch_dir,
         # Resolved in full, unlike declared paths: the home is only compared,
         # never bound, and it has to match what os.getcwd() reports even

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from harness.builders import make_host_linux
-from launcher.lib.host_state import _get_declared_paths
+from launcher.lib.host_state import _get_declared_paths, _get_inner_symlinks
 from launcher.lib.launch_config.linux.binds import DeclaredBinds, get_declared_binds
 
 
@@ -195,3 +195,36 @@ def test_a_store_symlink_dir_inside_a_bound_parent_is_not_mounted_over(
 
     assert binds.dir_binds == ()
     assert list(binds.symlink_targets) == ["--ro-bind", str(STORE_DIR), str(STORE_DIR)]
+
+
+def _workspace_binds(workspace: Path) -> DeclaredBinds:
+    host = make_host_linux(workspace_inner_symlinks=_get_inner_symlinks(workspace))
+    return get_declared_binds(host, [workspace])
+
+
+def test_a_workspace_symlink_into_the_store_is_bound_read_only(tmp_path: Path) -> None:
+    workspace = Path(os.path.realpath(tmp_path)) / "workspace"
+    workspace.mkdir()
+    (workspace / "result").symlink_to(STORE_FILE)
+
+    binds = _workspace_binds(workspace)
+
+    assert list(binds.symlink_targets) == ["--ro-bind", str(STORE_FILE), str(STORE_FILE)]
+    assert binds.warnings == ()
+
+
+def test_a_workspace_symlink_out_of_bounds_is_not_bound(tmp_path: Path) -> None:
+    root = Path(os.path.realpath(tmp_path))
+    workspace = root / "workspace"
+    workspace.mkdir()
+    out_of_bounds = root / "secret"
+    out_of_bounds.touch()
+    (workspace / ".envrc").symlink_to(out_of_bounds)
+
+    binds = _workspace_binds(workspace)
+
+    assert str(out_of_bounds) not in _every_arg(binds)
+    assert binds.warnings == (
+        f"[WARN][agent-sandbox.nix] ignoring symlink to '{out_of_bounds}': outside "
+        "permitted paths. Declare it as a rwDir, rwFile, roDir or roFile to allow access.",
+    )

@@ -196,6 +196,40 @@ def test_a_store_link_behind_an_out_of_bounds_dir_is_not_bound(
     assert outcomes == {("read", target): HIDDEN}
 
 
+@pytest.fixture
+def workspace(tmp_path: Path) -> Path:
+    directory = tmp_path / "workspace"
+    directory.mkdir(exist_ok=True)
+    return directory
+
+
+def test_a_workspace_symlink_grants_only_its_store_target(
+    symlinks: Path, launch: Launch, store: dict[str, Path], workspace: Path
+) -> None:
+    (workspace / "result").symlink_to(store["NONCLOSURE_STORE_FILE"])
+    checks: list[tuple[PathOp, Path]] = [
+        ("read", store["NONCLOSURE_STORE_FILE"]),
+        ("write", store["NONCLOSURE_STORE_FILE"]),
+        ("read", store["NONCLOSURE_STORE_FILE2"]),
+    ]
+
+    outcomes = probe_paths(launch, symlinks, checks)
+
+    assert outcomes == {checks[0]: "ok", checks[1]: READ_ONLY_MODE, checks[2]: HIDDEN}
+
+
+def test_an_out_of_bounds_workspace_symlink_is_ignored_with_a_warning(
+    symlinks: Path, launch: Launch, workspace: Path, out_of_bounds: Path
+) -> None:
+    (workspace / ".envrc").symlink_to(out_of_bounds)
+
+    started = launch(symlinks, "true")
+    outcomes = probe_paths(launch, symlinks, [("read", out_of_bounds)])
+
+    assert started.returncode == 0, started.stderr
+    assert f"ignoring symlink to '{out_of_bounds}'" in started.stderr
+    assert outcomes == {("read", out_of_bounds): HIDDEN}
+
 @pytest.mark.darwin
 def test_a_declared_dir_under_a_symlinked_parent_is_reachable_alone(
     symlinks: Path, launch: Launch, parent_link_dir: Path
