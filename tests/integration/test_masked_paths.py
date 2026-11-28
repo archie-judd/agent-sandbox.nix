@@ -8,6 +8,7 @@ from harness.launch import Launch
 from harness.probes import PathOp, probe_paths
 
 DENIED = {"linux": "EROFS", "darwin": "EPERM"}[sys.platform]
+READ_ONLY_MODE = {"linux": "EACCES", "darwin": "EPERM"}[sys.platform]
 SECRET = "secret-content\n"
 
 
@@ -63,7 +64,7 @@ def test_masked_paths_are_not_writable(
 
     outcomes = probe_paths(launch, masked_sandbox, checks, cwd=workspace)
 
-    assert outcomes[("write", workspace / ".env")] == DENIED
+    assert outcomes[("write", workspace / ".env")] == READ_ONLY_MODE
     assert outcomes[("delete", workspace / ".env")] != "ok"
     assert outcomes[("create", workspace / "secrets" / "new-file")] == DENIED
     assert outcomes[("delete", workspace / "secrets" / "key")] != "ok"
