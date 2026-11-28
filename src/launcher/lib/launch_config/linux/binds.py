@@ -145,7 +145,9 @@ def get_declared_binds(host: HostStateLinux, prefixes: Sequence[Path]) -> Declar
     files = [d for d in host.declared if not isinstance(d, DeclaredDir)]
     dirs = [d for d in host.declared if isinstance(d, DeclaredDir)]
 
-    targets, warnings = get_store_symlink_targets(host.declared, prefixes)
+    targets, warnings = get_store_symlink_targets(
+        host.declared, host.workspace_inner_symlinks, prefixes
+    )
     for target in targets:
         symlink_targets += ["--ro-bind", str(target), str(target)]
         for parent in _get_parent_dirs(target, prefixes, seen_parents):
@@ -180,6 +182,10 @@ def get_declared_binds(host: HostStateLinux, prefixes: Sequence[Path]) -> Declar
             parent_symlinks += _get_parent_symlink_args(
                 inner.parent_symlinks, prefixes, planted
             )
+    for inner in host.workspace_inner_symlinks:
+        parent_symlinks += _get_parent_symlink_args(
+            inner.parent_symlinks, prefixes, planted
+        )
 
     return DeclaredBinds(
         dir_binds=tuple(dir_binds),
