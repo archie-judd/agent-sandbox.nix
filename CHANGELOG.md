@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.13.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.12.0...v5.13.0) (2026-11-28)
+
+
+### Features
+
+* masked paths ([#224](https://github.com/archie-judd/agent-sandbox.nix/issues/224)) ([e1dc8b5](https://github.com/archie-judd/agent-sandbox.nix/commit/e1dc8b5d7c267f38e97ab29121bc32023d69d950))
+
 ## [5.12.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.11.1...v5.12.0) (2026-11-28)
 
 
