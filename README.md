@@ -374,27 +374,27 @@ injectedCredentials = {
 - Hosts match exactly, not by subdomain. A `*` label matches any one label, so `"s3.*.amazonaws.com"` covers every region but not `my-bucket.s3.eu-west-2.amazonaws.com`. A `*` sends the credential to every host it matches, so keep it to labels you trust, such as an AWS region. Each host must be allowed by `allowedDomains`, and no two hosts may match the same host, across all credentials.
 - The proxy overwrites the header on every request to a listed host, whatever the client sent.
 
+The agent can still use the token through the proxy for as long as the session runs. Injection stops the token itself from leaving the sandbox. It works only with static tokens, such as a `claude setup-token` token or a personal access token. A token the client refreshes itself sends the real credential in the request body, which the proxy does not touch.
+
 #### AWS (`aws-sigv4`)
 
-AWS signs every request with the secret access key, so the proxy can't just set a header. With `scheme = "aws-sigv4"` the sandbox signs with the placeholder, and the proxy keeps the client's access key ID, scope, date and signed headers and replaces only the signature, computed with the real secret.
+AWS signs each request with the secret access key, so a header cannot carry it. With `scheme = "aws-sigv4"` the client signs with the placeholder, and the proxy replaces the signature with one made from the real secret.
 
 ```nix
 env.AWS_ACCESS_KEY_ID = "$AWS_ACCESS_KEY_ID";
 injectedCredentials.AWS_SECRET_ACCESS_KEY = {
   secret = "$AWS_SECRET_ACCESS_KEY";
   placeholder = "dummy";
-  hosts."s3.eu-west-2.amazonaws.com" = { scheme = "aws-sigv4"; };
+  hosts."s3.*.amazonaws.com" = { scheme = "aws-sigv4"; };
 };
 ```
 
-- The access key ID isn't secret, so it goes in through `env`.
-- The AWS CLI ignores the sandbox's CA bundle variables, so it rejects the proxy's certificate unless you run `export AWS_CA_BUNDLE=$SSL_CERT_FILE` inside the sandbox first.
-- List every endpoint the agent calls. Use `*` for the region to cover them all, as in `"s3.*.amazonaws.com"` and `"sts.*.amazonaws.com"`. Bucket-style hosts like `my-bucket.s3.eu-west-2.amazonaws.com` need their own entry, such as `"my-bucket.s3.*.amazonaws.com"`.
-- An STS session token (`AWS_SESSION_TOKEN`) goes in through `env`. It is signed, not secret, and is useless without the secret access key.
-- Presigned URLs pass through unchanged, so a URL signed with the placeholder fails. Signed-chunk uploads (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`) are refused with a 400; configure the client for unsigned payload chunks, or single-part uploads. Requests whose body has no `x-amz-content-sha256` are hashed by the proxy, up to 64 MiB.
-- SigV4a (`AWS4-ECDSA-P256-SHA256`, used by multi-region access points) is not supported. Such requests get a 400.
-
-The agent can still use the token through the proxy for as long as the session runs. Injection stops the token itself from leaving the sandbox. It works only with static tokens, such as a `claude setup-token` token or a personal access token. A token the client refreshes itself sends the real credential in the request body, which the proxy does not touch.
+- The access key ID and any `AWS_SESSION_TOKEN` are not secret, so they go in through `env`.
+- List every endpoint the agent calls, such as `"sts.*.amazonaws.com"`.
+- Run `export AWS_CA_BUNDLE=$SSL_CERT_FILE` inside the sandbox before using the AWS CLI. Otherwise it rejects the proxy's certificate.
+- Presigned URLs fail, because they carry the placeholder's signature.
+- Signed-chunk uploads fail with a 400. Use unsigned payload chunks or single-part uploads.
+- SigV4a, used by multi-region access points, fails with a 400.
 
 ### Credential files via `rwDirs`
 
