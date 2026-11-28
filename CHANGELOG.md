@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.12.0](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.11.1...v5.12.0) (2026-11-28)
+
+
+### Features
+
+* aws-sigv4 scheme for injectedCredentials ([#219](https://github.com/archie-judd/agent-sandbox.nix/issues/219)) ([77cbca2](https://github.com/archie-judd/agent-sandbox.nix/commit/77cbca2080dc428693884d74aba344be509fcfe6))
+
 ## [5.11.1](https://github.com/archie-judd/agent-sandbox.nix/compare/v5.11.0...v5.11.1) (2026-11-28)
 
 
