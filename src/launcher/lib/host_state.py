@@ -180,7 +180,11 @@ def _get_inner_symlinks(directory: Path) -> tuple[ResolvedPath, ...]:
                 if unfollowed_symlink is None:
                     inner_symlinks.append(resolved)
             elif entry.is_dir(follow_symlinks=False):
-                info = entry.stat(follow_symlinks=False)
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+
                 key = (info.st_dev, info.st_ino)
                 if key not in seen:
                     seen.add(key)

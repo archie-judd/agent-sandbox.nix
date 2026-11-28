@@ -137,6 +137,19 @@ def test_a_store_symlink_in_a_nested_dir_grants_only_its_target(
     }
 
 
+def test_a_store_link_in_three_nested_dirs_is_readable(
+    symlinks: Path, launch: Launch, store: dict[str, Path], fake_home: Path
+) -> None:
+    deepest = fake_home / ".test-state-dir" / "a" / "b" / "c"
+    deepest.mkdir(parents=True)
+    link = deepest / "link"
+    link.symlink_to(store["NONCLOSURE_STORE_FILE"])
+
+    outcomes = probe_paths(launch, symlinks, [("read", link)])
+
+    assert outcomes == {("read", link): "ok"}
+
+
 def test_an_out_of_bounds_symlink_is_ignored_with_a_warning(
     symlinks: Path, launch: Launch, fake_home: Path, out_of_bounds: Path
 ) -> None:
@@ -163,6 +176,24 @@ def test_a_nested_out_of_bounds_symlink_is_ignored_with_a_warning(
     assert started.returncode == 0, started.stderr
     assert f"ignoring symlink to '{out_of_bounds}'" in started.stderr
     assert outcomes == {("read", out_of_bounds): HIDDEN}
+
+
+def test_a_store_link_behind_an_out_of_bounds_dir_is_not_bound(
+    symlinks: Path,
+    launch: Launch,
+    store: dict[str, Path],
+    fake_home: Path,
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside-link-dir"
+    outside.mkdir()
+    (outside / "store-link").symlink_to(store["NONCLOSURE_STORE_FILE"])
+    (fake_home / ".test-state-dir" / "link-to-outside").symlink_to(outside)
+
+    target = store["NONCLOSURE_STORE_FILE"]
+    outcomes = probe_paths(launch, symlinks, [("read", target)])
+
+    assert outcomes == {("read", target): HIDDEN}
 
 
 @pytest.mark.darwin
